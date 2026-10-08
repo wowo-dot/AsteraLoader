@@ -105,7 +105,8 @@ extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmf
         wrote = file != INVALID_HANDLE_VALUE;
         if (wrote) CloseHandle(file);
     }
-    record(wrote ? "consumer data written" : "consumer no data folder");
+    const bool prefixed = init->data_folder && std::wstring(init->data_folder).rfind(L"\\\\?\\", 0) == 0;
+    record(!wrote ? "consumer no data folder" : prefixed ? "consumer data written, prefixed path" : "consumer data written");
 #endif
     return CMFM_OK;
 }

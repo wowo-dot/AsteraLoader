@@ -36,4 +36,8 @@ struct GameVersion {
 // game's code is unpacked (PRE_MAIN or later).
 GameVersion find_game_version(const void* image);
 
+// The version for a match found elsewhere (a cached or code-only search):
+// `match` is the pattern's offset from the image base.
+GameVersion read_game_version_at(const void* image, std::size_t match);
+
 }  // namespace cmfm

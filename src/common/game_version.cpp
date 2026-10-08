@@ -40,13 +40,24 @@ GameVersion find_game_version(const void* image) {
         offset = region_end;
     }
     if (found.size() != 1) return {{}, found.empty() ? "pattern not found" : "pattern found more than once"};
-    if (found[0] < kVersionInstructionBack) return {{}, "the version instruction is outside the image"};
+    return read_game_version_at(image, found[0]);
+}
 
-    const auto* instruction = base + found[0] - kVersionInstructionBack;
+GameVersion read_game_version_at(const void* image, std::size_t match) {
+    const auto* base = static_cast<const std::uint8_t*>(image);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (!readable(dos, sizeof(*dos)) || dos->e_magic != IMAGE_DOS_SIGNATURE ||
+        !readable(base + dos->e_lfanew, sizeof(IMAGE_NT_HEADERS64))) {
+        return {{}, "the game image header is unreadable"};
+    }
+    const std::size_t size = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew)->OptionalHeader.SizeOfImage;
+    if (match < kVersionInstructionBack || match >= size) return {{}, "the version instruction is outside the image"};
+
+    const auto* instruction = base + match - kVersionInstructionBack;
     if (!readable(instruction, 7)) return {{}, "the version instruction is unreadable"};
     std::int32_t displacement = 0;
     std::memcpy(&displacement, instruction + 3, sizeof(displacement));
-    const auto address = version_pointer_address(reinterpret_cast<std::uintptr_t>(base + found[0]), displacement);
+    const auto address = version_pointer_address(reinterpret_cast<std::uintptr_t>(base + match), displacement);
     const auto* pointer = reinterpret_cast<const char* const*>(address);
     if (address < reinterpret_cast<std::uintptr_t>(base) ||
         address + sizeof(void*) > reinterpret_cast<std::uintptr_t>(base) + size || !readable(pointer, sizeof(*pointer))) {

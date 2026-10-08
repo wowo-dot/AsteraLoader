@@ -76,8 +76,8 @@ cmfm_graphics_t graphics_from_ini(std::string_view text) {
     return graphics;
 }
 
-GameService::GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder)
-    : image_(image), exe_sha256_(to_utf8(exe_sha256)), game_folder_(std::move(game_folder)) {}
+GameService::GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder, Scanner* scanner)
+    : image_(image), scanner_(scanner), exe_sha256_(to_utf8(exe_sha256)), game_folder_(std::move(game_folder)) {}
 
 const cmfm_game_t* GameService::table() {
     std::call_once(once_, [this] { fill(); });
@@ -87,7 +87,17 @@ const cmfm_game_t* GameService::table() {
 void GameService::fill() {
     exe_path_ = module_path();
     if (game_folder_.empty()) game_folder_ = std::wstring(directory_of(exe_path_));
-    version_ = find_game_version(image_).text;
+    // The version code is code: a code-section search is quick (1.8 ms in the
+    // game, against about 12 ms for the whole image) and cached per exe hash.
+    if (scanner_) {
+        const auto found = scanner_->find(parse_bits(kVersionPattern), CMFM_SCAN_CODE);
+        if (found.matches.size() == 1) {
+            const auto offset = static_cast<std::size_t>(static_cast<const std::uint8_t*>(found.matches[0]) -
+                                                         static_cast<const std::uint8_t*>(image_));
+            version_ = read_game_version_at(image_, offset).text;
+        }
+    }
+    if (version_.empty()) version_ = find_game_version(image_).text;
     const auto* nt = nt_headers(image_);
     std::string ini;
     const auto graphics = read_small_file(join_path(game_folder_, L"graphics_option.ini"), ini, 1 << 16)

@@ -129,11 +129,11 @@ std::wstring scan_cache_file(const HostOptions& options) {
 // Services and interfaces every plugin shares; lives as long as the Host.
 struct HostState {
     explicit HostState(const HostOptions& options)
-        : game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder),
-          scanner(GetModuleHandleW(nullptr), scan_cache_file(options)) {}
+        : scanner(GetModuleHandleW(nullptr), scan_cache_file(options)),
+          game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder, &scanner) {}
 
+    Scanner scanner;  // before game, which uses it
     GameService game;
-    Scanner scanner;
     std::mutex mutex;  // guards interfaces
     struct Published {
         cmfm_plugin_t* owner;
@@ -391,8 +391,10 @@ Host::~Host() = default;
 
 void Host::load_all(const HostOptions& options) {
     state_ = std::make_unique<HostState>(options);
-    const auto data_root =
-        options.data_root.empty() ? join_path(directory_of(options.logs_folder), L"data") : options.data_root;
+    // Plain paths for plugins: CMFM's own folders may carry the long-path
+    // prefix of a resolved file path (\\?\D:\...), which plugins should not see.
+    const auto data_root = strip_extended_prefix(
+        options.data_root.empty() ? join_path(directory_of(options.logs_folder), L"data") : options.data_root);
     const auto found = discover(options.plugins_root);
     const auto make = [&](const std::wstring& name) {
         auto plugin = std::make_unique<cmfm_plugin_t>();

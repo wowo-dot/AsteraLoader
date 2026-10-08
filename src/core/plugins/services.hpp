@@ -13,18 +13,25 @@
 
 namespace cmfm::plugins {
 
+class Scanner;
+
 // "cmfm.game": filled once, on first use, and kept for the process.
 class GameService {
 public:
     // `image` is the game exe module; `game_folder` holds graphics_option.ini
-    // (empty: the exe's folder).
-    GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder = {});
+    // (empty: the exe's folder). With a `scanner`, the version code is first
+    // searched in code sections through its cache; without one, or if that
+    // does not find exactly one match, the whole image is searched as
+    // Stracker does.
+    GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder = {},
+                Scanner* scanner = nullptr);
     const cmfm_game_t* table();
 
 private:
     void fill();
 
     const void* image_;
+    Scanner* scanner_;
     std::once_flag once_;
     std::string exe_sha256_;
     std::string version_;

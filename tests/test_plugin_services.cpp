@@ -61,7 +61,10 @@ int wmain(int argc, wchar_t** argv) {
 
     cmfm::plugins::HostOptions options;
     options.plugins_root = root.wstring();
-    options.logs_folder = (work / L"logs").wstring();
+    // As in the game: CMFM's log folder comes from a resolved path with the
+    // long-path prefix; plugins must still get plain paths.
+    // (Windows takes such paths literally, so the separators must be backslashes.)
+    options.logs_folder = L"\\\\?\\" + (work / L"logs").make_preferred().wstring();
     options.exe_sha256 = hash;
     options.game_folder = (work / L"game").wstring();
     cmfm::plugins::Host host;

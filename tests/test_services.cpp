@@ -8,6 +8,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -30,6 +31,20 @@ std::uint8_t g_planted[48] = {0x13, 0x37, 0xC0, 0xDE, 0x5A, 0x17, 0xF0, 0x0D, 0x
                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                               0x13, 0x37, 0xC0, 0xDE, 0x5A, 0x17, 0xF0, 0x0D, 0x99, 0x77, 0, 0, 0, 0, 0, 0};
 constexpr char kPlanted[] = "13 37 C0 DE 5A ?? F0 0D 99 77";
+
+// MHW's version code in miniature, in an executable section of this exe: an
+// instruction whose RIP-relative operand points at `text`, then Stracker's
+// pattern 0x18 bytes in. cmfm.game must find "svc-code" through it.
+#pragma section(".cmfmx", read, execute)
+struct VersionCode {
+    std::uint8_t instruction[0x18];  // 48 8B 05 <disp32>: text sits at 7 + 0x21 = 0x28
+    std::uint8_t pattern[9];
+    std::uint8_t pad[7];
+    const char* text;
+};
+static_assert(offsetof(VersionCode, text) == 0x28);
+__declspec(allocate(".cmfmx")) const VersionCode g_version_code = {
+    {0x48, 0x8B, 0x05, 0x21, 0, 0, 0}, {0x48, 0x8D, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x42, 0xF5}, {}, "svc-code"};
 
 // Code with an unusual constant, so its bytes occur once in .text.
 __declspec(noinline) int marker() {
@@ -62,7 +77,8 @@ void game(const fs::path& work) {
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(reinterpret_cast<const std::uint8_t*>(dos) + dos->e_lfanew);
     check(table->size == sizeof(cmfm_game_t) && table->version == CMFM_GAME_VERSION, "game table header");
     check(table->exe_sha256 && std::string(table->exe_sha256).size() == 64, "exe hash");
-    check(!table->game_version, "no MHW version in a test exe");
+    check(table->game_version && std::string(table->game_version) == "svc-code",
+          "version through Stracker's whole-image search (no scanner)");
     check(table->exe_path && cmfm::module_path() == table->exe_path, "exe path");
     check(table->game_folder && folder.wstring() == table->game_folder, "game folder");
     check(table->pe_timestamp == nt->FileHeader.TimeDateStamp, "PE time stamp");
@@ -71,6 +87,18 @@ void game(const fs::path& work) {
 
     cmfm::plugins::GameService unknown(GetModuleHandleW(nullptr), L"", (work / L"nowhere").wstring());
     check(!unknown.table()->exe_sha256 && unknown.table()->graphics == CMFM_GRAPHICS_UNKNOWN, "no hash, no ini");
+
+    // With the scanner: found in code sections, and the match is cached, so a
+    // later launch does not search at all.
+    const auto cache = work / L"cache" / L"scan.game.txt";
+    cmfm::plugins::Scanner scanner(GetModuleHandleW(nullptr), cache.wstring());
+    cmfm::plugins::GameService scanned(GetModuleHandleW(nullptr), hash, folder.wstring(), &scanner);
+    check(scanned.table()->game_version && std::string(scanned.table()->game_version) == "svc-code",
+          "version through the code-section scan");
+    char line[96]{};
+    std::snprintf(line, sizeof(line), "0 488d4c2430488d42f5/f8ffff3ffff8ffffff %zx\n",
+                  static_cast<std::size_t>(g_version_code.pattern - reinterpret_cast<const std::uint8_t*>(dos)));
+    check(read_file(cache) == line, "version code cached");
 }
 
 void scanner(const fs::path& work) {
