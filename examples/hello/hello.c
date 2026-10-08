@@ -98,6 +98,18 @@ CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* ap
                 game->game_version ? game->game_version : "unknown", game->exe_sha256 ? game->exe_sha256 : "unknown",
                 game->graphics <= CMFM_GRAPHICS_DX12 ? graphics[game->graphics] : "unknown");
         }
+        /* The code that loads MHW's version string, in Stracker's bit notation.
+         * CMFM logs how long the search took, or that the cache answered. */
+        const cmfm_scanner_t* scanner =
+            (const cmfm_scanner_t*)api->get_interface(init->self, CMFM_SCANNER_INTERFACE, CMFM_SCANNER_VERSION);
+        if (scanner) {
+            void* match = NULL;
+            const uint32_t count = scanner->find(
+                init->self, "01001... 10001101 01001100 ..100100 00110000 01001... 10001101 01000010 11110101",
+                CMFM_SCAN_CODE, &match, 1);
+            say(CMFM_LOG_INFO, "version code found %u time(s), first at exe+0x%llx", count,
+                match ? (unsigned long long)((const char*)match - (const char*)GetModuleHandleW(NULL)) : 0ull);
+        }
     }
     return CMFM_OK;
 }

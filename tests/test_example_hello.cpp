@@ -32,7 +32,7 @@ int wmain(int argc, wchar_t** argv) {
     bool logged = true;
     for (const auto part : {" INFO hello 0.2.0 initialised on thread ", "(CMFM API 1.1)",
                             " INFO folder as the game sees it: ", " INFO folder resolved through a file handle: ",
-                            " INFO this DLL: ", " INFO data folder: ", " INFO game version unknown, exe SHA-256 unknown..., graphics ", " INFO phase 0 on thread ", " INFO game exe as the game sees it: "}) {
+                            " INFO this DLL: ", " INFO data folder: ", " INFO game version unknown, exe SHA-256 unknown..., graphics ", " INFO version code found 0 time(s)", " INFO phase 0 on thread ", " INFO game exe as the game sees it: "}) {
         if (text.find(part) == std::string::npos) {
             std::cerr << "missing in hello.log: " << part << '\n';
             logged = false;
