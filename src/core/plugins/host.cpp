@@ -183,10 +183,17 @@ bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view e
         return false;
     }
     plugin.folder_real = std::wstring(directory_of(dll_real));
+    // A damaged DLL would make Windows show a "Bad Image" box and wait for a
+    // click; the refusal is reported instead. Only this thread's error mode
+    // changes, and only for the load.
+    DWORD previous_mode = 0;
+    const bool quiet = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &previous_mode);
     plugin.module = LoadLibraryExW(dll_real.c_str(), nullptr,
                                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    const DWORD load_error = GetLastError();
+    if (quiet) SetThreadErrorMode(previous_mode, nullptr);
     if (!plugin.module) {
-        reason = "Windows could not load it: " + to_utf8(win32_error_text(GetLastError()));
+        reason = "Windows could not load it: " + to_utf8(win32_error_text(load_error));
         return false;
     }
     const auto info = std::bit_cast<cmfm_plugin_info_fn>(GetProcAddress(plugin.module, CMFM_PLUGIN_INFO_EXPORT));

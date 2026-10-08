@@ -66,6 +66,8 @@ int wmain(int argc, wchar_t** argv) {
     install(L"alpha", L"mismatch");  // declares the name "alpha" in folder "mismatch"
     fs::create_directories(root / L"Bad Folder");
     fs::create_directories(root / L"empty");
+    fs::create_directories(root / L"damaged");
+    std::ofstream(root / L"damaged" / L"damaged.dll") << "not a DLL";  // must not raise a Windows dialog
     fs::copy_file(fixtures / L"alpha.dll", root / L"stray.dll");
 
     const auto record = work / L"record.txt";
@@ -105,8 +107,9 @@ int wmain(int argc, wchar_t** argv) {
     expect_refused(report, L"mismatch", "does not match its folder 'mismatch'");
     expect_refused(report, L"Bad Folder", "not a valid plugin name");
     expect_refused(report, L"empty", "no empty.dll");
+    expect_refused(report, L"damaged", "Windows could not load it");
     expect_refused(report, L"stray.dll", "own folder");
-    check(report.size() == 15, "every entry reported");
+    check(report.size() == 16, "every entry reported");
 
     // Refused plugins were unloaded again; initialised ones stay loaded.
     for (const auto name : {L"cycle_x", L"newer_api", L"wrong_exe", L"no_exports", L"mismatch"}) {
