@@ -78,11 +78,23 @@ const char* const exes[] = {"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 #else
 #define FIXTURE_EXE_LIST nullptr
 #endif
+#ifdef FIXTURE_DEPENDS
+#ifndef FIXTURE_DEPENDS_VERSION
+#define FIXTURE_DEPENDS_VERSION nullptr
+#endif
+const cmfm_dependency_t dependencies[] = {{FIXTURE_DEPENDS, FIXTURE_DEPENDS_VERSION}, {nullptr, nullptr}};
+#define FIXTURE_DEPENDENCY_LIST dependencies
+#else
+#define FIXTURE_DEPENDENCY_LIST nullptr
+#endif
+#ifndef FIXTURE_INFO_SIZE
+#define FIXTURE_INFO_SIZE sizeof(cmfm_plugin_info_t)
+#endif
 
 const cmfm_plugin_info_t info = {
-    sizeof(cmfm_plugin_info_t), FIXTURE_API, FIXTURE_NAME, "Fixture " FIXTURE_NAME, "0.0.1", FIXTURE_PHASES,
+    FIXTURE_INFO_SIZE, FIXTURE_API, FIXTURE_NAME, "Fixture " FIXTURE_NAME, "0.0.1", FIXTURE_PHASES,
     FIXTURE_ORDER, FIXTURE_AFTER_LIST, FIXTURE_BEFORE_LIST, FIXTURE_EXE_LIST,
-    FIXTURE_PHASES ? on_phase : nullptr,
+    FIXTURE_PHASES ? on_phase : nullptr, FIXTURE_DEPENDENCY_LIST,
 };
 }  // namespace
 
@@ -105,6 +117,9 @@ extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmf
     const bool paths = init->size == sizeof(cmfm_init_t) && ends_with(init->folder, L"" FIXTURE_NAME) &&
                        ends_with(init->folder_real, L"" FIXTURE_NAME);
     record(std::string(FIXTURE_NAME) + " init" + (paths ? "" : " bad-paths"));
+#ifdef FIXTURE_SLEEP_MS
+    Sleep(FIXTURE_SLEEP_MS);
+#endif
     api->log(init->self, CMFM_LOG_INFO, "fixture " FIXTURE_NAME " started");
 #ifdef FIXTURE_FAIL
     api->set_status(init->self, CMFM_STATUS_DISABLED, "fixture refuses to start");

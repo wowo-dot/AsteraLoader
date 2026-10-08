@@ -86,7 +86,9 @@ add_library(cmfm_plugins STATIC
     src/core/plugins/load_order.cpp
     src/core/plugins/load_order.hpp
     src/core/plugins/manifest.cpp
-    src/core/plugins/manifest.hpp)
+    src/core/plugins/manifest.hpp
+    src/core/plugins/services.cpp
+    src/core/plugins/services.hpp)
 target_link_libraries(cmfm_plugins PUBLIC cmfm_api cmfm_common)
 cmfm_project_target(cmfm_plugins)
 
@@ -227,6 +229,11 @@ target_link_libraries(cmfm_plugin_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_plugin_tests)
 add_test(NAME plugin_manifest_order COMMAND cmfm_plugin_tests)
 
+add_executable(cmfm_services_tests tests/test_services.cpp)
+target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_services_tests)
+add_test(NAME services COMMAND cmfm_services_tests "${CMAKE_BINARY_DIR}/services")
+
 # The plugin host against fixture plugins, one DLL per declared case.
 add_executable(cmfm_plugin_host_tests tests/test_plugin_host.cpp)
 target_link_libraries(cmfm_plugin_host_tests PRIVATE cmfm_plugins)
@@ -260,6 +267,31 @@ cmfm_plugin_fixture(seh_phase FIXTURE_NATIVE_PHASE FIXTURE_PHASES=0x1u)
 cmfm_plugin_fixture(cpp_init FIXTURE_THROW_INIT)
 # This fixture deliberately violates the no-exceptions C plugin contract.
 set_target_properties(cmfm_plugin_fixture_cpp_init PROPERTIES CMFM_TEST_C_EXCEPTIONS TRUE)
+# API 1.1: dependencies, a plugin built for 1.0, start-up timing.
+cmfm_plugin_fixture(needs_missing "FIXTURE_DEPENDS=\"ghost\"")
+cmfm_plugin_fixture(needs_newer "FIXTURE_DEPENDS=\"provider\"" "FIXTURE_DEPENDS_VERSION=\"9.0\"")
+cmfm_plugin_fixture(needs_failing "FIXTURE_DEPENDS=\"failing\"")
+cmfm_plugin_fixture(legacy10 FIXTURE_API=0x10000u FIXTURE_INFO_SIZE=72u "FIXTURE_DEPENDS=\"BadName\"")
+cmfm_plugin_fixture(slow FIXTURE_SLEEP_MS=30)
+# API 1.1: a plugin publishing an interface and one using it and the services.
+add_executable(cmfm_plugin_services_tests tests/test_plugin_services.cpp)
+target_link_libraries(cmfm_plugin_services_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_plugin_services_tests)
+foreach(role IN ITEMS provider consumer)
+    add_library(cmfm_plugin_fixture_${role} SHARED tests/plugin_fixture_services.cpp)
+    target_link_libraries(cmfm_plugin_fixture_${role} PRIVATE cmfm_api)
+    cmfm_project_target(cmfm_plugin_fixture_${role})
+    set_target_properties(cmfm_plugin_fixture_${role} PROPERTIES
+        OUTPUT_NAME ${role}
+        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+    add_dependencies(cmfm_plugin_services_tests cmfm_plugin_fixture_${role})
+endforeach()
+target_compile_definitions(cmfm_plugin_fixture_provider PRIVATE FIXTURE_PROVIDER)
+add_dependencies(cmfm_plugin_services_tests cmfm_plugin_fixture_needs_missing cmfm_plugin_fixture_needs_newer
+    cmfm_plugin_fixture_failing cmfm_plugin_fixture_needs_failing cmfm_plugin_fixture_legacy10
+    cmfm_plugin_fixture_slow)
+add_test(NAME plugin_services
+    COMMAND cmfm_plugin_services_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_services")
 add_test(NAME plugin_host
     COMMAND cmfm_plugin_host_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
 

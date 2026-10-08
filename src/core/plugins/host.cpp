@@ -2,18 +2,22 @@
 
 #include "common/log_file.hpp"
 #include "common/paths.hpp"
+#include "common/pattern.hpp"
 #include "common/windows.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
 #include "core/plugins/load_order.hpp"
 #include "core/plugins/manifest.hpp"
+#include "core/plugins/services.hpp"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <string_view>
 
@@ -97,7 +101,48 @@ std::string_view status_name(cmfm_status_t status) {
 std::string plugin_text(const char* text, std::size_t limit) {
     return text ? std::string(text, strnlen(text, limit)) : std::string();
 }
+
+std::uint64_t microseconds_since(const LARGE_INTEGER& start) {
+    LARGE_INTEGER now{}, frequency{};
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&frequency);
+    return frequency.QuadPart ? static_cast<std::uint64_t>(now.QuadPart - start.QuadPart) * 1000000 /
+                                    static_cast<std::uint64_t>(frequency.QuadPart)
+                              : 0;
+}
+
+// An interface version satisfies a request with the same major version and
+// at most the same minor version.
+bool compatible(std::uint32_t have, std::uint32_t want) {
+    return CMFM_VERSION_MAJOR(have) == CMFM_VERSION_MAJOR(want) && CMFM_VERSION_MINOR(have) >= CMFM_VERSION_MINOR(want);
+}
+
+std::wstring scan_cache_file(const HostOptions& options) {
+    if (options.exe_sha256.empty()) return {};
+    const auto folder = options.cache_folder.empty()
+                            ? join_path(directory_of(options.logs_folder), L"cache")
+                            : options.cache_folder;
+    return join_path(folder, L"scan." + options.exe_sha256 + L".txt");
+}
 }  // namespace
+
+// Services and interfaces every plugin shares; lives as long as the Host.
+struct HostState {
+    explicit HostState(const HostOptions& options)
+        : game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder),
+          scanner(GetModuleHandleW(nullptr), scan_cache_file(options)) {}
+
+    GameService game;
+    Scanner scanner;
+    std::mutex mutex;  // guards interfaces
+    struct Published {
+        cmfm_plugin_t* owner;
+        std::uint32_t version;
+        const void* table;
+    };
+    std::map<std::string, Published> interfaces;
+};
+
 }  // namespace cmfm::plugins
 
 // The opaque cmfm_plugin_t of the C API: one per entry in the plugins folder.
@@ -105,12 +150,17 @@ struct cmfm_plugin {
     std::wstring name;
     std::wstring folder;
     std::wstring folder_real;
+    std::wstring data_folder;
+    cmfm::plugins::HostState* state = nullptr;
     HMODULE module = nullptr;
     cmfm_plugin_init_fn init = nullptr;
     cmfm::plugins::Manifest manifest;
     bool initialised = false;
     cmfm_init_t init_block{};  // handed to the plugin; must outlive it
     std::unique_ptr<cmfm::plugins::PluginLog> log;
+    std::uint64_t load_us = 0;
+    std::uint64_t init_us = 0;
+    std::array<std::uint64_t, CMFM_PHASE_COUNT> phase_us{};
     mutable std::mutex mutex;  // guards status and reason
     cmfm_status_t status = CMFM_STATUS_DISABLED;
     std::string reason;
@@ -118,6 +168,10 @@ struct cmfm_plugin {
 
 namespace cmfm::plugins {
 namespace {
+void note(cmfm_plugin_t& plugin, std::string_view level, std::string_view text) {
+    if (plugin.log) plugin.log->write(level, text);
+}
+
 void CMFM_CALL api_log(cmfm_plugin_t* self, cmfm_log_level_t level, const char* message) noexcept {
     if (!self || !self->log) return;
     try {
@@ -129,21 +183,92 @@ void CMFM_CALL api_set_status(cmfm_plugin_t* self, cmfm_status_t status, const c
     if (!self || status > CMFM_STATUS_DISABLED) return;
     try {
         auto text = plugin_text(reason, 1024);
-        if (self->log) {
-            self->log->write("STATUS", std::string(status_name(status)) + (text.empty() ? "" : ": " + text));
-        }
+        note(*self, "STATUS", std::string(status_name(status)) + (text.empty() ? "" : ": " + text));
         std::lock_guard lock(self->mutex);
         self->status = status;
         self->reason = std::move(text);
     } catch (...) { /* Never throw into a plugin. */ }
 }
 
-// Placeholders until the interface registry lands: nothing to get or publish.
-const void* CMFM_CALL api_get_interface(cmfm_plugin_t*, const char*, uint32_t) noexcept {
-    return nullptr;
+std::uint32_t CMFM_CALL scanner_find(cmfm_plugin_t* self, const char* pattern, std::uint32_t where, void** matches,
+                                     std::uint32_t capacity) noexcept {
+    if (!self || !self->state || !pattern) return CMFM_SCAN_INVALID;
+    try {
+        const auto text = plugin_text(pattern, 2048);
+        const auto parsed = parse_pattern(text);
+        const auto shown = "\"" + text.substr(0, 200) + "\"";
+        if (!parsed || (where != CMFM_SCAN_CODE && where != CMFM_SCAN_IMAGE)) {
+            note(*self, "WARN", "scan " + shown + ": not a pattern or scope CMFM can read");
+            return CMFM_SCAN_INVALID;
+        }
+        const auto result = self->state->scanner.find(*parsed, where);
+        const auto count = static_cast<std::uint32_t>(result.matches.size());
+        for (std::uint32_t k = 0; matches && k < std::min(count, capacity); ++k) {
+            matches[k] = const_cast<void*>(result.matches[k]);
+        }
+        char detail[64]{};
+        std::snprintf(detail, sizeof(detail), result.cached ? "from the cache, %.2f ms" : "searched in %.1f ms",
+                      result.milliseconds);
+        note(*self, "DEBUG", "scan " + shown + (where == CMFM_SCAN_CODE ? " in code: " : " in image: ") +
+                                 std::to_string(count) + " match(es), " + detail);
+        return count;
+    } catch (...) {
+        return CMFM_SCAN_INVALID;
+    }
 }
-cmfm_result_t CMFM_CALL api_publish_interface(cmfm_plugin_t*, const char*, uint32_t, const void*) noexcept {
-    return CMFM_ERROR;
+
+void* CMFM_CALL scanner_rip_target(const void* instruction, std::uint32_t offset, std::uint32_t length) noexcept {
+    return rip_target(instruction, offset, length);
+}
+
+const cmfm_scanner_t kScanner{sizeof(cmfm_scanner_t), CMFM_SCANNER_VERSION, scanner_find, scanner_rip_target};
+
+const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version) noexcept {
+    if (!self || !self->state || !name) return nullptr;
+    try {
+        const auto wanted = plugin_text(name, 129);
+        auto& state = *self->state;
+        if (wanted == CMFM_GAME_INTERFACE) return compatible(CMFM_GAME_VERSION, version) ? state.game.table() : nullptr;
+        if (wanted == CMFM_SCANNER_INTERFACE) return compatible(CMFM_SCANNER_VERSION, version) ? &kScanner : nullptr;
+        std::lock_guard lock(state.mutex);
+        const auto found = state.interfaces.find(wanted);
+        if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
+        std::lock_guard owner(found->second.owner->mutex);
+        return found->second.owner->status == CMFM_STATUS_DISABLED ? nullptr : found->second.table;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+cmfm_result_t CMFM_CALL api_publish_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version,
+                                              const void* table) noexcept {
+    if (!self || !self->state) return CMFM_ERROR;
+    try {
+        const auto text = plugin_text(name, 129);
+        const auto prefix = self->manifest.name + ".";
+        std::string problem;
+        if (!table) {
+            problem = "no table";
+        } else if (text.size() > 128 || text.size() <= prefix.size() || text.compare(0, prefix.size(), prefix) != 0) {
+            problem = "the name must start with \"" + prefix + "\" (128 characters at most)";
+        } else if (!std::all_of(text.begin(), text.end(), [](char c) {
+                       return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+                   })) {
+            problem = "the name may use a-z, 0-9, '_', '-' and '.' only";
+        } else {
+            std::lock_guard lock(self->state->mutex);
+            if (!self->state->interfaces.emplace(text, HostState::Published{self, version, table}).second) {
+                problem = "the name is taken";
+            }
+        }
+        const auto shown = text + " " + std::to_string(CMFM_VERSION_MAJOR(version)) + "." +
+                           std::to_string(CMFM_VERSION_MINOR(version));
+        note(*self, problem.empty() ? "INFO" : "WARN",
+             problem.empty() ? "published interface " + shown : "cannot publish interface " + shown + ": " + problem);
+        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+    } catch (...) {
+        return CMFM_ERROR;
+    }
 }
 
 const cmfm_api_t kApi{sizeof(cmfm_api_t), CMFM_API_VERSION, api_log, api_set_status, api_get_interface,
@@ -217,8 +342,19 @@ bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view e
     return valid;
 }
 
+// The plugin's data folder, created on the way; null if that fails.
+const wchar_t* make_data_folder(const std::wstring& folder) {
+    CreateDirectoryW(std::wstring(directory_of(folder)).c_str(), nullptr);
+    CreateDirectoryW(folder.c_str(), nullptr);
+    const DWORD attributes = GetFileAttributesW(folder.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) ? folder.c_str() : nullptr;
+}
+
 void initialise(cmfm_plugin_t& plugin) {
-    plugin.init_block = {sizeof(cmfm_init_t), 0, &plugin, plugin.folder.c_str(), plugin.folder_real.c_str()};
+    // Only plugins built for 1.1 or later can see data_folder; others get no folder.
+    const bool sees_data_folder = plugin.manifest.api_version >= CMFM_MAKE_VERSION(1, 1);
+    plugin.init_block = {sizeof(cmfm_init_t), 0, &plugin, plugin.folder.c_str(), plugin.folder_real.c_str(),
+                         sees_data_folder ? make_data_folder(plugin.data_folder) : nullptr};
     {
         std::lock_guard lock(plugin.mutex);
         plugin.status = CMFM_STATUS_ACTIVE;
@@ -228,7 +364,11 @@ void initialise(cmfm_plugin_t& plugin) {
     plugin.initialised = true;
     cmfm_result_t result = CMFM_ERROR;
     unsigned long fault = 0;
-    if (!guarded_init(plugin.init, &kApi, &plugin.init_block, result, fault)) {
+    LARGE_INTEGER start{};
+    QueryPerformanceCounter(&start);
+    const bool returned = guarded_init(plugin.init, &kApi, &plugin.init_block, result, fault);
+    plugin.init_us = microseconds_since(start);
+    if (!returned) {
         std::lock_guard lock(plugin.mutex);
         plugin.status = CMFM_STATUS_DISABLED;
         plugin.reason = "cmfm_plugin_init raised exception " + std::to_string(fault);
@@ -239,17 +379,27 @@ void initialise(cmfm_plugin_t& plugin) {
     plugin.status = CMFM_STATUS_DISABLED;
     if (plugin.reason.empty()) plugin.reason = "cmfm_plugin_init returned " + std::to_string(result);
 }
+
+bool running(const cmfm_plugin_t& plugin) {
+    std::lock_guard lock(plugin.mutex);
+    return plugin.initialised && plugin.status != CMFM_STATUS_DISABLED;
+}
 }  // namespace
 
 Host::Host() = default;
 Host::~Host() = default;
 
 void Host::load_all(const HostOptions& options) {
+    state_ = std::make_unique<HostState>(options);
+    const auto data_root =
+        options.data_root.empty() ? join_path(directory_of(options.logs_folder), L"data") : options.data_root;
     const auto found = discover(options.plugins_root);
-    const auto make = [&options](const std::wstring& name) {
+    const auto make = [&](const std::wstring& name) {
         auto plugin = std::make_unique<cmfm_plugin_t>();
         plugin->name = name;
         plugin->folder = join_path(options.plugins_root, name);
+        plugin->data_folder = join_path(data_root, name);
+        plugin->state = state_.get();
         plugin->log = std::make_unique<PluginLog>(join_path(join_path(options.logs_folder, L"plugins"),
                                                             name + L".log"));
         return plugin;
@@ -259,7 +409,11 @@ void Host::load_all(const HostOptions& options) {
     for (const auto& candidate : found.candidates) {
         auto plugin = make(candidate.name);
         std::string reason;
-        if (load(*plugin, candidate, options.exe_sha256, reason)) {
+        LARGE_INTEGER start{};
+        QueryPerformanceCounter(&start);
+        const bool ok = load(*plugin, candidate, options.exe_sha256, reason);
+        plugin->load_us = microseconds_since(start);
+        if (ok) {
             loaded.push_back(std::move(plugin));
         } else {
             refuse(*plugin, std::move(reason));
@@ -272,16 +426,54 @@ void Host::load_all(const HostOptions& options) {
         not_loaded.push_back(std::move(plugin));
     }
 
+    // Dependencies first: a missing, refused or too old required plugin
+    // refuses its dependants before anything starts.
     std::vector<Manifest> manifests;
     for (const auto& plugin : loaded) manifests.push_back(plugin->manifest);
-    const auto order = resolve_load_order(manifests);
-    for (const auto i : order.sequence) {
-        initialise(*loaded[i]);
-        plugins_.push_back(std::move(loaded[i]));
+    std::vector<Unavailable> unavailable;
+    for (const auto& plugin : not_loaded) unavailable.push_back({to_utf8(plugin->name), plugin->reason});
+    std::vector<bool> refused(loaded.size(), false);
+    for (const auto& refusal : check_dependencies(manifests, unavailable)) {
+        refuse(*loaded[refusal.index], refusal.reason);
+        refused[refusal.index] = true;
+    }
+    std::vector<std::size_t> remaining;
+    std::vector<Manifest> ordered;
+    for (std::size_t i = 0; i < loaded.size(); ++i) {
+        if (refused[i]) continue;
+        remaining.push_back(i);
+        ordered.push_back(manifests[i]);
+    }
+
+    // Start in order. Dependencies come earlier in the order, so one that is
+    // not running by now failed to start or was refused for its order.
+    const auto order = resolve_load_order(ordered);
+    std::map<std::string, const cmfm_plugin_t*> started;
+    for (const auto k : order.sequence) {
+        auto& plugin = *loaded[remaining[k]];
+        std::string missing;
+        for (const auto& dependency : plugin.manifest.dependencies) {
+            if (dependency.name == plugin.manifest.name) continue;
+            const auto found_dependency = started.find(dependency.name);
+            if (found_dependency == started.end() || !running(*found_dependency->second)) {
+                missing = dependency.name;
+                break;
+            }
+        }
+        if (missing.empty()) {
+            initialise(plugin);
+        } else {
+            refuse(plugin, "it needs " + missing + ", which did not start");
+        }
+        started[plugin.manifest.name] = &plugin;
+        plugins_.push_back(std::move(loaded[remaining[k]]));
     }
     for (const auto& refusal : order.refused) {
-        refuse(*loaded[refusal.index], refusal.reason);
-        plugins_.push_back(std::move(loaded[refusal.index]));
+        refuse(*loaded[remaining[refusal.index]], refusal.reason);
+        plugins_.push_back(std::move(loaded[remaining[refusal.index]]));
+    }
+    for (std::size_t i = 0; i < loaded.size(); ++i) {
+        if (refused[i]) plugins_.push_back(std::move(loaded[i]));
     }
     for (auto& plugin : not_loaded) plugins_.push_back(std::move(plugin));
 }
@@ -295,7 +487,11 @@ void Host::dispatch(cmfm_phase_t phase, const void* data) {
             if (plugin->status == CMFM_STATUS_DISABLED) continue;
         }
         unsigned long fault = 0;
-        if (!guarded_phase(plugin->manifest.on_phase, plugin.get(), phase, data, fault)) {
+        LARGE_INTEGER start{};
+        QueryPerformanceCounter(&start);
+        const bool returned = guarded_phase(plugin->manifest.on_phase, plugin.get(), phase, data, fault);
+        plugin->phase_us[phase] += microseconds_since(start);
+        if (!returned) {
             std::lock_guard lock(plugin->mutex);
             plugin->status = CMFM_STATUS_DISABLED;
             plugin->reason = "on_phase raised exception " + std::to_string(fault);
@@ -313,6 +509,9 @@ std::vector<PluginReport> Host::report() const {
         line.initialised = plugin->initialised;
         line.folder = plugin->folder;
         line.folder_real = plugin->folder_real;
+        line.load_us = plugin->load_us;
+        line.init_us = plugin->init_us;
+        line.phase_us = plugin->phase_us;
         {
             std::lock_guard lock(plugin->mutex);
             line.status = plugin->status;
