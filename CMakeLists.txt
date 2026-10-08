@@ -119,7 +119,7 @@ add_test(NAME launcher_failures
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_failures.cmake")
 set_tests_properties(launcher_injection launcher_failures PROPERTIES TIMEOUT 60)
 
-foreach(mode IN ITEMS 1 2 3)
+foreach(mode IN ITEMS 1 2 3 4)
     add_library(cmfm_fixture_${mode} SHARED tests/core_fixture.cpp)
     target_compile_definitions(cmfm_fixture_${mode} PRIVATE CMFM_FIXTURE_MODE=${mode})
     cmfm_project_target(cmfm_fixture_${mode})
@@ -141,6 +141,7 @@ foreach(mode IN ITEMS 1 2 3)
             "-DWORK=${CMAKE_BINARY_DIR}/launcher_core_failure_${mode}"
             "-DEXPECT_RESULT=${expected_result}"
             "-DEXPECT_CORE=${expected_core}"
+            "-DEXPECT_EXE_HASH_FAILURE=$<IF:$<EQUAL:${mode},4>,1,0>"
             -P "${CMAKE_SOURCE_DIR}/tests/launcher_continuation.cmake")
     set_tests_properties(launcher_core_failure_${mode} PROPERTIES TIMEOUT 45)
 endforeach()

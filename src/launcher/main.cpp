@@ -33,6 +33,20 @@ void notify(cmfm::LogFile& log, const std::wstring& message, UINT icon) {
 #endif
 }
 
+void log_exe_hash(cmfm::LogFile& log, const std::wstring& exe) noexcept {
+    // This is diagnostic data. Once the game is resumed, neither a read
+    // failure nor a logging/allocation exception may end the launcher early.
+    try {
+        const auto hash = cmfm::sha256_file(exe);
+        log.line(hash.empty() ? L"warning: exe SHA-256 unavailable; game continues" :
+                               L"exe_sha256=" + hash);
+    } catch (...) {
+        try {
+            log.line(L"warning: exe SHA-256 logging failed; game continues");
+        } catch (...) { /* Keep waiting for the game even if the log cannot be written. */ }
+    }
+}
+
 struct CreatedGame {
     cmfm::Handle process;
     cmfm::Handle thread;
@@ -321,11 +335,9 @@ DWORD launch() {
         if (core_real.empty() || core_native.empty()) fail(L"Resolve CMFM DLL file's real path");
         const CoreImage image(core_file.get());
         const auto bootstrap_rva = image.bootstrap_rva();
-        const auto exe_hash = cmfm::sha256_file(plan.exe);
         const auto dll_hash = cmfm::sha256_file(core_real);
-        if (exe_hash.empty() || dll_hash.empty()) fail(L"Hash game and CMFM DLL", ERROR_READ_FAULT);
+        if (dll_hash.empty()) fail(L"Hash CMFM DLL", ERROR_READ_FAULT);
         log.line(L"exe=" + cmfm::redact_profile(plan.exe, profile));
-        log.line(L"exe_sha256=" + exe_hash);
         log.line(L"dll=" + cmfm::redact_profile(core_real, profile));
         log.line(L"dll_sha256=" + dll_hash);
         log.line(L"game_path_source=" + plan.source);
@@ -388,6 +400,7 @@ DWORD launch() {
         log.line(L"before_create_qpc=" + std::to_wstring(before_create_qpc.QuadPart));
         log.line(L"resumed_qpc=" + std::to_wstring(resumed_qpc.QuadPart));
         log.line(L"game_resumed");
+        log_exe_hash(log, plan.exe);
         if (!confirmed) {
             notify(log, L"CMFM did not confirm startup. The game has been resumed without active CMFM.\n"
                         L"See the logs in the launcher's cmfm\\logs folder.", MB_ICONWARNING);

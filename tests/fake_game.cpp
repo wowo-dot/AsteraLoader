@@ -27,6 +27,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         log.line(L"arg=" + cmfm::quote_argument(argv[i]));
     }
     LocalFree(argv);
+    const auto delay = cmfm::environment(L"CMFM_FAKE_SLEEP_MS");
+    if (!delay.empty()) Sleep(static_cast<DWORD>(std::stoul(delay)));
     const auto code = cmfm::environment(L"CMFM_FAKE_EXIT");
     return code.empty() ? 37 : std::stoi(code);
 }
