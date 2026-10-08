@@ -14,3 +14,12 @@
 
 CMFM does not copy SPL's security-cookie reset. It verifies the normal CRT
 wrapper and lets the original cookie initializer run unchanged.
+- Stracker's Loader **977030295d4635d815259eaacf77969215d2b7a4**,
+  <https://github.com/Strackeror/MHW-QuestLoader>, MIT, Copyright (c) 2020
+  Remi Lavergne. `plugins/stracker_compat/loader_abi.h` reproduces its
+  `loader.h` declarations exactly (the ABI Stracker plugins import), and
+  `loader.cpp` follows its start-up, log texts and version pattern. Its `LOG`
+  class derives from BSD-2-Clause code, Copyright (c) 2018 Philipp
+  Kraehenbuehl. Both notices are in `notices/StrackerLoader-MIT.txt` and
+  `notices/StrackerLoader-log-BSD-2.txt` and installed with CMFM. No Stracker
+  binary is linked or shipped.

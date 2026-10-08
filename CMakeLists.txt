@@ -120,6 +120,41 @@ install(FILES LICENSE DESTINATION .)
 install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
 install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
+# Stracker's Loader compatibility, shipped with CMFM as a plugin:
+# cmfm/plugins/stracker_compat/stracker_compat.dll (the CMFM plugin) and
+# loader.dll beside it, which exports Stracker's exact ABI. Like Stracker's
+# loader.dll it is MSVC release with the static CRT (the project default):
+# Stracker plugins run their own inline operator<< on its std::stringstream.
+set(CMFM_STRACKER_DIST "${CMFM_DIST}/cmfm/plugins/stracker_compat")
+add_library(cmfm_stracker_logic STATIC
+    plugins/stracker_compat/stracker_logic.cpp
+    plugins/stracker_compat/stracker_logic.hpp)
+target_include_directories(cmfm_stracker_logic PUBLIC plugins/stracker_compat)
+cmfm_project_target(cmfm_stracker_logic)
+
+add_library(cmfm_stracker_loader SHARED
+    plugins/stracker_compat/loader.cpp
+    plugins/stracker_compat/loader_abi.h
+    plugins/stracker_compat/shim.h)
+target_link_libraries(cmfm_stracker_loader PRIVATE cmfm_stracker_logic)
+cmfm_project_target(cmfm_stracker_loader)
+set_target_properties(cmfm_stracker_loader PROPERTIES
+    OUTPUT_NAME loader
+    RUNTIME_OUTPUT_DIRECTORY "${CMFM_STRACKER_DIST}")
+
+add_library(cmfm_stracker_compat SHARED plugins/stracker_compat/stracker_compat.cpp)
+target_link_libraries(cmfm_stracker_compat PRIVATE cmfm_api)
+target_include_directories(cmfm_stracker_compat PRIVATE plugins/stracker_compat)
+cmfm_project_target(cmfm_stracker_compat)
+set_target_properties(cmfm_stracker_compat PROPERTIES
+    OUTPUT_NAME stracker_compat
+    RUNTIME_OUTPUT_DIRECTORY "${CMFM_STRACKER_DIST}")
+
+install(FILES "$<TARGET_FILE:cmfm_stracker_compat>" "$<TARGET_FILE:cmfm_stracker_loader>"
+    DESTINATION cmfm/plugins/stracker_compat)
+install(FILES third_party/notices/StrackerLoader-MIT.txt third_party/notices/StrackerLoader-log-BSD-2.txt
+    DESTINATION licences)
+
 # The smallest CMFM plugin, in C, as an example for plugin authors. It is not
 # part of the CMFM package: `cmake --install <build> --component examples`
 # stages it in its own mod layout, cmfm/plugins/hello/hello.dll.
@@ -199,6 +234,26 @@ cmfm_project_target(cmfm_example_hello_tests)
 add_dependencies(cmfm_example_hello_tests cmfm_hello)
 add_test(NAME example_hello
     COMMAND cmfm_example_hello_tests "$<TARGET_FILE:cmfm_hello>" "${CMAKE_BINARY_DIR}/example_hello")
+
+add_executable(cmfm_stracker_logic_tests tests/test_stracker_logic.cpp)
+target_link_libraries(cmfm_stracker_logic_tests PRIVATE cmfm_stracker_logic)
+cmfm_project_target(cmfm_stracker_logic_tests)
+add_test(NAME stracker_logic COMMAND cmfm_stracker_logic_tests)
+
+# A stand-in Stracker plugin that imports loader.dll, kept away from the shim.
+add_library(cmfm_stracker_plugin_fixture SHARED tests/stracker_plugin_fixture.cpp)
+target_link_libraries(cmfm_stracker_plugin_fixture PRIVATE cmfm_stracker_loader)
+target_include_directories(cmfm_stracker_plugin_fixture PRIVATE plugins/stracker_compat)
+cmfm_project_target(cmfm_stracker_plugin_fixture)
+set_target_properties(cmfm_stracker_plugin_fixture PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stracker_fixture/$<CONFIG>")
+add_executable(cmfm_stracker_shim_tests tests/test_stracker_shim.cpp)
+target_include_directories(cmfm_stracker_shim_tests PRIVATE plugins/stracker_compat)
+cmfm_project_target(cmfm_stracker_shim_tests)
+add_dependencies(cmfm_stracker_shim_tests cmfm_stracker_loader cmfm_stracker_plugin_fixture)
+add_test(NAME stracker_shim
+    COMMAND cmfm_stracker_shim_tests "$<TARGET_FILE:cmfm_stracker_loader>"
+        "$<TARGET_FILE:cmfm_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim")
 
 add_executable(cmfm_plugin_fault_tests tests/test_plugin_faults.cpp)
 target_link_libraries(cmfm_plugin_fault_tests PRIVATE cmfm_plugins)
