@@ -67,6 +67,10 @@ int wmain(int argc, wchar_t** argv) {
     std::ofstream(plugins / L"readme.txt") << "text";
     const auto record = work / L"record.txt";
     SetEnvironmentVariableW(L"CMFM_TEST_STRACKER_RECORD", record.c_str());
+    // The shim loads nativePC\plugins\<name> by Stracker's relative path. In the
+    // game Windows finds it through the exe's folder; this test exe lives
+    // elsewhere, so the current folder stands in for it.
+    SetCurrentDirectoryW(game.c_str());
 
     const auto displacement = static_cast<std::int32_t>(reinterpret_cast<std::intptr_t>(&g_planted_version) -
                                                         reinterpret_cast<std::intptr_t>(g_planted + 7));
@@ -122,6 +126,13 @@ int wmain(int argc, wchar_t** argv) {
     check(logged(1, "Found config file") && logged(3, "Found old dlls in game folder.") &&
           logged(3, "fixture alpha.dll sees game version test-421") && logged(0, "fixture debug line 42") &&
           logged(3, R"(Failed to load "nativePC\\plugins\\broken.dll")"), "lines sent to CMFM with levels");
+
+    // A leftover Stracker loader asks for the same relative path later: it
+    // must get the module already loaded, not a second copy.
+    const auto again_alpha = LoadLibraryW(L"nativePC\\plugins\\alpha.dll");
+    check(again_alpha && again_alpha == GetModuleHandleW((plugins / L"alpha.dll").c_str()) &&
+          read_file(record) == "!early.dll\nalpha.dll\nZeta.dll\n", "Stracker's relative load finds the plugin loaded");
+    if (again_alpha) FreeLibrary(again_alpha);
 
     // It runs once; Stracker's Initialize does nothing afterwards.
     cmfm_stracker_result again{};

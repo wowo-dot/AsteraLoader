@@ -292,12 +292,18 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
         try {
             loader::LOG(loader::INFO) << "Loading plugin " << shown;
         } catch (...) { /* A name the ANSI code page cannot hold; load it anyway. */ }
+        // Load by Stracker's relative path, which Windows resolves through the
+        // game exe's folder first, as Stracker does. Under MO2 the module is
+        // then recorded by its virtual path, so a leftover Stracker loader
+        // asking for the same path finds it loaded instead of mapping a
+        // second copy (a full virtual path is recorded by the real one).
+        //
         // A damaged DLL would make Windows show a "Bad Image" box and wait for
         // a click; the failure is reported through CMFM instead. Only this
         // thread's error mode changes, and only while it loads the plugin.
         DWORD previous_mode = 0;
         const bool quiet = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &previous_mode);
-        const HMODULE plugin = LoadLibraryW((folder + L"\\" + name).c_str());
+        const HMODULE plugin = LoadLibraryW((L"nativePC\\plugins\\" + name).c_str());
         const DWORD error = GetLastError();
         if (quiet) SetThreadErrorMode(previous_mode, nullptr);
         if (plugin) {
