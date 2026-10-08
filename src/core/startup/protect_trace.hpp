@@ -19,7 +19,7 @@ struct ProtectCall {
     unsigned state = 0;
     bool success = false;
     bool old_available = false;
-    bool from_stub = false;
+    bool from_bind = false;
     bool covers_text = false;
     bool executable_read = false;
 };

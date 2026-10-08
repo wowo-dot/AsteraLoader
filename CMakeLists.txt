@@ -226,6 +226,16 @@ add_test(NAME startup_phase
         "-DWORK=${CMAKE_BINARY_DIR}/startup_phase"
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_phase PROPERTIES TIMEOUT 45)
+add_test(NAME startup_helper_transition
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DWORK=${CMAKE_BINARY_DIR}/startup_helper_transition"
+        -DEXPECT_HELPER=1
+        -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
+set_tests_properties(startup_helper_transition PROPERTIES TIMEOUT 45)
 add_test(NAME startup_trace_overflow
     COMMAND "${CMAKE_COMMAND}"
         "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"

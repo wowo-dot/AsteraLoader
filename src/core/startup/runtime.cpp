@@ -324,7 +324,7 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
     const auto access = protection & 0xff;
     const bool executable_read = !(protection & (PAGE_GUARD | PAGE_NOACCESS)) &&
                                  (access == PAGE_EXECUTE_READ || access == PAGE_EXECUTE);
-    const bool from_stub = caller >= base + bind.rva && caller - (base + bind.rva) < bind.size;
+    const bool from_bind = caller >= base + bind.rva && caller - (base + bind.rva) < bind.size;
     const bool covers_text = start <= base + text.rva && size >= (base + text.rva - start) + text.size;
     if (ticket < ProtectTrace::limit) {
         LARGE_INTEGER end{};
@@ -342,12 +342,15 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
         call.last_error = last_error;
         call.state = static_cast<unsigned>(g_runtime->state.load());
         call.success = result != FALSE;
-        call.from_stub = from_stub;
+        call.from_bind = from_bind;
         call.covers_text = covers_text;
         call.executable_read = executable_read;
         g_runtime->trace.publish(ticket, call);
     }
-    if (result && executable_read && from_stub && covers_text) {
+    // Run pre-main-2 restored .text from a temporary private allocation, not
+    // .bind. Caller identity is diagnostic only: the complete executable range
+    // and unique CRT wrapper/cookie/common-main signatures verify readiness.
+    if (result && executable_read && covers_text) {
         auto expected = State::waiting;
         if (g_runtime->state.compare_exchange_strong(expected, State::resolving)) {
             try {
@@ -438,7 +441,7 @@ void drain_trace(std::array<bool, ProtectTrace::limit>& reported, std::size_t& c
                 L"] size=" + hex(call.size) + L" new=" + hex(call.protection) +
                 L" old=" + (call.old_available ? hex(call.old_protection) : L"unavailable") +
                 L" result=" + std::to_wstring(call.success) + L" last_error=" + std::to_wstring(call.last_error) +
-                L" state=" + std::to_wstring(call.state) + L" from_bind=" + std::to_wstring(call.from_stub) +
+                L" state=" + std::to_wstring(call.state) + L" from_bind=" + std::to_wstring(call.from_bind) +
                 L" covers_text=" + std::to_wstring(call.covers_text) + L" executable_read=" + std::to_wstring(call.executable_read));
         } catch (...) { write(L"warning: startup VirtualProtect record formatting failed"); }
     }

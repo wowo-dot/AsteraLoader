@@ -1,7 +1,7 @@
 # PRE_MAIN in the real game (2026-10-09)
 
 Results for the PRE_MAIN phase described in `../handoff-pre-main-20261008.md`.
-Measured facts come from run `pre-main-1` and read-only reads of the exe
+Measured facts come from runs `pre-main-1`, `pre-main-2` and read-only reads of the exe
 (c2ebbbd2…); everything else is labelled.
 
 ## Run pre-main-1 (confirmed)
@@ -38,6 +38,52 @@ The bootstrap lines have no timestamps, so what fills its 70 ms is not
 measured. The exe hash finished on its background thread 224 ms after
 create.
 
+## Run pre-main-2 (confirmed)
+
+Same MO2 setup, core 89fcfaf, retained launcher 6591057. PID 18668 exited with
+code 0. The watcher captured 159 modules with no torn or suspect polls; overlay
+and the MO2 DLSS/Stracker files loaded normally. PRE_MAIN was again skipped
+after the deadline. This run used the diagnostic build installed in MO2.
+
+The trace identifies a rejected transition, so the next change can be specific:
+
+| Record | Caller | Target | Size | Protection | Filters |
+|---|---|---|---|---|---|
+| 129 | `0x180004ca6`, private allocation | game `.text`, RVA `0x1000` | `0x2e12000` | execute/read → read/write | covers text, caller outside `.bind` |
+| 130 | `0x180004d3e`, unmapped when reported later | same | same | read/write → execute/read | covers text, executable/read, caller outside `.bind` |
+
+Both API calls succeeded on thread 64348. Record 130 occurred 578.646 ms after
+resume and passed every transition filter except `from_bind`. Four earlier
+calls from `.bind` changed protections in the `0x180000000` allocation. This
+is consistent with a temporary startup helper; its exact implementation was
+not inspected. The actual CRT signature at record 130 is still unverified:
+the old caller filter prevented that scan from running.
+
+The observer saw 556 calls, recorded the first 256, truncated 300 and had zero
+pending records. Retained calls span 6.830–668.549 ms after resume. The two
+full-text transitions are within the retained portion; claims about later
+calls cannot be made from this trace. Caller metadata resolved later can be
+unavailable after unload, as record 130 demonstrates.
+
+Timing now localizes the startup pause:
+
+| Interval | pre-main-2 |
+|---|---:|
+| launcher start → before CreateProcess | 1.513 ms |
+| before CreateProcess → resume | 89.889 ms |
+| bootstrap entry → resume | 72.942 ms |
+| synchronous DLL hash checkpoints | 0.997 ms |
+| observer created → observer armed (covers MinHook enable) | 70.573 ms |
+
+Most bootstrap time is in the interval that enables the observer, rather than
+hashing. That is a measurement of this run, not an explanation of MinHook's
+internal delay. The background EXE hash finished 221.716 ms after the
+before-CreateProcess checkpoint.
+
+The run is sealed under `local/runs/pre-main-2` with both CMFM logs, module
+report and `trace-analysis.json`. The tested diagnostic source is tagged
+`v0.1.0-dev.2`.
+
 ## The exe on disk (confirmed, read-only)
 
 - `.text` is encrypted on disk: entropy 8.00 in every 64 KiB block, and none
@@ -50,10 +96,17 @@ create.
 
 ## Next
 
-Repeat the same launch setup with the diagnostic build described below.
-PRE_MAIN in the real game remains unverified until that run is analysed.
+Remove caller-section identity from acceptance: a successful protection change
+covering the whole `.text` to execute/read triggers the existing guarded,
+unique CRT-wrapper/cookie/common-main signature check. Caller location remains
+diagnostic. No startup-helper instructions or protections are changed by CMFM.
+A stand-in helper outside `.bind` checks that this transition dispatches
+PRE_MAIN once and preserves the cookie/common-main/wrapper invariants. Repeat
+the same MO2 launch after the fix; matching the real game's CRT remains unverified.
+All 19 Release CTest cases passed after this change. The core still imports
+only KERNEL32; private bootstrap and public plugin ABIs are unchanged.
 
-## Diagnostic build for the repeat run (prepared, untested in game)
+## Diagnostic build used in pre-main-2
 
 The observer records the first 256 `VirtualProtect` calls while armed, including
 rejected calls. Each record has entry/return QPC timestamps, thread ID, caller

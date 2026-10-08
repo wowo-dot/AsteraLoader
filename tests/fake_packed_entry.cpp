@@ -43,6 +43,14 @@ extern "C" __declspec(dllexport) BOOL cmfm_test_startup_restored() {
     return entry[0] == 0x48 && entry[1] == 0x83 && entry[2] == 0xec && entry[3] == 0x28 && entry[4] == 0xe8;
 }
 
+// Model the observed transition's caller outside .bind using original test
+// code. This helper is in .text and is called before the stand-in's CRT.
+__declspec(noinline) BOOL helper_transition(void* text, SIZE_T size) {
+    DWORD old = 0, scratch = 0;
+    return VirtualProtect(text, size, PAGE_EXECUTE_READWRITE, &old) &&
+           VirtualProtect(text, size, old, &scratch);
+}
+
 #pragma code_seg(push, ".bind")
 extern "C" void cmfm_test_packed_entry() {
     const auto* base = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
@@ -55,6 +63,8 @@ extern "C" void cmfm_test_packed_entry() {
     for (unsigned i = 0; i < sizeof(g_common_before); ++i) g_common_before[i] = g_common[i];
     wchar_t skip[2]{};
     const bool skip_transition = GetEnvironmentVariableW(L"CMFM_FAKE_SKIP_TRANSITION", skip, 2) != 0;
+    wchar_t helper[2]{};
+    const bool use_helper = GetEnvironmentVariableW(L"CMFM_FAKE_HELPER_TRANSITION", helper, 2) != 0;
     DWORD invalid_old = 0x12345678;
     if (VirtualProtect(nullptr, 0, PAGE_READONLY, &invalid_old) || invalid_old != 0x12345678) ExitProcess(96);
     const auto invalid_error = GetLastError();
@@ -77,8 +87,10 @@ extern "C" void cmfm_test_packed_entry() {
             section[i].Name[3] == 'x' && section[i].Name[4] == 't' && section[i].Name[5] == 0) {
             auto* text = const_cast<std::uint8_t*>(base + section[i].VirtualAddress);
             DWORD old = 0, scratch = 0;
-            if (!VirtualProtect(text, section[i].Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &old) ||
-                !VirtualProtect(text, section[i].Misc.VirtualSize, old, &scratch)) ExitProcess(95);
+            if (use_helper) {
+                if (!helper_transition(text, section[i].Misc.VirtualSize)) ExitProcess(95);
+            } else if (!VirtualProtect(text, section[i].Misc.VirtualSize, PAGE_EXECUTE_READWRITE, &old) ||
+                       !VirtualProtect(text, section[i].Misc.VirtualSize, old, &scratch)) ExitProcess(95);
             break;
         }
     }

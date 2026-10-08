@@ -14,7 +14,9 @@ For a packed entry in `.bind`, CMFM temporarily observes the existing Windows
 `VirtualProtect` API. The observer calls the original first and preserves its
 arguments, return value, old-protection output and last-error value. Only a
 successful transition of the main image's entire `.text` to executable,
-non-writable memory, called from `.bind`, triggers a signature scan. It does
+non-writable memory triggers a signature scan. Caller location is diagnostic
+only: run `pre-main-2` captured the relevant transition from a temporary helper
+outside `.bind`, which the original caller filter incorrectly rejected. It does
 not hook any SteamStub instruction or change protection requests or results.
 
 The scan requires one unique MSVC startup wrapper: a relative call to a
@@ -76,13 +78,19 @@ unchanged common-main code, restored CRT wrapper, and the actual background
 EXE hash reaching the plugin host. A second test omits the transition and
 verifies that no plugin is called, the observer is removed after its deadline,
 and the stand-in still exits with code 37.
+Another test makes the transition from an original helper outside `.bind` and
+verifies the same main-thread delivery and restoration invariants. Trace tests
+cover failed calls, concurrent publication, overflow and a valid transition
+after the trace cap. All 19 Release CTest cases pass.
 
 Other tests cover signature ambiguity/bounds/mutation, reserved names, bad
 metadata and callback exceptions, C/C++ ABI layouts, manifests/order, launcher
 confirmation/argument handling/exit codes, and suspended-child cleanup.
 
-The real MHW protection-transition sequence and startup-wrapper match are
-**not yet measured for this implementation**. A first MO2 run should use the
+The real MHW protection-transition sequence is measured in `pre-main-2`:
+the whole `.text` changes read/write to execute/read from a temporary allocation.
+The CRT signature at that point is **not yet verified**; the caller-independent
+fix needs another user run. See `research/pre-main.md`. That run should use the
 existing `cmfm` profile and `CMFM Launcher`, no force-load, overlay on, and no
 newly enabled mods or fixture plugins. Prepare its run folder and build first;
 the user launches and closes the game. Check:
