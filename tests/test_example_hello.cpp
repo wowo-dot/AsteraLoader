@@ -30,7 +30,7 @@ int wmain(int argc, wchar_t** argv) {
     log << file.rdbuf();
     const auto text = log.str();
     bool logged = true;
-    for (const auto part : {" INFO hello 0.1.0 initialised on thread ", "(CMFM API 1.0)",
+    for (const auto part : {" INFO hello 0.1.0 initialised on thread ", "(CMFM API 1.1)",
                             " INFO folder as the game sees it: ", " INFO folder resolved through a file handle: ",
                             " INFO this DLL: ", " INFO phase 0 on thread ", " INFO game exe as the game sees it: "}) {
         if (text.find(part) == std::string::npos) {

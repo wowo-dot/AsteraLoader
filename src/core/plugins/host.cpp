@@ -138,7 +138,16 @@ void CMFM_CALL api_set_status(cmfm_plugin_t* self, cmfm_status_t status, const c
     } catch (...) { /* Never throw into a plugin. */ }
 }
 
-const cmfm_api_t kApi{sizeof(cmfm_api_t), CMFM_API_VERSION, api_log, api_set_status};
+// Placeholders until the interface registry lands: nothing to get or publish.
+const void* CMFM_CALL api_get_interface(cmfm_plugin_t*, const char*, uint32_t) noexcept {
+    return nullptr;
+}
+cmfm_result_t CMFM_CALL api_publish_interface(cmfm_plugin_t*, const char*, uint32_t, const void*) noexcept {
+    return CMFM_ERROR;
+}
+
+const cmfm_api_t kApi{sizeof(cmfm_api_t), CMFM_API_VERSION, api_log, api_set_status, api_get_interface,
+                      api_publish_interface};
 
 void refuse(cmfm_plugin_t& plugin, std::string reason) {
     if (plugin.module && !plugin.initialised) {

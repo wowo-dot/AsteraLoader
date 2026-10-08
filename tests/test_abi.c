@@ -8,8 +8,8 @@ static const cmfm_plugin_info_t info = {
 };
 
 int main(void) {
-    return info.api_version == CMFM_MAKE_VERSION(1, 0) && CMFM_VERSION_MAJOR(info.api_version) == 1 &&
-                   CMFM_VERSION_MINOR(info.api_version) == 0
+    return info.api_version == CMFM_MAKE_VERSION(1, 1) && CMFM_VERSION_MAJOR(info.api_version) == 1 &&
+                   CMFM_VERSION_MINOR(info.api_version) == 1
                ? 0
                : 1;
 }

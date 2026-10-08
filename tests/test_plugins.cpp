@@ -61,14 +61,14 @@ void manifests() {
     check(accepted(info, L"SAMPLE"), "folder name case does not matter");
     check(contains(refusal(nullptr), "returned nothing"), "null info refused");
 
-    info.size = sizeof(info) - 8;
+    info.size = 64;  // smaller than API 1.0's 72 bytes
     check(contains(refusal(&info), "bytes"), "short info refused");
     info.size = sizeof(info);
 
     info.api_version = CMFM_MAKE_VERSION(2, 0);
-    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.0. Update CMFM."), "newer major");
-    info.api_version = CMFM_MAKE_VERSION(1, 1);
-    check(contains(refusal(&info), "needs CMFM API 1.1"), "newer minor refused");
+    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.1. Update CMFM."), "newer major");
+    info.api_version = CMFM_MAKE_VERSION(1, 2);
+    check(contains(refusal(&info), "needs CMFM API 1.2"), "newer minor refused");
     info.api_version = CMFM_MAKE_VERSION(0, 9);
     check(contains(refusal(&info), "no longer supports"), "older major refused");
     info.api_version = CMFM_API_VERSION;
@@ -128,6 +128,86 @@ std::vector<std::string> sequence(const std::vector<cmfm::plugins::Manifest>& pl
     return names;
 }
 
+void versions() {
+    using cmfm::plugins::compare_versions;
+    using cmfm::plugins::parse_version;
+    using V = std::vector<std::uint32_t>;
+    check(parse_version("0.14.0") == V{0, 14, 0} && parse_version("v1.2") == V{1, 2} &&
+          parse_version("0.14.0-beta") == V{0, 14, 0} && parse_version("2+build 7") == V{2} &&
+          parse_version("421810") == V{421810}, "readable versions");
+    for (const char* bad : {"", "v", "beta", ".1", "1.", "1..2", "1.x", "1_2", "99999999999"}) {
+        check(!parse_version(bad), bad);
+    }
+    check(compare_versions(V{1, 2}, V{1, 2, 0}) == 0 && compare_versions(V{1, 2}, V{1, 10}) < 0 &&
+          compare_versions(V{2}, V{1, 99}) > 0, "comparison, missing parts are 0");
+}
+
+void dependencies() {
+    // A plugin built for API 1.0 ends before `dependencies`: still accepted.
+    auto info = info_named("sample");
+    info.api_version = CMFM_MAKE_VERSION(1, 0);
+    info.size = 72;
+    const cmfm_dependency_t never_read[] = {{"invalid name!", nullptr}, {nullptr, nullptr}};
+    info.dependencies = never_read;
+    cmfm::plugins::Manifest manifest;
+    std::string reason;
+    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.empty(),
+          "API 1.0 plugin accepted, dependencies not read");
+
+    info = info_named("sample");
+    const cmfm_dependency_t needs[] = {{"provider", "0.2"}, {"other", nullptr}, {nullptr, nullptr}};
+    info.dependencies = needs;
+    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.size() == 2 &&
+          manifest.dependencies[0].name == "provider" && manifest.dependencies[0].min_version == "0.2" &&
+          manifest.dependencies[1].min_version.empty(), "dependencies read");
+    const cmfm_dependency_t bad_name[] = {{"Bad Name", nullptr}, {nullptr, nullptr}};
+    info.dependencies = bad_name;
+    check(contains(refusal(&info), "invalid name"), "dependency name checked");
+    const cmfm_dependency_t bad_version[] = {{"provider", "latest"}, {nullptr, nullptr}};
+    info.dependencies = bad_version;
+    check(contains(refusal(&info), "unreadable version \"latest\""), "dependency version checked");
+    std::vector<cmfm_dependency_t> endless(65, cmfm_dependency_t{"x", nullptr});
+    info.dependencies = endless.data();
+    check(contains(refusal(&info), "dependency list has no end"), "unterminated dependency list");
+}
+
+cmfm::plugins::Manifest needing(std::string name, std::string version, std::vector<cmfm::plugins::Dependency> deps) {
+    cmfm::plugins::Manifest manifest;
+    manifest.name = std::move(name);
+    manifest.version = std::move(version);
+    manifest.dependencies = std::move(deps);
+    return manifest;
+}
+
+void dependency_checks() {
+    using cmfm::plugins::check_dependencies;
+    const std::vector<cmfm::plugins::Manifest> plugins{
+        needing("provider", "0.3.1", {}),
+        needing("ok", "1", {{"provider", "0.3"}, {"ok", ""}}),
+        needing("too_old", "1", {{"provider", "0.4"}}),
+        needing("absent", "1", {{"ghost", "2.0"}}),
+        needing("refused_dep", "1", {{"broken", ""}}),
+        needing("cascade", "1", {{"too_old", ""}}),
+        needing("odd_version", "1", {{"weird", "1.0"}}),
+        needing("weird", "nightly", {}),
+    };
+    const auto refusals = check_dependencies(plugins, {{"broken", "its name is not a valid plugin name"}});
+    std::vector<std::string> reasons(plugins.size());
+    for (const auto& refusal : refusals) reasons[refusal.index] = refusal.reason;
+    check(reasons[0].empty() && reasons[1].empty() && reasons[7].empty(), "met dependencies, self ignored");
+    check(reasons[2] == "it needs provider 0.4 or newer; 0.3.1 is installed", "too old");
+    check(reasons[3] == "it needs ghost 2.0, which is not installed", "not installed");
+    check(reasons[4] == "it needs broken, which will not run", "dependency refused at load");
+    check(reasons[5] == "it needs too_old, which will not run", "refusal cascades");
+    check(reasons[6] == "it needs weird 1.0, but weird's version \"nightly\" cannot be compared", "uncomparable");
+    check(refusals.size() == 5, "five refusals");
+
+    // Dependencies also order the start: provider before ok, though ok sorts first.
+    const auto order = cmfm::plugins::resolve_load_order({needing("ok", "1", {{"zprovider", ""}}),
+                                                          needing("zprovider", "1", {})});
+    check(order.sequence == std::vector<std::size_t>{1, 0}, "dependency starts first");
+}
+
 void load_order() {
     using Names = std::vector<std::string>;
     std::vector<cmfm::plugins::Manifest> plugins{
@@ -169,6 +249,9 @@ int main() {
     names();
     manifests();
     exe_hashes();
+    versions();
+    dependencies();
+    dependency_checks();
     load_order();
     if (failures) {
         std::cerr << failures << " plugin check(s) failed\n";

@@ -2,6 +2,8 @@
 
 #include "common/log_file.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <type_traits>
 
@@ -11,6 +13,9 @@ namespace {
 // static data cannot make CMFM read without end.
 constexpr std::size_t kMaxText = 256;
 constexpr std::size_t kMaxList = 64;
+// API 1.0 plugins have the info struct up to on_phase; dependencies is 1.1.
+constexpr std::size_t kInfoSize10 = offsetof(cmfm_plugin_info_t, dependencies);
+constexpr std::size_t kInfoSize11 = offsetof(cmfm_plugin_info_t, dependencies) + sizeof(void*);
 
 bool name_char(unsigned c) {
     return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
@@ -57,6 +62,36 @@ std::string version_text(std::uint32_t version) {
 }
 }  // namespace
 
+std::optional<std::vector<std::uint32_t>> parse_version(std::string_view text) {
+    std::size_t i = (!text.empty() && (text[0] == 'v' || text[0] == 'V')) ? 1 : 0;
+    std::vector<std::uint32_t> parts;
+    for (;;) {
+        std::uint64_t number = 0;
+        std::size_t digits = 0;
+        while (i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 10) {
+            number = number * 10 + static_cast<std::uint64_t>(text[i++] - '0');
+            ++digits;
+        }
+        if (!digits || number > 0xFFFFFFFFull) return std::nullopt;
+        parts.push_back(static_cast<std::uint32_t>(number));
+        if (i == text.size()) return parts;
+        if (text[i] == '.' && parts.size() < 8) {
+            ++i;
+            continue;
+        }
+        if (text[i] == '-' || text[i] == '+' || text[i] == ' ') return parts;
+        return std::nullopt;
+    }
+}
+
+int compare_versions(const std::vector<std::uint32_t>& a, const std::vector<std::uint32_t>& b) {
+    for (std::size_t k = 0; k < std::max(a.size(), b.size()); ++k) {
+        const auto x = k < a.size() ? a[k] : 0u, y = k < b.size() ? b[k] : 0u;
+        if (x != y) return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
 bool valid_name(std::string_view name) { return valid_name_of(name); }
 bool valid_name(std::wstring_view name) { return valid_name_of(name); }
 
@@ -67,9 +102,9 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
         reason = "cmfm_plugin_info returned nothing";
         return false;
     }
-    if (info->size < sizeof(cmfm_plugin_info_t)) {
+    if (info->size < kInfoSize10) {
         reason = "its plugin info is " + std::to_string(info->size) + " bytes, expected at least " +
-                 std::to_string(sizeof(cmfm_plugin_info_t));
+                 std::to_string(kInfoSize10);
         return false;
     }
     const auto api = info->api_version;
@@ -115,6 +150,28 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
         !read_list(info->exe_sha256, out.exe_sha256)) {
         reason = "one of its name lists has no NULL end within " + std::to_string(kMaxList) + " entries";
         return false;
+    }
+
+    // API 1.1: plugins this one requires. A 1.0 plugin's struct ends before them.
+    if (info->size >= kInfoSize11 && info->dependencies) {
+        std::size_t count = 0;
+        for (const auto* entry = info->dependencies; entry->name; ++entry) {
+            if (++count > kMaxList) {
+                reason = "its dependency list has no end within " + std::to_string(kMaxList) + " entries";
+                return false;
+            }
+            Dependency dependency{text(entry->name, CMFM_NAME_MAX + 1), text(entry->min_version)};
+            if (!valid_name(dependency.name)) {
+                reason = "it depends on a plugin with an invalid name";
+                return false;
+            }
+            if (!dependency.min_version.empty() && !parse_version(dependency.min_version)) {
+                reason = "its dependency on " + dependency.name + " has an unreadable version \"" +
+                         dependency.min_version + "\"";
+                return false;
+            }
+            out.dependencies.push_back(std::move(dependency));
+        }
     }
 
     if (!out.exe_sha256.empty()) {

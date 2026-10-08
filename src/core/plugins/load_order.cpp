@@ -62,6 +62,54 @@ private:
 };
 }  // namespace
 
+std::vector<LoadOrder::Refusal> check_dependencies(const std::vector<Manifest>& plugins,
+                                                   const std::vector<Unavailable>& unavailable) {
+    std::map<std::string, std::size_t> by_name;
+    for (std::size_t i = 0; i < plugins.size(); ++i) by_name.emplace(plugins[i].name, i);
+    std::map<std::string, std::string> missing;  // name -> why it will not run
+    for (const auto& entry : unavailable) missing.emplace(lower(entry.name), entry.reason);
+
+    std::vector<std::string> refusals(plugins.size());
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (std::size_t i = 0; i < plugins.size(); ++i) {
+            if (!refusals[i].empty()) continue;
+            for (const auto& dependency : plugins[i].dependencies) {
+                const auto name = lower(dependency.name);
+                if (name == plugins[i].name) continue;
+                const auto wanted = dependency.min_version.empty() ? std::string() : " " + dependency.min_version;
+                std::string reason;
+                const auto found = by_name.find(name);
+                if (found == by_name.end()) {
+                    reason = missing.count(name) ? "it needs " + name + ", which will not run"
+                                                 : "it needs " + name + wanted + ", which is not installed";
+                } else if (!refusals[found->second].empty()) {
+                    reason = "it needs " + name + ", which will not run";
+                } else if (!dependency.min_version.empty()) {
+                    const auto& installed = plugins[found->second].version;
+                    const auto have = parse_version(installed);
+                    if (!have) {
+                        reason = "it needs " + name + wanted + ", but " + name + "'s version \"" + installed +
+                                 "\" cannot be compared";
+                    } else if (compare_versions(*have, *parse_version(dependency.min_version)) < 0) {
+                        reason = "it needs " + name + wanted + " or newer; " + installed + " is installed";
+                    }
+                }
+                if (!reason.empty()) {
+                    refusals[i] = std::move(reason);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+    std::vector<LoadOrder::Refusal> result;
+    for (std::size_t i = 0; i < plugins.size(); ++i) {
+        if (!refusals[i].empty()) result.push_back({i, std::move(refusals[i])});
+    }
+    return result;
+}
+
 LoadOrder resolve_load_order(const std::vector<Manifest>& plugins) {
     LoadOrder result;
     const auto count = plugins.size();
@@ -84,6 +132,10 @@ LoadOrder resolve_load_order(const std::vector<Manifest>& plugins) {
         if (!active[i]) continue;
         for (const auto& name : plugins[i].load_after) {
             const auto j = find(name);
+            if (j != count && j != i) next[j].insert(i);
+        }
+        for (const auto& dependency : plugins[i].dependencies) {
+            const auto j = find(dependency.name);
             if (j != count && j != i) next[j].insert(i);
         }
         for (const auto& name : plugins[i].load_before) {
