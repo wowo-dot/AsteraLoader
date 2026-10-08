@@ -3,6 +3,7 @@
 #include "common/sha256.hpp"
 #include "common/startup.hpp"
 #include "common/windows.hpp"
+#include "core/startup/runtime.hpp"
 
 #include <windows.h>
 
@@ -43,9 +44,13 @@ DWORD WINAPI log_exe_hash(void*) noexcept {
         const auto hash = cmfm::sha256_file(cmfm::module_path());
         LARGE_INTEGER done{};
         QueryPerformanceCounter(&done);
-        log_line(hash.empty() ? L"warning: exe SHA-256 unavailable" : L"exe_sha256=" + hash);
-        log_line(L"exe_sha256_qpc=" + std::to_wstring(done.QuadPart));
+        try {
+            log_line(hash.empty() ? L"warning: exe SHA-256 unavailable" : L"exe_sha256=" + hash);
+            log_line(L"exe_sha256_qpc=" + std::to_wstring(done.QuadPart));
+        } catch (...) { /* The plugin hash result is independent of log writes. */ }
+        cmfm::startup::publish_hash_result(hash);
     } catch (...) {
+        cmfm::startup::publish_hash_result({});
         try {
             log_line(L"warning: exe SHA-256 logging failed");
         } catch (...) { /* Nothing left to report to. */ }
@@ -60,6 +65,7 @@ void start_exe_hash() {
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
                             reinterpret_cast<LPCWSTR>(&log_exe_hash), &self)) {
         log_line(L"warning: exe SHA-256 not started: " + cmfm::win32_error_text(GetLastError()));
+        cmfm::startup::publish_hash_result({});
         return;
     }
     cmfm::Handle thread(CreateThread(nullptr, 0, log_exe_hash, nullptr, 0, nullptr));
@@ -67,6 +73,7 @@ void start_exe_hash() {
         const DWORD code = GetLastError();
         FreeLibrary(self);
         log_line(L"warning: exe SHA-256 not started: " + cmfm::win32_error_text(code));
+        cmfm::startup::publish_hash_result({});
     }
 }
 
@@ -127,13 +134,15 @@ DWORD startup(const cmfm::StartupRequest* request) {
                  (module ? cmfm::redact_profile(cmfm::module_path(module), profile) : L"absent"));
     }
     log_line(L"MO2 profile and force-load: record in the run manifest; not inferred here");
-    log_line(L"CMFM plugins loaded: none (startup proof only)");
-    log_line(L"startup_confirmed; no game hooks installed");
+    log_line(L"CMFM plugins deferred until verified PRE_MAIN");
+    log_line(L"startup_confirmed; game startup phase not yet entered");
     {
         LogLock lock;
         if (!g_log.good()) return ERROR_WRITE_FAULT;
     }
+    cmfm::startup::initialise_hash_result();
     start_exe_hash();
+    cmfm::startup::arm_pre_main(g_module, folder, log_line);
     return cmfm::kStartupOk;
 }
 }  // namespace

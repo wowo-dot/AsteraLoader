@@ -4,6 +4,7 @@
 #include "common/paths.hpp"
 #include "common/windows.hpp"
 #include "core/plugins/discovery.hpp"
+#include "core/plugins/guard.hpp"
 #include "core/plugins/load_order.hpp"
 #include "core/plugins/manifest.hpp"
 
@@ -153,6 +154,20 @@ void refuse(cmfm_plugin_t& plugin, std::string reason) {
 // loading does not depend on how MO2 maps the folder. The plugin's folder is
 // searched for its own DLLs; the process DLL search path is left alone.
 bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view exe_sha256, std::string& reason) {
+    // Do not bind a CMFM plugin to a DLL name already owned by the process.
+    // Reserve proxy/framework names even if that module has not loaded yet.
+    const auto base_name = candidate.name + L".dll";
+    for (const auto reserved : {L"cmfm", L"loader", L"dinput8", L"winmm", L"dxgi", L"d3d12",
+                               L"kernel32", L"kernelbase", L"ntdll", L"steam_api64", L"steamclient64", L"usvfs_x64"}) {
+        if (iequals(candidate.name, reserved)) {
+            reason = "its DLL name is reserved for the game, Windows or another loader";
+            return false;
+        }
+    }
+    if (GetModuleHandleW(base_name.c_str())) {
+        reason = "a DLL with that name is already loaded; refusing a module-name collision";
+        return false;
+    }
     std::wstring dll_real;
     {
         Handle file(CreateFileW(candidate.dll.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
@@ -180,7 +195,10 @@ bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view e
         reason = "it is not a CMFM plugin (no cmfm_plugin_info and cmfm_plugin_init exports)";
         return false;
     }
-    return read_manifest(info(), plugin.name, exe_sha256, plugin.manifest, reason);
+    unsigned long fault = 0;
+    const auto valid = guarded_manifest(info, plugin.name, exe_sha256, plugin.manifest, reason, fault);
+    if (fault) reason = "cmfm_plugin_info or its metadata raised exception " + std::to_string(fault);
+    return valid;
 }
 
 void initialise(cmfm_plugin_t& plugin) {
@@ -192,7 +210,14 @@ void initialise(cmfm_plugin_t& plugin) {
     }
     // From here on CMFM never unloads the plugin, whatever init returns.
     plugin.initialised = true;
-    const auto result = plugin.init(&kApi, &plugin.init_block);
+    cmfm_result_t result = CMFM_ERROR;
+    unsigned long fault = 0;
+    if (!guarded_init(plugin.init, &kApi, &plugin.init_block, result, fault)) {
+        std::lock_guard lock(plugin.mutex);
+        plugin.status = CMFM_STATUS_DISABLED;
+        plugin.reason = "cmfm_plugin_init raised exception " + std::to_string(fault);
+        return;
+    }
     if (result == CMFM_OK) return;
     std::lock_guard lock(plugin.mutex);
     plugin.status = CMFM_STATUS_DISABLED;
@@ -253,7 +278,12 @@ void Host::dispatch(cmfm_phase_t phase, const void* data) {
             std::lock_guard lock(plugin->mutex);
             if (plugin->status == CMFM_STATUS_DISABLED) continue;
         }
-        plugin->manifest.on_phase(plugin.get(), phase, data);
+        unsigned long fault = 0;
+        if (!guarded_phase(plugin->manifest.on_phase, plugin.get(), phase, data, fault)) {
+            std::lock_guard lock(plugin->mutex);
+            plugin->status = CMFM_STATUS_DISABLED;
+            plugin->reason = "on_phase raised exception " + std::to_string(fault);
+        }
     }
 }
 

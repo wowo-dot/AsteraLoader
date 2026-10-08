@@ -4,6 +4,9 @@
 
 #include <windows.h>
 
+#include <bit>
+#include <cstdint>
+
 #include <string>
 
 #ifdef FIXTURE_NO_EXPORTS
@@ -41,7 +44,20 @@ bool ends_with(const wchar_t* path, const wchar_t* tail) {
 }
 
 void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
+#ifdef FIXTURE_NATIVE_PHASE
+    RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+#endif
     record(std::string(FIXTURE_NAME) + " phase " + std::to_string(phase));
+#ifdef FIXTURE_RUNTIME
+    using Check = BOOL(*)();
+    const auto module = GetModuleHandleW(nullptr);
+    const auto cookie = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_cookie_unchanged"));
+    const auto common = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_common_unchanged"));
+    const auto restored = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_startup_restored"));
+    record(std::string(FIXTURE_NAME) + " phase_thread " + std::to_string(GetCurrentThreadId()));
+    record(cookie && cookie() && common && common() && restored && restored() ?
+           "startup-state-preserved" : "startup-state-changed");
+#endif
 }
 
 #ifdef FIXTURE_AFTER
@@ -71,11 +87,21 @@ const cmfm_plugin_info_t info = {
 }  // namespace
 
 extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
+#ifdef FIXTURE_FAULT_INFO
+    return reinterpret_cast<const cmfm_plugin_info_t*>(std::uintptr_t{1});
+#else
     return &info;
+#endif
 }
 
 extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api,
                                                                       const cmfm_init_t* init) {
+#ifdef FIXTURE_NATIVE_INIT
+    RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+#endif
+#ifdef FIXTURE_THROW_INIT
+    if (GetCurrentProcessId() != 0) throw 1;
+#endif
     const bool paths = init->size == sizeof(cmfm_init_t) && ends_with(init->folder, L"" FIXTURE_NAME) &&
                        ends_with(init->folder_real, L"" FIXTURE_NAME);
     record(std::string(FIXTURE_NAME) + " init" + (paths ? "" : " bad-paths"));

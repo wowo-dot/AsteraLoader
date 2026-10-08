@@ -39,7 +39,8 @@ endif()
 # some, gets its own targets without these options.
 function(cmfm_project_target target)
     target_compile_options(${target} PRIVATE /W4 /WX /utf-8
-        "$<$<COMPILE_LANGUAGE:CXX>:/permissive-;/Zc:__cplusplus;/EHsc>")
+        "$<$<COMPILE_LANGUAGE:CXX>:/permissive-;/Zc:__cplusplus>"
+        "$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:CMFM_TEST_C_EXCEPTIONS>>,/EHs,/EHsc>>")
     target_compile_definitions(${target} PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
         CMFM_VERSION=L"${PROJECT_VERSION}-dev"
@@ -74,6 +75,8 @@ add_library(cmfm_plugins STATIC
     src/core/plugins/discovery.hpp
     src/core/plugins/host.cpp
     src/core/plugins/host.hpp
+    src/core/plugins/guard.cpp
+    src/core/plugins/guard.hpp
     src/core/plugins/load_order.cpp
     src/core/plugins/load_order.hpp
     src/core/plugins/manifest.cpp
@@ -81,13 +84,31 @@ add_library(cmfm_plugins STATIC
 target_link_libraries(cmfm_plugins PUBLIC cmfm_api cmfm_common)
 cmfm_project_target(cmfm_plugins)
 
+# MinHook 1.3.4, c3fcafdc10146beb5919319d0683e44e3c30d537.
+# Vendored source; BSD-2 notices in third_party/minhook/LICENSE.txt.
+add_library(cmfm_minhook STATIC
+    third_party/minhook/src/buffer.c
+    third_party/minhook/src/hook.c
+    third_party/minhook/src/trampoline.c
+    third_party/minhook/src/hde/hde64.c)
+target_include_directories(cmfm_minhook PUBLIC third_party/minhook/include)
+target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+add_library(cmfm_startup STATIC
+    src/core/startup/entry_signature.cpp
+    src/core/startup/entry_signature.hpp
+    src/core/startup/runtime.cpp
+    src/core/startup/runtime.hpp)
+target_link_libraries(cmfm_startup PUBLIC cmfm_plugins PRIVATE cmfm_minhook)
+cmfm_project_target(cmfm_startup)
+
 add_executable(cmfm_launcher WIN32 src/launcher/main.cpp)
 target_link_libraries(cmfm_launcher PRIVATE cmfm_common shell32 user32)
 cmfm_project_target(cmfm_launcher)
 set_target_properties(cmfm_launcher PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMFM_DIST}")
 
 add_library(cmfm SHARED src/core/dllmain.cpp)
-target_link_libraries(cmfm PRIVATE cmfm_common)
+target_link_libraries(cmfm PRIVATE cmfm_startup)
 cmfm_project_target(cmfm)
 set_target_properties(cmfm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMFM_DIST}/cmfm")
 
@@ -95,6 +116,8 @@ set_target_properties(cmfm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMFM_DIST}/cmf
 install(FILES "$<TARGET_FILE:cmfm_launcher>" DESTINATION .)
 install(FILES "$<TARGET_FILE:cmfm>" DESTINATION cmfm)
 install(FILES LICENSE DESTINATION .)
+install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
+install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -148,8 +171,26 @@ cmfm_plugin_fixture(failing FIXTURE_FAIL FIXTURE_PHASES=0x1u)
 cmfm_plugin_fixture(wrong_exe FIXTURE_WRONG_EXE)
 cmfm_plugin_fixture(no_exports FIXTURE_NO_EXPORTS)
 cmfm_plugin_fixture(phased FIXTURE_PHASES=0x21u)
+cmfm_plugin_fixture(pre_main_probe FIXTURE_RUNTIME FIXTURE_PHASES=0x1u)
+cmfm_plugin_fixture(seh_info FIXTURE_FAULT_INFO)
+cmfm_plugin_fixture(seh_init FIXTURE_NATIVE_INIT FIXTURE_PHASES=0x1u)
+cmfm_plugin_fixture(seh_phase FIXTURE_NATIVE_PHASE FIXTURE_PHASES=0x1u)
+cmfm_plugin_fixture(cpp_init FIXTURE_THROW_INIT)
+# This fixture deliberately violates the no-exceptions C plugin contract.
+set_target_properties(cmfm_plugin_fixture_cpp_init PROPERTIES CMFM_TEST_C_EXCEPTIONS TRUE)
 add_test(NAME plugin_host
     COMMAND cmfm_plugin_host_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
+
+add_executable(cmfm_plugin_fault_tests tests/test_plugin_faults.cpp)
+target_link_libraries(cmfm_plugin_fault_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_plugin_fault_tests)
+add_dependencies(cmfm_plugin_fault_tests cmfm_plugin_host_tests)
+add_test(NAME plugin_faults COMMAND cmfm_plugin_fault_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_faults")
+
+add_executable(cmfm_startup_signature_tests tests/test_startup_signature.cpp)
+target_link_libraries(cmfm_startup_signature_tests PRIVATE cmfm_startup)
+cmfm_project_target(cmfm_startup_signature_tests)
+add_test(NAME startup_signature COMMAND cmfm_startup_signature_tests)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.
@@ -159,6 +200,36 @@ cmfm_project_target(fake_game)
 set_target_properties(fake_game PROPERTIES
     OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>")
+
+add_executable(fake_packed_game WIN32 tests/fake_game.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_packed_game PRIVATE cmfm_common shell32)
+target_compile_definitions(fake_packed_game PRIVATE CMFM_FAKE_PACKED)
+cmfm_project_target(fake_packed_game)
+# Only this test entry runs before its own CRT; it uses plain Win32 calls.
+set_source_files_properties(tests/fake_packed_entry.cpp PROPERTIES COMPILE_OPTIONS /GS-)
+target_link_options(fake_packed_game PRIVATE /ENTRY:cmfm_test_packed_entry)
+set_target_properties(fake_packed_game PROPERTIES
+    OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>")
+add_test(NAME startup_phase
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DWORK=${CMAKE_BINARY_DIR}/startup_phase"
+        -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
+set_tests_properties(startup_phase PROPERTIES TIMEOUT 45)
+add_test(NAME startup_missing_transition
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DWORK=${CMAKE_BINARY_DIR}/startup_missing_transition"
+        -DEXPECT_SKIP=1
+        -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
+set_tests_properties(startup_missing_transition PROPERTIES TIMEOUT 45)
 
 add_test(NAME launcher_injection
     COMMAND "${CMAKE_COMMAND}"
