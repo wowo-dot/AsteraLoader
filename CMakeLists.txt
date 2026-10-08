@@ -120,6 +120,17 @@ install(FILES LICENSE DESTINATION .)
 install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
 install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
+# The smallest CMFM plugin, in C, as an example for plugin authors. It is not
+# part of the CMFM package: `cmake --install <build> --component examples`
+# stages it in its own mod layout, cmfm/plugins/hello/hello.dll.
+add_library(cmfm_hello SHARED examples/hello/hello.c)
+target_link_libraries(cmfm_hello PRIVATE cmfm_api)
+cmfm_project_target(cmfm_hello)
+set_target_properties(cmfm_hello PROPERTIES
+    OUTPUT_NAME hello
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/cmfm/plugins/hello")
+install(FILES "$<TARGET_FILE:cmfm_hello>" DESTINATION cmfm/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
+
 include(CTest)
 if(BUILD_TESTING)
 
@@ -181,6 +192,13 @@ cmfm_plugin_fixture(cpp_init FIXTURE_THROW_INIT)
 set_target_properties(cmfm_plugin_fixture_cpp_init PROPERTIES CMFM_TEST_C_EXCEPTIONS TRUE)
 add_test(NAME plugin_host
     COMMAND cmfm_plugin_host_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
+
+add_executable(cmfm_example_hello_tests tests/test_example_hello.cpp)
+target_link_libraries(cmfm_example_hello_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_example_hello_tests)
+add_dependencies(cmfm_example_hello_tests cmfm_hello)
+add_test(NAME example_hello
+    COMMAND cmfm_example_hello_tests "$<TARGET_FILE:cmfm_hello>" "${CMAKE_BINARY_DIR}/example_hello")
 
 add_executable(cmfm_plugin_fault_tests tests/test_plugin_faults.cpp)
 target_link_libraries(cmfm_plugin_fault_tests PRIVATE cmfm_plugins)
