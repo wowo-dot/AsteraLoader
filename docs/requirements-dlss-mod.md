@@ -21,6 +21,13 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   loads in time because we only need to beat device creation (game-52).
 - Stracker's plugins load after Streamline and NGX (game-50 load order). That
   is too late for frame generation.
+- Run entry-slot-1 (CMFM repository): under MO2 the only non-KnownDLL delay
+  import the game calls before device creation is WINMM (586 ms, device at
+  about 950–1040 ms). MO2 starts the exe suspended and injects usvfs at 13 ms.
+
+**Decided 2026-10-08:** CMFM loads through its own launcher
+(`cmfm_launcher.exe`, the SKSE route), not a proxy DLL. See
+[decisions.md](decisions.md) item 6.
 
 ## 1. Load point
 
@@ -30,13 +37,19 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   swap chain.
 - **MUST** run that entry on a normal thread outside the loader lock, so the
   plugin can call LoadLibrary and create threads.
-- **MUST** work in all three launch setups, with no force-load and no Steam
-  overlay dependency:
-  - Steam launch, manual install;
-  - MO2 launch;
-  - Steam overlay disabled.
+- **MUST** work in every launch setup that goes through `cmfm_launcher.exe`,
+  with no force-load and no Steam overlay dependency:
+  - MO2, with the launcher as an MO2 executable;
+  - a manual install, with the launcher started directly or through Steam
+    launch options (`%command%`);
+  - the Steam overlay on or off.
+
+  Steam's plain Play button without launch options does not load CMFM
+  (agreed 2026-10-08). The DLSS mod's standalone winmm.dll covers that case.
 - **SHOULD** expose named phases a plugin can subscribe to:
-  - `pre_main`: post-unpack, before CRT init; SPL's cookie trick reaches this;
+  - `pre_main`: post-unpack, before CRT init; SPL's cookie trick reaches this.
+    CMFM itself arrives earlier (before SteamStub) but holds plugins until
+    the game's code is unpacked;
   - `win_main`;
   - `device_created`;
   - `swapchain_created`;
@@ -45,8 +58,9 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
 
   The mod needs `pre_main` or anything before dxgi. The rest replace hooks it
   installs today.
-- **SHOULD** choose CMFM's own entry slot so that it coexists with SPL
-  (winmm.dll) and Stracker's Loader (dinput8.dll). See open question 1.
+- ~~**SHOULD** choose CMFM's own entry slot so that it coexists with SPL
+  (winmm.dll) and Stracker's Loader (dinput8.dll).~~ Resolved by the launcher:
+  CMFM takes no proxy slot.
 
 ## 2. Plugin contract
 
@@ -205,9 +219,9 @@ Settings the DLSS mod will register:
   rewrite loader-config.json.
 - **MUST** coexist with ReShade (dxgi.dll) and with overlays: Steam, Discord,
   RTSS, NVIDIA app.
-- **MUST** be a normal MO2 mod with no force-load and no files outside its own
-  folders. No exe patching. No disabling of integrity or anti-cheat. Online
-  play stays possible.
+- **MUST** be a normal MO2 mod plus an MO2 executable entry for the launcher,
+  with no force-load and no files outside its own folders. No exe patching.
+  No disabling of integrity or anti-cheat. Online play stays possible.
 - **SHOULD** detect a second copy of a plugin, e.g. the DLSS mod's standalone
   winmm.dll and its CMFM plugin together. The mod's single-instance mutex
   keeps only the first one active; CMFM should tell the user.
@@ -239,9 +253,14 @@ Settings the DLSS mod will register:
 
 ## Open questions for the user
 
-Questions 2 to 5 were answered on 2026-10-08 (ImGui for v1 with native-style
-integration later, per-plugin files, Stracker replacement in v1, MIT). See
-[decisions.md](decisions.md). Question 1 waits for measurement.
+All five were answered on 2026-10-08. See [decisions.md](decisions.md):
+1. own launcher, no proxy slot;
+2. ImGui for v1, with native-style integration later;
+3. per-plugin files;
+4. Stracker replacement in v1;
+5. MIT.
+
+The original questions follow for the record.
 
 1. **CMFM's entry slot.**
    - winmm.dll (collides with us and SPL unless CMFM chain-loads them);

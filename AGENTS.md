@@ -5,8 +5,11 @@
 CMFM is an open-source native framework for the Windows PC version of Monster
 Hunter: World (DirectX 12). It has two parts under one name:
 
-- **CMFM Core:** the early native loader.
-  - Loads before the game's graphics device, in every launch setup.
+- **CMFM Core:** our own launcher and native loader (the SKSE route).
+  - `cmfm_launcher.exe` starts the game suspended, loads `cmfm.dll` into it,
+    then resumes it. CMFM puts no proxy DLL in the game folder.
+  - `cmfm.dll` is in before Steam's DRM stub and before any game code, in
+    every launch setup, and dispatches load phases to plugins.
   - Exposes a versioned C plugin API with load phases.
   - Coordinates Direct3D 12 / DXGI hooks between mods.
   - Makes Stracker's Loader unnecessary: existing Stracker plugins run
@@ -16,12 +19,18 @@ Hunter: World (DirectX 12). It has two parts under one name:
 
 The user's guiding principle: fewer loaders, proxy DLLs and bandaids over the
 exe. CMFM replaces Stracker's Loader. It coexists with SharpPluginLoader (SPL)
-and does not compete with it.
+and does not compete with it: CMFM never takes `winmm.dll`, `dinput8.dll`,
+`dxgi.dll` or any other proxy name.
+
+v1 is launcher-only. A proxy fallback for Steam's plain Play button is added
+only if Steam launch options (`"<path>\cmfm_launcher.exe" %command%`) turn out
+not to work.
 
 The first plugin client is the sibling DLSS / Frame Generation mod. Its
 requirements are in `docs/requirements-dlss-mod.md`.
 
-Start with `docs/handoff-20261008.md`, then `docs/decisions.md`.
+Start with `docs/handoff-20261008.md`, then `docs/decisions.md` (which
+supersedes the handoff where they differ) and `docs/research/entry-slot.md`.
 
 ## Canonical Local Paths
 
@@ -52,6 +61,17 @@ or assume other contributors use them.
   change gameplay or network behaviour. What plugins do is the user's choice.
   (The CRC-bypass plugin `!CRCBypass.dll` from "Performance Booster and Plugin
   Extender" is off in every profile and is not a CMFM concern.)
+- The launcher is the only CMFM component that writes into the game process,
+  and only to load `cmfm.dll`:
+  - it only creates `MonsterHunterWorld.exe` itself, suspended. It never
+    attaches to a running game or touches any other process;
+  - it loads `cmfm.dll` by full path from CMFM's own folder, and changes
+    nothing else in the process;
+  - it leaves Steam's DRM stub (SteamStub) and its checks to run untouched.
+    `cmfm.dll` and plugins install hooks only after the game's code is
+    unpacked;
+  - it needs no administrator rights, and has no network access or
+    auto-update.
 - Never touch `D:\mh world modding\ai\glavenus` IDA databases (another
   project). Work on private copies under `local/` only.
 - Do not commit or redistribute Capcom binaries, decoded images, game assets,
@@ -63,8 +83,10 @@ or assume other contributors use them.
 
 ## Runtime Testing Protocol
 
-- The user launches the game, always through MO2. Never launch MHW through
-  Steam, a script or computer-use.
+- The user launches the game, always through MO2: the CMFM launcher entry
+  for CMFM runs, the plain "Monster Hunter: World" entry for baselines. Never
+  launch MHW or the launcher through Steam, a script or computer-use. Steam
+  launch-option tests are run by the user.
 - Before every launch, prepare a run folder (`local/runs/<name>`) and the
   installed build. After the game closes, seal the folder with a short result
   file.
@@ -74,10 +96,14 @@ or assume other contributors use them.
   - the exe SHA-256 and the CMFM DLL SHA-256 and version;
   - the MO2 profile, with or without force-load;
   - every loaded plugin with its version.
-- External tools reading the game process are strictly read-only:
-  `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`, no writes, no thread
-  suspension, no remote threads or allocations. The PEB module list read this
-  way shows load order.
+- Measurement tools reading the game process (`tools/modwatch.py` and the
+  like) are strictly read-only:
+  - access `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`;
+  - no writes, no thread suspension, no remote threads or allocations.
+
+  The PEB module list read this way shows load order, load times and the
+  parent module of each load. The launcher is not a measurement tool; see
+  Safety and Scope.
 - When screenshotting the desktop, crop to the game window.
 
 ## Engineering Rules
@@ -100,6 +126,19 @@ or assume other contributors use them.
   while canonical() and GetFinalPathNameByHandle resolve to the real mod
   folder. Never compare paths from the two sources (this broke the DLSS mod in
   game-51). Compare file identity, or keep to one derivation.
+- The launcher:
+  - finds the game from, in order: a `MonsterHunterWorld.exe` path as its
+    first argument (Steam's `%command%`), then next to itself, then the
+    current directory. No hard-coded paths;
+  - passes the remaining arguments through, starts the game in the game
+    folder, waits for it and returns its exit code;
+  - fails visibly but never fatally. If it fails before resuming the game, it
+    ends the suspended process it created and says why. If `cmfm.dll` does
+    not confirm it loaded, the game keeps running without CMFM, and the
+    launcher says so.
+- Under MO2 the launcher derives `cmfm.dll`'s real path from a file handle
+  and injects that, so loading CMFM does not depend on usvfs timing in the
+  child.
 - Keep third-party dependencies explicit and pinned, and record their licences.
   Forking Stracker's Loader (MIT) needs its copyright notice; its log code
   carries a BSD-2 notice.
@@ -111,8 +150,14 @@ or assume other contributors use them.
   outside the game.
 - Test Stracker compatibility against the user's installed plugins (list in
   the handoff). Test with and without leftover Stracker files.
-- Test every launch setup: MO2 with no force-load, MO2 with SPL force-loaded,
-  manual install, and Steam overlay on and off.
+- Test every launch setup, each with the Steam overlay on and off:
+  - MO2 through the CMFM launcher entry, no force-load;
+  - the same with SPL force-loaded;
+  - a manual install with the launcher started directly;
+  - Steam launch options with `%command%`.
+- Under MO2, confirm that the virtual folder still reaches the game started
+  by the launcher: mod files and Stracker plugins load from their mod
+  folders.
 - Check stability across loading screens, cutscenes, menus, alt-tab, resize
   and full-screen toggles, with and without the DLSS mod (frame generation on).
 

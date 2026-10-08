@@ -23,8 +23,24 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
    the source of truth; CMFM reads and writes through the plugin. (The
    recommendation from the handoff; the user did not object.)
 
-Still open:
-
-- **Entry slot** (open question 1). Decide from measurement: which delay
-  import the game loads early enough, under MO2 with and without the Steam
-  overlay. See `docs/research/entry-slot.md` once the runs exist.
+6. **Entry: our own launcher (the SKSE route)**, the user's call after run
+   entry-slot-1. This answers open question 1.
+   - `cmfm_launcher.exe` starts the game suspended, loads `cmfm.dll` by full
+     path, then resumes it. CMFM uses no proxy slot at all.
+   - Why:
+     - the only proxy name the game loads before its graphics device is
+       winmm.dll, which SPL and the DLSS mod's standalone mode already use;
+     - MO2 already starts this exe suspended and injects usvfs before
+       SteamStub, so the game tolerates it;
+     - no proxy DLL means no collisions, which fits the "fewer bandaids"
+       principle.
+   - v1 is launcher-only. Steam users start the game through Steam launch
+     options (`"<path>\cmfm_launcher.exe" %command%`, to be verified) or a
+     shortcut. A proxy fallback comes only if launch options fail.
+   - Changes the DLSS mod's load-point requirement: Steam's plain Play button
+     without launch options no longer loads CMFM. The DLSS mod's standalone
+     winmm.dll covers that case.
+   - Evidence and trade-offs: `research/entry-slot.md`.
+   - First step: a launcher plus a `cmfm.dll` that only logs startup timing.
+     It proves the injection under MO2, and that usvfs still reaches the
+     game.

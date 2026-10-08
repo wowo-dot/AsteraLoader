@@ -135,6 +135,9 @@ identity (`std::filesystem::equivalent`) or one derivation consistently.
 
 ## Implications for CMFM
 
+Superseded for the entry slot: CMFM uses its own launcher (decisions.md item
+6, research/entry-slot.md). The analysis below is kept for the record.
+
 - Entry slot:
   - winmm.dll is taken by SPL and by the DLSS mod's standalone mode;
   - dinput8.dll is Stracker's, and loads too late anyway;

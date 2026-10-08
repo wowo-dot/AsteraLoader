@@ -4,6 +4,9 @@ How CMFM gets into the game process early enough. Measured facts come from
 run `entry-slot-1` (read-only watcher, `tools/modwatch.py`); everything else
 is labelled.
 
+**Decision (2026-10-08): the launcher**, launcher-only in v1. See
+`../decisions.md` item 6.
+
 ## Run entry-slot-1 (confirmed)
 
 MO2 profile `barebonesdlss` (DLSS mod as winmm.dll, Stracker's Loader), MO2
