@@ -87,13 +87,18 @@ Other tests cover signature ambiguity/bounds/mutation, reserved names, bad
 metadata and callback exceptions, C/C++ ABI layouts, manifests/order, launcher
 confirmation/argument handling/exit codes, and suspended-child cleanup.
 
-The real MHW protection-transition sequence is measured in `pre-main-2`:
-the whole `.text` changes read/write to execute/read from a temporary allocation.
-The CRT signature at that point is **not yet verified**; the caller-independent
-fix needs another user run. See `research/pre-main.md`. That run should use the
-existing `cmfm` profile and `CMFM Launcher`, no force-load, overlay on, and no
-newly enabled mods or fixture plugins. Prepare its run folder and build first;
-the user launches and closes the game. Check:
+The real MHW transition and CRT signature are now **confirmed in pre-main-3**
+with core d589db2 (tested tag `v0.1.0-dev.3`), MO2 profile `cmfm`, `CMFM Launcher`,
+no force-load, overlay on, and no CMFM client plugins. The full `.text` changes
+read/write to execute/read from a temporary allocation outside `.bind`; CMFM
+verifies the unique wrapper, reaches PRE_MAIN once on the startup thread,
+restores the observer and wrapper, and the game exits with code 0 and no core
+warnings. MO2's DLSS/Stracker files and overlay still load. See
+`research/pre-main.md` for RVAs, timing and scope limits.
+
+Client-plugin initialization in the real game, SPL force-load and remaining
+launch/overlay configurations still need their own runs. For each run, prepare
+its folder and build first; the user launches and closes the game. Check:
 
 1. `phase_pre_main_observer_armed` at bootstrap.
 2. `unpacked_crt_verified_after_protection_change`, the verified entry/cookie/

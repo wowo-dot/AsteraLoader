@@ -1,7 +1,7 @@
 # PRE_MAIN in the real game (2026-10-09)
 
 Results for the PRE_MAIN phase described in `../handoff-pre-main-20261008.md`.
-Measured facts come from runs `pre-main-1`, `pre-main-2` and read-only reads of the exe
+Measured facts come from runs `pre-main-1` through `pre-main-3` and read-only reads of the exe
 (c2ebbbd2…); everything else is labelled.
 
 ## Run pre-main-1 (confirmed)
@@ -84,6 +84,50 @@ The run is sealed under `local/runs/pre-main-2` with both CMFM logs, module
 report and `trace-analysis.json`. The tested diagnostic source is tagged
 `v0.1.0-dev.2`.
 
+## Run pre-main-3 (confirmed: PRE_MAIN reached)
+
+Same MO2 setup, core d589db2, retained launcher 6591057. PID 10916 exited with
+code 0. The user reported no popup; the core has no warnings or skipped/failed
+phase. The watcher captured 156 modules across 2104 polls with zero torn or
+suspect snapshots. Overlay, the MO2 DLSS winmm.dll and Stracker files loaded.
+
+The caller-independent fix worked in this setup:
+
+- Record 130 again restored the full `.text` from read/write to execute/read,
+  caller `0x180004d3e`, outside `.bind`, on thread 2752.
+- The guarded scan verified one CRT wrapper: entry RVA `0x2742a48`, cookie
+  initializer `0x2743690`, common-main `0x27428d4`.
+- `unpacked_crt_verified_after_protection_change` was followed by
+  `startup_api_observer_removed`, then one `phase_pre_main_enter` and one
+  `phase_pre_main_complete; startup wrapper restored`, on thread 2752.
+- Discovery used the virtual game-folder path
+  `Monster Hunter World\cmfm\plugins`, with the expected EXE hash. No CMFM
+  plugin was installed, so this verifies reaching the host/discovery/dispatch
+  path, not a real client plugin's initialization or settings.
+- The observer recorded all 133 calls before it stopped: no truncation or
+  pending records. The actual CRT match is now measured for this game hash.
+
+| Interval | pre-main-3 |
+|---|---:|
+| before CreateProcess → resume | 89.967 ms |
+| bootstrap entry → resume | 73.849 ms |
+| observer created → armed (covers MinHook enable) | 71.986 ms |
+| DLL hash checkpoints | 0.967 ms |
+| full-text transition return → entry hook ready | 80.207 ms |
+| full-text transition return → PRE_MAIN enter | 178.730 ms |
+| PRE_MAIN enter → complete (no plugins) | 0.175 ms |
+| background EXE hash wait at PRE_MAIN | 1 µs |
+
+PRE_MAIN entry occurred 841.237 ms after the before-CreateProcess checkpoint,
+751.270 ms after resume. The 80/179 ms intervals include signature scanning,
+hook work and startup execution between checkpoints; they are not isolated
+measurements of any one function. The D3D12 device marker was later in this
+run than in pre-main-2; two startup runs alone do not identify a cause.
+
+The run is sealed under `local/runs/pre-main-3`, with both CMFM logs, module
+report, `trace-analysis.json` and result. The tested build is tagged
+`v0.1.0-dev.3`. The installed core and launcher stay in place.
+
 ## The exe on disk (confirmed, read-only)
 
 - `.text` is encrypted on disk: entropy 8.00 in every 64 KiB block, and none
@@ -96,15 +140,15 @@ report and `trace-analysis.json`. The tested diagnostic source is tagged
 
 ## Next
 
-Remove caller-section identity from acceptance: a successful protection change
-covering the whole `.text` to execute/read triggers the existing guarded,
-unique CRT-wrapper/cookie/common-main signature check. Caller location remains
-diagnostic. No startup-helper instructions or protections are changed by CMFM.
-A stand-in helper outside `.bind` checks that this transition dispatches
-PRE_MAIN once and preserves the cookie/common-main/wrapper invariants. Repeat
-the same MO2 launch after the fix; matching the real game's CRT remains unverified.
-All 19 Release CTest cases passed after this change. The core still imports
-only KERNEL32; private bootstrap and public plugin ABIs are unchanged.
+Step 3 is confirmed for the tested MO2/no-force-load/overlay-on setup. All 19
+Release CTest cases passed for d589db2. The core still imports only KERNEL32;
+private bootstrap and public plugin ABIs are unchanged.
+
+Later validation should cover a real CMFM client plugin and the remaining
+launch/overlay/SPL configurations. No fixture plugin or new mod was enabled
+for these runs. Further work can also measure the hook setup/removal costs
+separately before optimizing the startup delay. WinMain/device phases,
+Stracker replacement and menu work remain separate next steps.
 
 ## Diagnostic build used in pre-main-2
 
