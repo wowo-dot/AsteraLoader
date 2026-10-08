@@ -1,0 +1,26 @@
+# Build trees and IDE state
+/build/
+/out/
+/.vs/
+*.user
+
+# Private or generated material: runs, profiles, exports, dumps, captures
+/local/
+*.dmp
+*.etl
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+
+# Game, SDK and third-party binaries are never committed
+*.exe
+*.dll
+*.pdb
+*.dxbc
+
+__pycache__/
+*.pyc
