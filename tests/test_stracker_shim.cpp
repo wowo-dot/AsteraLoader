@@ -53,7 +53,10 @@ constexpr const char* kExports[] = {"??0LOG@loader@@QEAA@W4LogLevel@1@@Z", "??1L
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc != 4) return 2;
+    // argv[4] "known": CMFM passes the game version (host version 2) instead of the shim searching.
+    if (argc != 4 && argc != 5) return 2;
+    const bool known = argc == 5 && std::wstring(argv[4]) == L"known";
+    const std::string version_text = known ? "known-7" : "test-421";
     const fs::path shim_path = argv[1], fixture = argv[2];
     const auto work = fs::path(argv[3]) / std::to_wstring(GetCurrentProcessId());
     const auto game = work / L"game";
@@ -84,7 +87,7 @@ int wmain(int argc, wchar_t** argv) {
 
     const auto game_text = game.wstring();
     cmfm_stracker_host host{sizeof(host), CMFM_STRACKER_HOST_VERSION, collect, &g_lines, game_text.c_str(),
-                            GetModuleHandleW(nullptr)};
+                            GetModuleHandleW(nullptr), known ? "known-7" : nullptr};
     cmfm_stracker_result result{};
     result.size = sizeof(result);
     check(start(&host, &result) == 0, "start");
@@ -92,7 +95,7 @@ int wmain(int argc, wchar_t** argv) {
           result.plugin_loader_enabled, "config read, SPL object ignored");
     check(result.plugins_found == 4 && result.plugins_loaded == 3 && result.plugins_failed == 1 &&
           std::string(result.first_failure) == "broken.dll", "four *.dll files found, three loaded, broken.dll failed");
-    check(result.version_found && std::string(result.game_version) == "test-421", "game version found");
+    check(result.version_found && std::string(result.game_version) == version_text, "game version found");
 
     // Stracker's order, and only exact ".dll" files.
     check(read_file(record) == "!early.dll\nalpha.dll\nZeta.dll\n", "load order !early, alpha, Zeta");
@@ -110,21 +113,26 @@ int wmain(int argc, wchar_t** argv) {
         const auto min_level = reinterpret_cast<MinLevel>(GetProcAddress(plugin, "fixture_min_level"));
         const auto version = reinterpret_cast<Version>(GetProcAddress(plugin, "fixture_game_version"));
         check(plugin && min_level && min_level() == reinterpret_cast<const void*>(shim_min_level) && version &&
-              std::string(version()) == "test-421", "plugin import bound to the shim");
+              std::string(version()) == version_text, "plugin import bound to the shim");
     }
 
     // Stracker's log texts, in loader.log and in CMFM's log.
     const auto log = read_file(game / L"loader.log");
-    for (const auto text : {"Found config file", "Found old dlls in game folder.", "Game version test-421",
+    for (const auto& text : std::vector<std::string>{"Found config file", "Found old dlls in game folder.",
+                                                    "Game version " + version_text,
                             R"(Loading plugin "nativePC\\plugins\\!early.dll")",
-                            "fixture !early.dll sees game version test-421", "fixture debug line 42",
+                            "fixture !early.dll sees game version " + version_text, "fixture debug line 42",
                             R"(Failed to load "nativePC\\plugins\\broken.dll")"}) {
         const auto line = std::string(" ] ") + text + "\r\n";
         check(log.find(line) != std::string::npos, std::string("loader.log has: ") + text);
     }
+    // Load times go to CMFM only, so loader.log stays as Stracker writes it.
+    bool timed = false;
+    for (const auto& [level, line] : g_lines) timed = timed || (level == 1 && line.rfind("loaded alpha.dll in ", 0) == 0);
+    check(timed && log.find("loaded alpha.dll in ") == std::string::npos, "load time for CMFM only");
     check(log.rfind("[ ", 0) == 0 && log.find("\n[ ") != std::string::npos, "loader.log lines start with \"[ \"");
     check(logged(1, "Found config file") && logged(3, "Found old dlls in game folder.") &&
-          logged(3, "fixture alpha.dll sees game version test-421") && logged(0, "fixture debug line 42") &&
+          logged(3, "fixture alpha.dll sees game version " + version_text) && logged(0, "fixture debug line 42") &&
           logged(3, R"(Failed to load "nativePC\\plugins\\broken.dll")"), "lines sent to CMFM with levels");
 
     // A leftover Stracker loader asks for the same relative path later: it

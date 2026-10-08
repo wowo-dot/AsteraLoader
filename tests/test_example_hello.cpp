@@ -21,7 +21,7 @@ int wmain(int argc, wchar_t** argv) {
     host.load_all({(work / L"plugins").wstring(), (work / L"logs").wstring(), L""});
     const auto report = host.report();
     const bool loaded = report.size() == 1 && report[0].name == L"hello" && report[0].initialised &&
-                        report[0].status == CMFM_STATUS_ACTIVE && report[0].version == "0.1.0" &&
+                        report[0].status == CMFM_STATUS_ACTIVE && report[0].version == "0.2.0" &&
                         report[0].display_name == "CMFM Hello";
     host.dispatch(CMFM_PHASE_PRE_MAIN, nullptr);
 
@@ -30,9 +30,9 @@ int wmain(int argc, wchar_t** argv) {
     log << file.rdbuf();
     const auto text = log.str();
     bool logged = true;
-    for (const auto part : {" INFO hello 0.1.0 initialised on thread ", "(CMFM API 1.1)",
+    for (const auto part : {" INFO hello 0.2.0 initialised on thread ", "(CMFM API 1.1)",
                             " INFO folder as the game sees it: ", " INFO folder resolved through a file handle: ",
-                            " INFO this DLL: ", " INFO phase 0 on thread ", " INFO game exe as the game sees it: "}) {
+                            " INFO this DLL: ", " INFO data folder: ", " INFO game version unknown, exe SHA-256 unknown..., graphics ", " INFO phase 0 on thread ", " INFO game exe as the game sees it: "}) {
         if (text.find(part) == std::string::npos) {
             std::cerr << "missing in hello.log: " << part << '\n';
             logged = false;

@@ -326,6 +326,10 @@ add_dependencies(cmfm_stracker_shim_tests cmfm_stracker_loader cmfm_stracker_plu
 add_test(NAME stracker_shim
     COMMAND cmfm_stracker_shim_tests "$<TARGET_FILE:cmfm_stracker_loader>"
         "$<TARGET_FILE:cmfm_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim")
+# The same, with CMFM passing the game version it already found.
+add_test(NAME stracker_shim_known_version
+    COMMAND cmfm_stracker_shim_tests "$<TARGET_FILE:cmfm_stracker_loader>"
+        "$<TARGET_FILE:cmfm_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim" known)
 
 add_executable(cmfm_plugin_fault_tests tests/test_plugin_faults.cpp)
 target_link_libraries(cmfm_plugin_fault_tests PRIVATE cmfm_plugins)

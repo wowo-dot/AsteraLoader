@@ -261,8 +261,12 @@ void report_plugins() {
     for (const auto& plugin : g_runtime->host.report()) {
         const auto status = plugin.status == CMFM_STATUS_ACTIVE ? L"active" :
                             plugin.status == CMFM_STATUS_DEGRADED ? L"degraded" : L"disabled";
+        const auto ms = [](std::uint64_t us) {
+            return std::to_wstring(us / 1000) + L"." + std::to_wstring(us / 100 % 10);
+        };
         write(L"plugin name=" + plugin.name + L" version=" + widen(plugin.version.empty() ? "unreported" : plugin.version) +
-              L" status=" + status + L" reason=" + widen(plugin.reason));
+              L" status=" + status + L" load_ms=" + ms(plugin.load_us) + L" init_ms=" + ms(plugin.init_us) +
+              L" pre_main_ms=" + ms(plugin.phase_us[CMFM_PHASE_PRE_MAIN]) + L" reason=" + widen(plugin.reason));
         if (plugin.status != CMFM_STATUS_ACTIVE) ++refused;
     }
     if (refused) visible_warning(L"CMFM reports " + std::to_wstring(refused) + L" plugin(s) with warnings or disabled features.");

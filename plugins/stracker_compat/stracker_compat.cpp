@@ -11,6 +11,7 @@
 
 #include <windows.h>
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -78,8 +79,12 @@ void start() {
     const auto start_shim = reinterpret_cast<cmfm_stracker_start_fn>(GetProcAddress(shim, CMFM_STRACKER_START_EXPORT));
     if (!start_shim) return disable("its loader.dll is not CMFM's (no " CMFM_STRACKER_START_EXPORT ")");
 
+    // CMFM's game identity (API 1.1) already has the version; the shim then skips its search.
+    const auto* identity = static_cast<const cmfm_game_t*>(
+        g_api->size > offsetof(cmfm_api_t, get_interface) ? g_api->get_interface(g_self, CMFM_GAME_INTERFACE, CMFM_GAME_VERSION)
+                                                          : nullptr);
     const cmfm_stracker_host host{sizeof(host), CMFM_STRACKER_HOST_VERSION, forward, nullptr, game.c_str(),
-                                  GetModuleHandleW(nullptr)};
+                                  GetModuleHandleW(nullptr), identity ? identity->game_version : nullptr};
     cmfm_stracker_result result{};
     result.size = sizeof(result);
     const auto code = start_shim(&host, &result);

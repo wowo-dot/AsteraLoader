@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-#define CMFM_STRACKER_HOST_VERSION 1u
+#define CMFM_STRACKER_HOST_VERSION 2u
 #define CMFM_STRACKER_START_EXPORT "cmfm_stracker_start"
 
 /* Receives every log line that passes the level filter, without the line end.
@@ -24,6 +24,9 @@ typedef struct cmfm_stracker_host {
     void* log_context;
     const wchar_t* game_folder; /* holds loader-config.json, loader.log, nativePC */
     const void* game_image;     /* module searched for the game version; NULL: the exe */
+    /* Version 2: */
+    const char* game_version;   /* the version CMFM already found (cmfm.game), so the
+                                   shim need not search again; NULL: search */
 } cmfm_stracker_host;
 
 typedef enum cmfm_stracker_config_state {

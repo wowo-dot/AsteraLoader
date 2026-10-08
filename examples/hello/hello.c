@@ -1,6 +1,7 @@
 /* hello: the smallest CMFM plugin, in plain C.
  *
- * It logs the two folder paths CMFM hands it and when PRE_MAIN runs. Install
+ * It logs the folder paths CMFM hands it, which game this is (the "cmfm.game"
+ * service, API 1.1) and when PRE_MAIN runs. Install
  * it as <game>\cmfm\plugins\hello\hello.dll (under MO2: its own mod with that
  * layout). CMFM writes its log to cmfm\logs\plugins\hello.log.
  */
@@ -9,6 +10,7 @@
 #include <windows.h>
 
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 
 extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
@@ -62,7 +64,7 @@ static const cmfm_plugin_info_t info = {
     CMFM_API_VERSION,
     "hello",      /* name: also the folder and DLL name */
     "CMFM Hello", /* display name */
-    "0.1.0",      /* this plugin's version */
+    "0.2.0",      /* this plugin's version */
     CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN),
     0,    /* order */
     NULL, /* load_after */
@@ -84,5 +86,18 @@ CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* ap
     say_path("folder as the game sees it", init->folder);
     say_path("folder resolved through a file handle", init->folder_real);
     say_module("this DLL", (HMODULE)&__ImageBase);
+
+    /* API 1.1 additions; a CMFM older than this plugin's header would have
+     * refused it, but checking the sizes is the habit to copy. */
+    if (init->size > offsetof(cmfm_init_t, data_folder)) say_path("data folder", init->data_folder);
+    if (api->size > offsetof(cmfm_api_t, get_interface)) {
+        const cmfm_game_t* game = (const cmfm_game_t*)api->get_interface(init->self, CMFM_GAME_INTERFACE, CMFM_GAME_VERSION);
+        if (game) {
+            static const char* const graphics[] = {"unknown", "DX11", "DX12"};
+            say(CMFM_LOG_INFO, "game version %s, exe SHA-256 %.12s..., graphics %s",
+                game->game_version ? game->game_version : "unknown", game->exe_sha256 ? game->exe_sha256 : "unknown",
+                game->graphics <= CMFM_GRAPHICS_DX12 ? graphics[game->graphics] : "unknown");
+        }
+    }
     return CMFM_OK;
 }

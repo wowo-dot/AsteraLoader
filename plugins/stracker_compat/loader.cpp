@@ -111,6 +111,15 @@ void write_line(int level, const std::string& text) noexcept {
     } catch (...) { /* Logging never throws into a plugin. */ }
 }
 
+// A line for CMFM's log only: not filtered by Stracker's logLevel and not
+// written to loader.log or the console, so those stay as Stracker wrote them.
+void cmfm_only(int level, const std::string& text) noexcept {
+    try {
+        Lock lock;
+        if (g_sink) g_sink(g_sink_context, level, text.c_str());
+    } catch (...) { /* Never throw into the loader. */ }
+}
+
 std::string utf8(std::wstring_view text) {
     if (text.empty()) return {};
     const int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0,
@@ -179,8 +188,10 @@ void old_warning(const std::wstring& game) {
     }
 }
 
-void find_version(const void* image, cmfm_stracker_result& result) {
-    const auto found = cmfm::find_game_version(image);
+void find_version(const void* image, const char* known, cmfm_stracker_result& result) {
+    // CMFM may already know the version (cmfm.game, the same pattern): no second search.
+    const auto found = known && cmfm::plausible_version(known) ? cmfm::GameVersion{known, {}}
+                                                               : cmfm::find_game_version(image);
     if (found.text.empty()) {
         loader::LOG(loader::ERR) << "Build Number check failed.";
         loader::LOG(loader::ERR) << "Could not find game version";
@@ -230,9 +241,18 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
         // thread's error mode changes, and only while it loads the plugin.
         DWORD previous_mode = 0;
         const bool quiet = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &previous_mode);
+        LARGE_INTEGER started{}, finished{}, frequency{};
+        QueryPerformanceCounter(&started);
         const HMODULE plugin = LoadLibraryW((L"nativePC\\plugins\\" + name).c_str());
         const DWORD error = GetLastError();
         if (quiet) SetThreadErrorMode(previous_mode, nullptr);
+        QueryPerformanceCounter(&finished);
+        QueryPerformanceFrequency(&frequency);
+        if (plugin && frequency.QuadPart) {
+            const auto tenths = (finished.QuadPart - started.QuadPart) * 10000 / frequency.QuadPart;
+            cmfm_only(loader::INFO, "loaded " + utf8(name) + " in " + std::to_string(tenths / 10) + "." +
+                                        std::to_string(tenths % 10) + " ms");
+        }
         if (plugin) {
             ++result.plugins_loaded;
             continue;
@@ -247,14 +267,14 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
     }
 }
 
-void start(const std::wstring& game, const void* image, cmfm_stracker_result& result) {
+void start(const std::wstring& game, const void* image, const char* known_version, cmfm_stracker_result& result) {
     {
         Lock lock;
         g_log_path = game + L"\\loader.log";
     }
     load_config(game, result);
     old_warning(game);
-    find_version(image, result);
+    find_version(image, known_version, result);
     load_plugins(game, result);
 }
 
@@ -295,7 +315,8 @@ extern "C" __declspec(dllexport) std::uint32_t __cdecl cmfm_stracker_start(const
             g_sink = host->log;
             g_sink_context = host->log_context;
         }
-        start(host->game_folder, host->game_image ? host->game_image : GetModuleHandleW(nullptr), *result);
+        start(host->game_folder, host->game_image ? host->game_image : GetModuleHandleW(nullptr), host->game_version,
+              *result);
     } catch (...) {
         write_line(loader::ERR, "Stracker start-up stopped by an unexpected error\n");
     }
@@ -310,6 +331,6 @@ extern "C" __declspec(dllexport) void Initialize() {
         cmfm_stracker_result result{};
         result.size = sizeof(result);
         const auto game = exe_folder();
-        if (!game.empty()) start(game, GetModuleHandleW(nullptr), result);
+        if (!game.empty()) start(game, GetModuleHandleW(nullptr), nullptr, result);
     } catch (...) { /* Stracker showed a message box here; the game continues. */ }
 }
