@@ -5,7 +5,7 @@ Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
   build                     configure (records the git commit) and build Release
   test                      run CTest
   check                     build, then test
-  stage                     install the CMFM package and the examples into
+  stage                     build, then install the CMFM package and the examples into
                             local/stage/<version>-<commit>[-dirty] and
                             local/stage/examples-<commit>[-dirty]; print hashes and
                             check that the DLLs import only KERNEL32
@@ -149,7 +149,10 @@ def check(args: argparse.Namespace) -> None:
     test(args)
 
 
-def stage(_: argparse.Namespace) -> None:
+def stage(args: argparse.Namespace) -> None:
+    # Build first: the binaries record the commit at configure time, and the
+    # stage folder is named after HEAD; both must agree.
+    build(args)
     build_dir = settings()["build_dir"]
     package, examples = stage_dirs()
     if commit_label().endswith("-dirty"):
