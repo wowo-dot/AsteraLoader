@@ -68,6 +68,15 @@ cmfm_project_target(cmfm_common)
 add_library(cmfm_api INTERFACE)
 target_include_directories(cmfm_api INTERFACE include)
 
+# Plugin manifests and load order (core side of the plugin API).
+add_library(cmfm_plugins STATIC
+    src/core/plugins/load_order.cpp
+    src/core/plugins/load_order.hpp
+    src/core/plugins/manifest.cpp
+    src/core/plugins/manifest.hpp)
+target_link_libraries(cmfm_plugins PUBLIC cmfm_api cmfm_common)
+cmfm_project_target(cmfm_plugins)
+
 add_executable(cmfm_launcher WIN32 src/launcher/main.cpp)
 target_link_libraries(cmfm_launcher PRIVATE cmfm_common shell32 user32)
 cmfm_project_target(cmfm_launcher)
@@ -103,6 +112,11 @@ foreach(language IN ITEMS c cpp)
     cmfm_project_target(cmfm_abi_${language})
     add_test(NAME plugin_abi_${language} COMMAND cmfm_abi_${language})
 endforeach()
+
+add_executable(cmfm_plugin_tests tests/test_plugins.cpp)
+target_link_libraries(cmfm_plugin_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_plugin_tests)
+add_test(NAME plugin_manifest_order COMMAND cmfm_plugin_tests)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.

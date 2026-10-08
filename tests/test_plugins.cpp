@@ -1,0 +1,179 @@
+#include "core/plugins/load_order.hpp"
+#include "core/plugins/manifest.hpp"
+
+#include <algorithm>
+#include <iostream>
+#include <string>
+#include <vector>
+
+namespace {
+int failures = 0;
+void check(bool condition, const char* label) {
+    if (!condition) { std::cerr << "FAIL: " << label << '\n'; ++failures; }
+}
+bool contains(const std::string& text, const char* part) {
+    return text.find(part) != std::string::npos;
+}
+
+void CMFM_CALL no_phase(cmfm_plugin_t*, cmfm_phase_t, const void*) {}
+
+const std::wstring kExe(64, L'a');
+
+cmfm_plugin_info_t info_named(const char* name) {
+    cmfm_plugin_info_t info{};
+    info.size = sizeof(info);
+    info.api_version = CMFM_API_VERSION;
+    info.name = name;
+    info.version = "1.2.3";
+    return info;
+}
+
+bool accepted(const cmfm_plugin_info_t& info, std::wstring_view folder = L"sample",
+              std::wstring_view exe = kExe) {
+    cmfm::plugins::Manifest manifest;
+    std::string reason;
+    return cmfm::plugins::read_manifest(&info, folder, exe, manifest, reason);
+}
+
+std::string refusal(const cmfm_plugin_info_t* info, std::wstring_view folder = L"sample",
+                    std::wstring_view exe = kExe) {
+    cmfm::plugins::Manifest manifest;
+    std::string reason;
+    return cmfm::plugins::read_manifest(info, folder, exe, manifest, reason) ? std::string() : reason;
+}
+
+void names() {
+    using cmfm::plugins::valid_name;
+    check(valid_name("mhw_dlss") && valid_name("a") && valid_name("a.b-c_d9"), "valid names");
+    check(valid_name(std::string(64, 'x')) && !valid_name(std::string(65, 'x')), "name length");
+    check(!valid_name("") && !valid_name(".hidden") && !valid_name("Upper") && !valid_name("a b") &&
+          !valid_name("a\\b") && !valid_name("caf\xc3\xa9"), "invalid names");
+    check(valid_name(L"mhw_dlss") && !valid_name(L"Mhw") && !valid_name(L"\x00e9t\x00e9"), "wide names");
+}
+
+void manifests() {
+    auto info = info_named("sample");
+    cmfm::plugins::Manifest manifest;
+    std::string reason;
+    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason), "minimal plugin accepted");
+    check(manifest.name == "sample" && manifest.display_name == "sample" && manifest.version == "1.2.3" &&
+          manifest.load_after.empty() && manifest.exe_sha256.empty(), "minimal plugin copied");
+    check(accepted(info, L"SAMPLE"), "folder name case does not matter");
+    check(contains(refusal(nullptr), "returned nothing"), "null info refused");
+
+    info.size = sizeof(info) - 8;
+    check(contains(refusal(&info), "bytes"), "short info refused");
+    info.size = sizeof(info);
+
+    info.api_version = CMFM_MAKE_VERSION(2, 0);
+    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.0. Update CMFM."), "newer major");
+    info.api_version = CMFM_MAKE_VERSION(1, 1);
+    check(contains(refusal(&info), "needs CMFM API 1.1"), "newer minor refused");
+    info.api_version = CMFM_MAKE_VERSION(0, 9);
+    check(contains(refusal(&info), "no longer supports"), "older major refused");
+    info.api_version = CMFM_API_VERSION;
+
+    check(contains(refusal(&info, L"other"), "does not match its folder 'other'"), "name must match folder");
+    auto bad = info_named("Bad Name");
+    check(contains(refusal(&bad, L"Bad Name"), "not a valid plugin name"), "invalid name refused");
+
+    info.display_name = "Sample Plugin";
+    info.phases = CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN);
+    check(contains(refusal(&info), "no on_phase"), "phases need on_phase");
+    info.on_phase = no_phase;
+    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
+          manifest.display_name == "Sample Plugin" && manifest.on_phase == no_phase, "phases accepted");
+    info.phases = CMFM_PHASE_BIT(CMFM_PHASE_COUNT);
+    check(contains(refusal(&info), "does not know"), "unknown phase refused");
+    info.phases = 0;
+
+    std::vector<const char*> endless(65, "x");
+    info.load_after = endless.data();
+    check(contains(refusal(&info), "no NULL end"), "unterminated list refused");
+    const char* const after[] = {"gamma", "beta", nullptr};
+    info.load_after = after;
+    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
+          manifest.load_after == std::vector<std::string>{"gamma", "beta"}, "load_after copied");
+}
+
+void exe_hashes() {
+    auto info = info_named("sample");
+    const std::string ours(64, 'a'), upper(64, 'A'), other(64, 'b');
+    const char* const listed[] = {other.c_str(), upper.c_str(), nullptr};
+    info.exe_sha256 = listed;
+    check(accepted(info), "listed exe accepted, upper-case entry");
+    check(contains(refusal(&info, L"sample", std::wstring(64, L'c')), "does not support this game exe"),
+          "unlisted exe refused");
+    check(contains(refusal(&info, L"sample", L""), "not available"), "unknown exe refused when hashes listed");
+    const char* const invalid[] = {"abc", nullptr};
+    info.exe_sha256 = invalid;
+    check(contains(refusal(&info), "not a SHA-256"), "invalid hash entry refused");
+    info.exe_sha256 = nullptr;
+    check(accepted(info, L"sample", L""), "any exe when no hashes listed");
+}
+
+cmfm::plugins::Manifest plugin(std::string name, int order = 0, std::vector<std::string> after = {},
+                               std::vector<std::string> before = {}) {
+    cmfm::plugins::Manifest manifest;
+    manifest.name = std::move(name);
+    manifest.order = order;
+    manifest.load_after = std::move(after);
+    manifest.load_before = std::move(before);
+    return manifest;
+}
+
+std::vector<std::string> sequence(const std::vector<cmfm::plugins::Manifest>& plugins) {
+    std::vector<std::string> names;
+    for (const auto i : cmfm::plugins::resolve_load_order(plugins).sequence) names.push_back(plugins[i].name);
+    return names;
+}
+
+void load_order() {
+    using Names = std::vector<std::string>;
+    std::vector<cmfm::plugins::Manifest> plugins{
+        plugin("beta", 0, {"GAMMA"}), plugin("delta", 10, {}, {"beta"}), plugin("alpha"), plugin("gamma", 5)};
+    check(sequence(plugins) == Names{"alpha", "gamma", "delta", "beta"}, "constraints before order numbers");
+    std::sort(plugins.begin(), plugins.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
+    do {
+        check(sequence(plugins) == Names{"alpha", "gamma", "delta", "beta"}, "independent of input order");
+    } while (std::next_permutation(plugins.begin(), plugins.end(),
+                                   [](const auto& a, const auto& b) { return a.name < b.name; }));
+
+    check(sequence({plugin("b", 0, {"missing", "b"}), plugin("a", 0, {}, {"absent"})}) == Names{"a", "b"},
+          "absent and self names ignored");
+    check(sequence({plugin("late", 1), plugin("early", -1), plugin("mid")}) == Names{"early", "mid", "late"},
+          "order numbers, negative first");
+
+    const std::vector<cmfm::plugins::Manifest> cyclic{
+        plugin("x", 0, {"y"}), plugin("y", 0, {"x"}), plugin("z", 0, {"x"}), plugin("a", 0, {}, {"b"}),
+        plugin("b", 0, {}, {"c"}), plugin("c", 0, {}, {"a"}), plugin("free")};
+    const auto result = cmfm::plugins::resolve_load_order(cyclic);
+    Names loaded;
+    for (const auto i : result.sequence) loaded.push_back(cyclic[i].name);
+    check(loaded == Names{"free", "z"}, "cycles refused, the rest still load");
+    check(result.refused.size() == 5, "every cycle member refused");
+    for (const auto& refused : result.refused) {
+        if (cyclic[refused.index].name == "x") check(refused.reason == "its load order forms a cycle with y", "x");
+        if (cyclic[refused.index].name == "a") {
+            check(refused.reason == "its load order forms a cycle with b, c", "three-plugin cycle reason");
+        }
+    }
+
+    const auto duplicate = cmfm::plugins::resolve_load_order({plugin("same"), plugin("same", -5)});
+    check(duplicate.sequence == std::vector<std::size_t>{0} && duplicate.refused.size() == 1 &&
+          duplicate.refused[0].index == 1, "repeated name refused");
+}
+}  // namespace
+
+int main() {
+    names();
+    manifests();
+    exe_hashes();
+    load_order();
+    if (failures) {
+        std::cerr << failures << " plugin check(s) failed\n";
+        return 1;
+    }
+    std::cout << "Plugin manifest and load-order checks passed\n";
+    return 0;
+}
