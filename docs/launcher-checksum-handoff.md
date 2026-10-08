@@ -1,5 +1,10 @@
 # Launcher checksum change
 
+> **Update 2026-10-08:** the core half is done too. `cmfm_bootstrap` hashes
+> only the small DLL before confirming; the exe hash runs afterwards on a
+> background-priority core thread and is logged as `exe_sha256=` plus
+> `exe_sha256_qpc=`. Interface and return codes are unchanged.
+
 The launcher no longer hashes the game executable before `CreateProcessW`.
 It records `exe_sha256` after `game_resumed`, while the game runs normally,
 then continues waiting for the game's exit code. A missing checksum is a log

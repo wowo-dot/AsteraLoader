@@ -84,7 +84,7 @@ cmfm_project_target(cmfm_tests)
 add_test(NAME common COMMAND cmfm_tests)
 
 add_executable(cmfm_core_tests tests/test_core.cpp)
-target_include_directories(cmfm_core_tests PRIVATE src)
+target_link_libraries(cmfm_core_tests PRIVATE cmfm_common)
 cmfm_project_target(cmfm_core_tests)
 add_test(NAME core_startup_abi COMMAND cmfm_core_tests "$<TARGET_FILE:cmfm>")
 
