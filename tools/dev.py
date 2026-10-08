@@ -137,7 +137,8 @@ def files_under(folder: Path, skip: tuple[str, ...] = ()) -> list[Path]:
 def build(_: argparse.Namespace) -> None:
     build_dir = settings()["build_dir"]
     run(["cmake", "-S", ".", "-B", build_dir, "-A", "x64"], stdout=subprocess.DEVNULL)
-    run(["cmake", "--build", build_dir, "--config", "Release", "--parallel"])
+    # MSBuild prints every project; quiet keeps warnings and errors only.
+    run(["cmake", "--build", build_dir, "--config", "Release", "--parallel", "--", "/nologo", "/v:quiet"])
 
 
 def test(_: argparse.Namespace) -> None:
