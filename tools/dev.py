@@ -1,0 +1,332 @@
+"""CMFM development helper: build, test, stage, install into MO2, collect runs.
+
+Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
+
+  build                     configure (records the git commit) and build Release
+  test                      run CTest
+  check                     build, then test
+  stage                     install the CMFM package and the examples into
+                            local/stage/<version>-<commit>[-dirty] and
+                            local/stage/examples-<commit>[-dirty]; print hashes and
+                            check that the DLLs import only KERNEL32
+  install-mo2 RUN           back up the installed CMFM and example mods into
+                            local/runs/RUN/installed-backup, install the staged
+                            build, write RUN/manifest.json and RUN/logs-before.txt
+  watch RUN [--launch N]    run tools/modwatch.py (read-only) into RUN or RUN/launch-N
+  collect RUN [--launch N]  copy the new CMFM logs and the scan cache into RUN or
+                            RUN/launch-N and print the lines that matter
+
+Machine-local paths (MO2, the game) live in local/dev.json, which is not
+committed; the first run writes a template to fill in. Nothing here edits
+MO2's own configuration or anything in the game folder.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import json
+import re
+import shutil
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+LOCAL = ROOT / "local"
+SETTINGS = LOCAL / "dev.json"
+TEMPLATE = {
+    "build_dir": "local/build",
+    "game_exe": "<game folder>/MonsterHunterWorld.exe",
+    "mo2_ini": "<MO2 folder>/ModOrganizer.ini",
+    "mo2_mods": "<MO2 data folder>/mods",
+    "mo2_profiles": "<MO2 data folder>/profiles",
+    "cmfm_mod": "CMFM (dev)",
+    "examples_mod": "CMFM hello plugin (test)",
+    "launcher_title": "CMFM Launcher",
+}
+
+
+def fail(message: str) -> None:
+    print(f"dev.py: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def settings() -> dict:
+    if not SETTINGS.exists():
+        LOCAL.mkdir(exist_ok=True)
+        SETTINGS.write_text(json.dumps(TEMPLATE, indent=2) + "\n", encoding="utf-8")
+        fail(f"wrote a template to {SETTINGS}; fill in the paths and run again")
+    values = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    missing = [key for key in TEMPLATE if key not in values]
+    if missing:
+        fail(f"{SETTINGS} lacks {', '.join(missing)}")
+    return values
+
+
+def run(command: list[str], **options) -> subprocess.CompletedProcess:
+    print("> " + " ".join(f'"{part}"' if " " in part else part for part in command), flush=True)
+    return subprocess.run(command, cwd=ROOT, check=True, **options)
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=ROOT, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def commit_label() -> str:
+    label = git("rev-parse", "--short=7", "HEAD")
+    return label + ("-dirty" if git("status", "--porcelain") else "")
+
+
+def project_version() -> str:
+    found = re.search(r"project\(cmfm VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"))
+    return (found.group(1) if found else "0.0.0") + "-dev"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for block in iter(lambda: file.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def imports(path: Path) -> list[str]:
+    """The DLL names in a PE file's import table (read from the file)."""
+    data = path.read_bytes()
+    pe = struct.unpack_from("<I", data, 0x3C)[0]
+    optional = pe + 24
+    sections = struct.unpack_from("<H", data, pe + 6)[0]
+    optional_size = struct.unpack_from("<H", data, pe + 20)[0]
+    table = [struct.unpack_from("<IIII", data, optional + optional_size + 40 * i + 8) for i in range(sections)]
+
+    def offset(rva: int) -> int | None:
+        for virtual_size, address, raw_size, raw in table:
+            if address <= rva < address + max(virtual_size, raw_size):
+                return raw + rva - address
+        return None
+
+    names = []
+    at = offset(struct.unpack_from("<I", data, optional + 112 + 8)[0])
+    while at is not None and struct.unpack_from("<I", data, at + 12)[0]:
+        name = offset(struct.unpack_from("<I", data, at + 12)[0])
+        names.append(data[name:data.index(b"\0", name)].decode())
+        at += 20
+    return names
+
+
+def game_running() -> bool:
+    output = subprocess.run(["tasklist", "/FI", "IMAGENAME eq MonsterHunterWorld.exe", "/NH"],
+                            capture_output=True, text=True).stdout
+    return "MonsterHunterWorld.exe" in output
+
+
+def stage_dirs() -> tuple[Path, Path]:
+    label = commit_label()
+    return LOCAL / "stage" / f"{project_version()}-{label}", LOCAL / "stage" / f"examples-{label}"
+
+
+def files_under(folder: Path, skip: tuple[str, ...] = ()) -> list[Path]:
+    return sorted(p for p in folder.rglob("*") if p.is_file() and not any(part in skip for part in p.relative_to(folder).parts))
+
+
+# Commands ---------------------------------------------------------------
+
+def build(_: argparse.Namespace) -> None:
+    build_dir = settings()["build_dir"]
+    run(["cmake", "-S", ".", "-B", build_dir, "-A", "x64"], stdout=subprocess.DEVNULL)
+    run(["cmake", "--build", build_dir, "--config", "Release", "--parallel"])
+
+
+def test(_: argparse.Namespace) -> None:
+    run(["ctest", "--test-dir", settings()["build_dir"], "-C", "Release", "--output-on-failure"])
+
+
+def check(args: argparse.Namespace) -> None:
+    build(args)
+    test(args)
+
+
+def stage(_: argparse.Namespace) -> None:
+    build_dir = settings()["build_dir"]
+    package, examples = stage_dirs()
+    if commit_label().endswith("-dirty"):
+        print("warning: staging uncommitted changes; the label says -dirty")
+    for folder in (package, examples):
+        shutil.rmtree(folder, ignore_errors=True)
+    run(["cmake", "--install", build_dir, "--config", "Release", "--prefix", str(package)], stdout=subprocess.DEVNULL)
+    run(["cmake", "--install", build_dir, "--config", "Release", "--component", "examples", "--prefix", str(examples)],
+        stdout=subprocess.DEVNULL)
+    problems = []
+    for folder in (package, examples):
+        print(f"\n{folder.relative_to(ROOT)}")
+        for path in files_under(folder):
+            line = f"  {sha256(path)}  {path.relative_to(folder).as_posix()}"
+            if path.suffix.lower() in (".dll", ".exe"):
+                names = imports(path)
+                line += f"  imports {', '.join(names)}"
+                if path.suffix.lower() == ".dll" and [n.upper() for n in names] != ["KERNEL32.DLL"]:
+                    problems.append(path.name)
+            print(line)
+    if problems:
+        fail("DLLs importing more than KERNEL32: " + ", ".join(problems))
+
+
+def selected_profile(mo2_ini: Path) -> str:
+    found = re.search(r"^selected_profile=@ByteArray\((.*)\)\s*$", mo2_ini.read_text(encoding="utf-8", errors="replace"),
+                      re.MULTILINE)
+    return found.group(1) if found else ""
+
+
+def enabled_mods(profile_folder: Path) -> list[str]:
+    lines = (profile_folder / "modlist.txt").read_text(encoding="utf-8", errors="replace").splitlines()
+    return [line[1:] for line in lines if line.startswith("+")]
+
+
+def force_loaded(profile_folder: Path, title: str) -> bool:
+    text = (profile_folder / "settings.ini").read_text(encoding="utf-8", errors="replace")
+    key = title.replace(" ", "%20").replace(":", "%3A") + "\\enabled=true"
+    return any(line.strip() == key for line in text.splitlines())
+
+
+def install_mo2(args: argparse.Namespace) -> None:
+    config = settings()
+    if game_running():
+        fail("the game is running; close it first")
+    package, examples = stage_dirs()
+    if not package.exists() or not examples.exists():
+        fail(f"nothing staged for {commit_label()}; run 'stage' first")
+    run_folder = LOCAL / "runs" / args.run
+    if (run_folder / "installed-backup").exists():
+        fail(f"{run_folder} already has an installed-backup; pick a new run name")
+    mods = Path(config["mo2_mods"])
+    targets = {mods / config["cmfm_mod"]: package, mods / config["examples_mod"]: examples}
+
+    # Back up what is installed now, except CMFM's own logs, cache and data.
+    for mod in targets:
+        for path in files_under(mod, skip=("logs", "cache", "data")):
+            backup = run_folder / "installed-backup" / mod.name / path.relative_to(mod)
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup)
+
+    installed = {}
+    for mod, source in targets.items():
+        extras = {p.relative_to(mod) for p in files_under(mod, skip=("logs", "cache", "data"))} - \
+                 {p.relative_to(source) for p in files_under(source)} - {Path("meta.ini")}
+        for path in files_under(source):
+            target = mod / path.relative_to(source)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            installed[f"{mod.name}/{path.relative_to(source).as_posix()}"] = sha256(target)
+        (mod / "meta.ini").write_text(f"[General]\r\nversion={project_version()}\r\ncomments=CMFM local dev build "
+                                      f"{commit_label()}, installed by tools/dev.py for run {args.run}\r\n",
+                                      encoding="utf-8", newline="")
+        for extra in sorted(extras):
+            print(f"note: {mod.name}/{extra.as_posix()} is installed but not part of this build")
+
+    profile = selected_profile(Path(config["mo2_ini"]))
+    profile_folder = Path(config["mo2_profiles"]) / profile
+    logs = mods / config["cmfm_mod"] / "cmfm" / "logs"
+    run_folder.mkdir(parents=True, exist_ok=True)
+    (run_folder / "logs-before.txt").write_text(
+        "\n".join(sorted(p.relative_to(logs).as_posix() for p in logs.rglob("*") if p.is_file())) + "\n"
+        if logs.exists() else "", encoding="utf-8")
+    manifest = {
+        "run": args.run,
+        "date": datetime.date.today().isoformat(),
+        "source_commit": commit_label(),
+        "cmfm_version": project_version(),
+        "exe_sha256": sha256(Path(config["game_exe"])),
+        "installed": installed,
+        "mo2_profile": profile,
+        "mo2_enabled_mods": enabled_mods(profile_folder),
+        "mo2_executable": config["launcher_title"],
+        "force_load": force_loaded(profile_folder, config["launcher_title"]),
+        "steam_overlay": "unconfirmed",
+        "sealed": False,
+    }
+    (run_folder / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+                                              encoding="utf-8")
+    print(f"\ninstalled {commit_label()} for run {args.run}; profile {profile}, "
+          f"{len(manifest['mo2_enabled_mods'])} mods enabled, force-load {manifest['force_load']}")
+    print(f"backup and manifest: {run_folder.relative_to(ROOT)}")
+
+
+def launch_folder(args: argparse.Namespace) -> Path:
+    folder = LOCAL / "runs" / args.run
+    if args.launch:
+        folder = folder / f"launch-{args.launch}"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def watch(args: argparse.Namespace) -> None:
+    folder = launch_folder(args)
+    with (folder / "watcher.log").open("w", encoding="utf-8") as log:
+        subprocess.run([sys.executable, "-B", str(ROOT / "tools" / "modwatch.py"), "--out", str(folder)],
+                       cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=False)
+
+
+def collect(args: argparse.Namespace) -> None:
+    config = settings()
+    cmfm = Path(config["mo2_mods"]) / config["cmfm_mod"] / "cmfm"
+    folder = launch_folder(args)
+    before_file = LOCAL / "runs" / args.run / "logs-before.txt"
+    before = set(before_file.read_text(encoding="utf-8").split()) if before_file.exists() else set()
+    target = folder / "cmfm-logs"
+    target.mkdir(exist_ok=True)
+
+    newest = {}
+    for kind in ("core", "launcher"):
+        candidates = [p for p in (cmfm / "logs").glob(f"{kind}.*.log") if p.name not in before]
+        if candidates:
+            newest[kind] = max(candidates, key=lambda p: p.stat().st_mtime)
+            shutil.copy2(newest[kind], target / newest[kind].name)
+    for log in (cmfm / "logs" / "plugins").glob("*.log"):
+        if not log.name.endswith(".previous.log"):
+            shutil.copy2(log, target / log.name)
+    for cache in (cmfm / "cache").glob("scan.*.txt"):
+        shutil.copy2(cache, folder / "scan-cache.txt")
+    print(f"copied to {folder.relative_to(ROOT)}: " + ", ".join(sorted(p.name for p in target.iterdir())))
+
+    if "core" in newest:
+        print(f"\n{newest['core'].name}")
+        for line in newest["core"].read_text(encoding="utf-8", errors="replace").splitlines():
+            text = re.sub(r"^\[qpc=\d+ bootstrap_us=\d+\] ", "", line)
+            if re.match(r"(plugin name=|phase_pre_main_(enter|complete|skipped|failed)|warning)", text):
+                print("  " + text)
+    else:
+        print("no new core log")
+    if "launcher" in newest:
+        lines = newest["launcher"].read_text(encoding="utf-8", errors="replace").splitlines()
+        values = dict(line.split("=", 1) for line in lines if "=" in line and line.split("=", 1)[0].isidentifier())
+        if "before_create_qpc" in values and "resumed_qpc" in values:
+            print(f"  paused {(int(values['resumed_qpc']) - int(values['before_create_qpc'])) / 1e4:.1f} ms "
+                  "(assuming a 10 MHz QPC)")
+        print(f"  game_exit_code={values.get('game_exit_code', '?')}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name, function in (("build", build), ("test", test), ("check", check), ("stage", stage)):
+        commands.add_parser(name).set_defaults(function=function)
+    install = commands.add_parser("install-mo2")
+    install.add_argument("run")
+    install.set_defaults(function=install_mo2)
+    for name, function in (("watch", watch), ("collect", collect)):
+        command = commands.add_parser(name)
+        command.add_argument("run")
+        command.add_argument("--launch", type=int, default=0)
+        command.set_defaults(function=function)
+    args = parser.parse_args()
+    try:
+        args.function(args)
+    except subprocess.CalledProcessError as error:
+        fail(f"command failed with exit code {error.returncode}")
+
+
+if __name__ == "__main__":
+    main()
