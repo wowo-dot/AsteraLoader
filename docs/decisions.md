@@ -44,3 +44,17 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
    - First step: a launcher plus a `cmfm.dll` that only logs startup timing.
      It proves the injection under MO2, and that usvfs still reaches the
      game.
+
+## 2026-10-09
+
+7. **API roadmap:** `api-roadmap.md`. API 1.1 adds services that need no
+   hooks (interfaces by name, game identity, per-plugin timing,
+   dependencies, data folders, plugin-to-plugin interfaces, a shared cached
+   signature scanner); 1.2 the hook-based ones (remaining phases, per-save
+   plugin data, a shared hook service, graphics coordination, input, game
+   thread tasks); then the Menu milestone.
+8. **Stracker plugins load at PRE_MAIN**, the moment SPL's default
+   PreloadDLLs already loads Stracker at, not at the game's first DINPUT8
+   load, which would need a hook or a proxy DLL (Claude's proposal; the user
+   ran it in stracker-mo2-1 to -3 and did not object). This replaces the
+   requirements draft's "defaults to Stracker's moment".
