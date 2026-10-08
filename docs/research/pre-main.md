@@ -150,7 +150,7 @@ for these runs. Further work can also measure the hook setup/removal costs
 separately before optimizing the startup delay. WinMain/device phases,
 Stracker replacement and menu work remain separate next steps.
 
-## Startup optimization (prepared, not yet measured in MHW)
+## Startup optimization (confirmed in startup-opt-1)
 
 The source of the system-wide enumeration cost is MinHook 1.3.4's
 `EnumerateThreads`: `CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)` captures
@@ -194,8 +194,51 @@ The core still imports only KERNEL32.
 `startup_hook_timing` now reports operation duration, successful process
 snapshots and Toolhelp fallbacks. `startup_signature_scan_us` separates the
 signature search from hook enable. These are local measurements, not a claim
-about MHW's improvement. The next user-run comparison keeps the current MO2
-profile/mod setup and changes only the installed core.
+about MHW's improvement by themselves. The following game run measures it.
+
+### Run startup-opt-1 (2026-10-09, confirmed)
+
+Core 5ee3591, retained launcher 6e0dc18, PID 46816, MO2 `cmfm`, `CMFM Launcher`,
+no force-load, overlay present. PRE_MAIN ran once on thread 38640, both startup
+patches were restored, and the game exited with code 0. No core warnings.
+`hello` and `stracker_compat` 0.1.0 remained active; hello recorded one phase-0
+callback and the expected virtual/real MO2 folders. The shim reported two
+Stracker plugins found, two loaded, zero failed, game version 421810.
+
+| Measurement | Previous game run | startup-opt-1 |
+|---|---:|---:|
+| before CreateProcess → resume | 84.647 ms | 18.423 ms |
+| observer created → armed checkpoints | 67.134 ms | 0.188 ms |
+| observer enable, isolated operation | not isolated | 0.173 ms |
+| CRT entry enable, isolated operation | not isolated | 0.282 ms |
+| both startup patches restored, isolated operation | not isolated | 0.172 ms |
+| PRE_MAIN enter → complete (client work included) | 623.631 ms | 620.250 ms |
+
+The previous column is `stracker-mo2-3`. The before-CreateProcess-to-resume
+interval fell by 78.2%; it includes process creation/initialization as well as
+the paused bootstrap, so it is not a pure MinHook measurement. Bootstrap entry
+to resume was 2.112 ms. All three hook operations used one process snapshot
+each and zero Toolhelp fallbacks; their combined measured cost was 0.627 ms.
+Signature search was 26.456 ms and the EXE-hash wait at PRE_MAIN was zero.
+
+The prepared manifest expected Stracker's original loader enabled, but the
+actual run had it disabled. The collected profile has `-Stracker's Loader`;
+module evidence shows the CMFM shim and later System32 DINPUT8, without the
+old Stracker proxy/loader pair. Both compatibility clients are active. The
+manifest preserves the planned mod list and records the observed setup.
+This difference occurs after the startup hook operations, but overall loading
+times are not a controlled A/B comparison and no general FPS claim follows.
+
+The watcher saw 160 distinct modules with zero torn/suspect snapshots. All
+133 observer records were retained, with no pending records or truncation.
+The run is sealed under `local/runs/startup-opt-1` with core/launcher/client
+logs, the module report and `timing-analysis.json`. Tested source 5ee3591 is
+tagged `v0.1.0-dev.6`. The optimized installed build stays in place.
+
+The thread-snapshot overhead is now below a millisecond. Remaining measured
+startup costs include the 26 ms signature search and about 620 ms inside the
+client/plugin phase; the latter was already present in the baseline and was
+not changed by this optimization.
 
 ## Diagnostic build used in pre-main-2
 
