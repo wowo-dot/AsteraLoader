@@ -97,6 +97,7 @@ target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 add_library(cmfm_startup STATIC
     src/core/startup/entry_signature.cpp
     src/core/startup/entry_signature.hpp
+    src/core/startup/protect_trace.hpp
     src/core/startup/runtime.cpp
     src/core/startup/runtime.hpp)
 target_link_libraries(cmfm_startup PUBLIC cmfm_plugins PRIVATE cmfm_minhook)
@@ -192,6 +193,11 @@ target_link_libraries(cmfm_startup_signature_tests PRIVATE cmfm_startup)
 cmfm_project_target(cmfm_startup_signature_tests)
 add_test(NAME startup_signature COMMAND cmfm_startup_signature_tests)
 
+add_executable(cmfm_protect_trace_tests tests/test_protect_trace.cpp)
+target_link_libraries(cmfm_protect_trace_tests PRIVATE cmfm_common)
+cmfm_project_target(cmfm_protect_trace_tests)
+add_test(NAME startup_protect_trace COMMAND cmfm_protect_trace_tests)
+
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.
 add_executable(fake_game WIN32 tests/fake_game.cpp)
@@ -220,6 +226,16 @@ add_test(NAME startup_phase
         "-DWORK=${CMAKE_BINARY_DIR}/startup_phase"
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_phase PROPERTIES TIMEOUT 45)
+add_test(NAME startup_trace_overflow
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DWORK=${CMAKE_BINARY_DIR}/startup_trace_overflow"
+        -DEXPECT_TRUNCATION=1
+        -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
+set_tests_properties(startup_trace_overflow PROPERTIES TIMEOUT 45)
 add_test(NAME startup_missing_transition
     COMMAND "${CMAKE_COMMAND}"
         "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"

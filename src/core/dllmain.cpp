@@ -13,6 +13,8 @@
 namespace {
 HMODULE g_module = nullptr;
 LARGE_INTEGER g_attach_qpc{};
+LARGE_INTEGER g_bootstrap_qpc{};
+LARGE_INTEGER g_qpc_frequency{};
 FILETIME g_attach_time{};
 volatile LONG g_started = 0;
 
@@ -31,7 +33,11 @@ public:
 
 void log_line(std::wstring_view text) {
     LogLock lock;
-    g_log.line(text);
+    LARGE_INTEGER now{};
+    QueryPerformanceCounter(&now);
+    const auto elapsed = g_qpc_frequency.QuadPart ?
+        (now.QuadPart - g_bootstrap_qpc.QuadPart) * 1000000 / g_qpc_frequency.QuadPart : 0;
+    g_log.line(L"[qpc=" + std::to_wstring(now.QuadPart) + L" bootstrap_us=" + std::to_wstring(elapsed) + L"] " + std::wstring(text));
 }
 
 // Hashing the 84 MB exe took 229 ms of the game's pause in run
@@ -82,9 +88,11 @@ DWORD startup(const cmfm::StartupRequest* request) {
         return ERROR_REVISION_MISMATCH;
     }
     if (InterlockedCompareExchange(&g_started, 1, 0) != 0) return ERROR_ALREADY_INITIALIZED;
+    QueryPerformanceCounter(&g_bootstrap_qpc);
+    QueryPerformanceFrequency(&g_qpc_frequency);
 
     // This export is called after LoadLibraryW has returned, outside DllMain
-    // and the loader lock. No plugin code or game hooks run in this skeleton.
+    // and the loader lock. Plugins remain deferred until verified PRE_MAIN.
     const auto virtual_path = cmfm::module_path(g_module);
     cmfm::Handle file(CreateFileW(virtual_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
@@ -100,13 +108,13 @@ DWORD startup(const cmfm::StartupRequest* request) {
     }
 
     const auto profile = cmfm::environment(L"USERPROFILE");
-    LARGE_INTEGER frequency{}, now{};
-    QueryPerformanceFrequency(&frequency);
-    QueryPerformanceCounter(&now);
     log_line(L"CMFM " CMFM_VERSION L" commit=" CMFM_GIT_COMMIT);
+    log_line(L"bootstrap_stage=log_opened; preceding time includes path resolution and log creation");
     log_line(L"pid=" + std::to_wstring(GetCurrentProcessId()));
     log_line(L"dll=" + cmfm::redact_profile(real_path, profile));
+    log_line(L"bootstrap_stage=dll_hash_begin");
     const auto dll_hash = cmfm::sha256_file(real_path);
+    log_line(L"bootstrap_stage=dll_hash_complete");
     log_line(L"dll_sha256=" + dll_hash);
     log_line(L"exe=" + cmfm::redact_profile(cmfm::module_path(), profile));
     if (dll_hash.empty()) {
@@ -114,8 +122,8 @@ DWORD startup(const cmfm::StartupRequest* request) {
         return ERROR_READ_FAULT;
     }
     log_line(L"attach_qpc=" + std::to_wstring(g_attach_qpc.QuadPart));
-    log_line(L"bootstrap_qpc=" + std::to_wstring(now.QuadPart));
-    log_line(L"qpc_frequency=" + std::to_wstring(frequency.QuadPart));
+    log_line(L"bootstrap_qpc=" + std::to_wstring(g_bootstrap_qpc.QuadPart));
+    log_line(L"qpc_frequency=" + std::to_wstring(g_qpc_frequency.QuadPart));
     log_line(L"launcher_qpc=" + std::to_wstring(request->launcher_qpc));
     FILETIME created{}, exited{}, kernel{}, user{};
     if (GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) {
@@ -141,8 +149,12 @@ DWORD startup(const cmfm::StartupRequest* request) {
         if (!g_log.good()) return ERROR_WRITE_FAULT;
     }
     cmfm::startup::initialise_hash_result();
+    log_line(L"bootstrap_stage=exe_hash_thread_begin");
     start_exe_hash();
+    log_line(L"bootstrap_stage=exe_hash_thread_ready");
+    log_line(L"bootstrap_stage=observer_begin");
     cmfm::startup::arm_pre_main(g_module, folder, log_line);
+    log_line(L"bootstrap_stage=bootstrap_complete");
     return cmfm::kStartupOk;
 }
 }  // namespace

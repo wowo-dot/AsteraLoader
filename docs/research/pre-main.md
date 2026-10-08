@@ -50,7 +50,48 @@ create.
 
 ## Next
 
-Before the next run, have the detector log every `VirtualProtect` call it sees
-while armed (caller module and section RVA, target RVA, size, new and old
-protection, result; capped), and timestamp the bootstrap lines. Then repeat
-this run unchanged.
+Repeat the same launch setup with the diagnostic build described below.
+PRE_MAIN in the real game remains unverified until that run is analysed.
+
+## Diagnostic build for the repeat run (prepared, untested in game)
+
+The observer records the first 256 `VirtualProtect` calls while armed, including
+rejected calls. Each record has entry/return QPC timestamps, thread ID, caller
+and target addresses, caller module/section/RVA, target module/section/RVA,
+size, requested and previous protection, API result and last error. The
+`from_bind`, `covers_text` and `executable_read` fields show each existing
+filter's result; `state` shows whether the detector was waiting or already busy.
+Acceptance filters and the startup signatures are unchanged.
+
+Recording uses fixed storage without allocation or log I/O in the observer.
+The existing deadline worker formats and writes published records, polling
+every 250 ms. The final `startup_vprotect_summary` reports total calls,
+recorded calls, the cap, truncated calls and any still-pending records. Calls
+after the recording window closes are excluded. Overflow leaves the detector working;
+it only limits diagnostic detail. No new observers were added.
+
+The old-protection output is read only after success, with a recoverable-fault
+guard, and is otherwise logged as `unavailable`. The API's return value, output
+and last error remain unchanged. Last error on a successful call may simply
+be a value left by an earlier call; only the API result indicates failure.
+Main-exe section metadata is saved before startup. Other module/section names
+are resolved later and may be unavailable or stale after unload; raw addresses
+and call timestamps remain the captured values.
+
+Every core-log line now has `qpc` and microseconds since bootstrap entry.
+Checkpoints bracket DLL hashing, EXE-hash thread creation, image metadata,
+MinHook initialization, lifetime pinning, observer creation/activation and
+bootstrap completion. The first checkpoint includes time spent resolving the
+DLL's real path and creating the log. This should identify the unmeasured
+70 ms from `pre-main-1`; diagnostic logging itself also has a cost.
+
+Verification uses original synthetic executables only: a successful transition
+dispatches PRE_MAIN once on the main thread and restores its wrapper; the
+missing-transition case deliberately makes over 300 rejected calls, records
+exactly 256, reports truncation and still exits normally. Failed calls retain
+their output sentinel and last error. A second successful-transition test fills
+the trace first and confirms PRE_MAIN still runs after the cap. A concurrent
+buffer test checks capacity and unpublished slots. All 18 Release CTest cases
+passed with warnings as errors;
+the core still imports only KERNEL32. This is evidence about the implementation,
+not confirmation that the real game's transition will match.

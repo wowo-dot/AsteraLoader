@@ -55,6 +55,21 @@ extern "C" void cmfm_test_packed_entry() {
     for (unsigned i = 0; i < sizeof(g_common_before); ++i) g_common_before[i] = g_common[i];
     wchar_t skip[2]{};
     const bool skip_transition = GetEnvironmentVariableW(L"CMFM_FAKE_SKIP_TRANSITION", skip, 2) != 0;
+    DWORD invalid_old = 0x12345678;
+    if (VirtualProtect(nullptr, 0, PAGE_READONLY, &invalid_old) || invalid_old != 0x12345678) ExitProcess(96);
+    const auto invalid_error = GetLastError();
+    if (invalid_error == ERROR_SUCCESS) ExitProcess(97);
+    // Overflow the diagnostic cap with rejected calls in the timeout case.
+    // The game must still start and the caller's output must remain untouched.
+    wchar_t overflow[2]{};
+    if (skip_transition || GetEnvironmentVariableW(L"CMFM_FAKE_TRACE_OVERFLOW", overflow, 2) != 0) {
+        for (unsigned i = 0; i < 300; ++i) {
+            DWORD output = 0x12345678;
+            SetLastError(0);
+            if (VirtualProtect(nullptr, 0, PAGE_READONLY, &output) || output != 0x12345678 ||
+                GetLastError() != invalid_error) ExitProcess(98);
+        }
+    }
     const auto* section = IMAGE_FIRST_SECTION(pe);
     for (WORD i = 0; i < pe->FileHeader.NumberOfSections; ++i) {
         if (skip_transition) break;

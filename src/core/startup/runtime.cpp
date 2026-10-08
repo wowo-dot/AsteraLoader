@@ -7,6 +7,7 @@
 #include "core/plugins/host.hpp"
 #include "core/plugins/guard.hpp"
 #include "core/startup/entry_signature.hpp"
+#include "core/startup/protect_trace.hpp"
 
 #include <MinHook.h>
 #include <intrin.h>
@@ -33,11 +34,14 @@ using Protect = BOOL(WINAPI*)(LPVOID, SIZE_T, DWORD, PDWORD);
 using Entry = int(__cdecl*)();
 
 struct Image {
+    struct Section { CodeRange range; std::array<char, 9> name{}; };
     const std::uint8_t* base = nullptr;
     std::uint32_t size = 0;
     std::uint32_t entry = 0;
     CodeRange text{};
     CodeRange bind{};
+    std::array<Section, 96> sections{};
+    WORD section_count = 0;
 };
 
 struct Runtime {
@@ -56,6 +60,7 @@ struct Runtime {
     void* entry_target = nullptr;
     std::array<std::uint8_t, 5> entry_patch{};
     Handle resolved;
+    ProtectTrace trace;
     plugins::Host host;
 };
 // Once a hook is installed, this state and the DLL are pinned until process
@@ -96,9 +101,12 @@ Image current_image() {
         const auto& section = sections[i];
         if (section.VirtualAddress >= image.size || section.Misc.VirtualSize > image.size - section.VirtualAddress) return {};
         const CodeRange range{section.VirtualAddress, section.Misc.VirtualSize};
+        image.sections[i].range = range;
+        std::memcpy(image.sections[i].name.data(), section.Name, 8);
         if (!std::memcmp(section.Name, ".text\0\0\0", 8) && (section.Characteristics & IMAGE_SCN_MEM_EXECUTE)) image.text = range;
         if (!std::memcmp(section.Name, ".bind\0\0\0", 8) && (section.Characteristics & IMAGE_SCN_MEM_EXECUTE)) image.bind = range;
     }
+    image.section_count = pe->FileHeader.NumberOfSections;
     return image;
 }
 
@@ -164,6 +172,7 @@ void visible_warning(std::wstring_view message) noexcept {
 }
 
 void disable_observer() noexcept {
+    g_runtime->trace.stop();
     if (g_runtime->observer_enabled.exchange(false)) {
         if (!readable(g_runtime->protect_target, g_runtime->protect_patch.size()) ||
             std::memcmp(g_runtime->protect_target, g_runtime->protect_patch.data(), g_runtime->protect_patch.size())) {
@@ -291,8 +300,21 @@ bool guarded_scan(CrtEntry* candidate, std::string* reason) {
     __except (plugins::recoverable_fault(GetExceptionCode())) { return false; }
 }
 
+bool read_old_protection(PDWORD source, std::uint32_t* value) noexcept {
+    __try {
+        if (!source) return false;
+        *value = *source;
+        return true;
+    } __except (plugins::recoverable_fault(GetExceptionCode())) { return false; }
+}
+
 __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, DWORD protection, PDWORD old) noexcept {
     const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+    const auto incoming_error = GetLastError();
+    const auto ticket = g_runtime->trace.claim();
+    LARGE_INTEGER begin{};
+    if (ticket < ProtectTrace::limit) QueryPerformanceCounter(&begin);
+    SetLastError(incoming_error);
     const BOOL result = g_runtime->protect_original(address, size, protection, old);
     const DWORD last_error = GetLastError();
     const auto base = reinterpret_cast<std::uintptr_t>(g_runtime->image.base);
@@ -304,6 +326,27 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
                                  (access == PAGE_EXECUTE_READ || access == PAGE_EXECUTE);
     const bool from_stub = caller >= base + bind.rva && caller - (base + bind.rva) < bind.size;
     const bool covers_text = start <= base + text.rva && size >= (base + text.rva - start) + text.size;
+    if (ticket < ProtectTrace::limit) {
+        LARGE_INTEGER end{};
+        QueryPerformanceCounter(&end);
+        ProtectCall call;
+        call.begin_qpc = begin.QuadPart;
+        call.end_qpc = end.QuadPart;
+        call.caller = caller;
+        call.address = start;
+        call.size = size;
+        call.thread = GetCurrentThreadId();
+        call.protection = protection;
+        // A failed call need not initialize its output. Never read it then.
+        call.old_available = result && read_old_protection(old, &call.old_protection);
+        call.last_error = last_error;
+        call.state = static_cast<unsigned>(g_runtime->state.load());
+        call.success = result != FALSE;
+        call.from_stub = from_stub;
+        call.covers_text = covers_text;
+        call.executable_read = executable_read;
+        g_runtime->trace.publish(ticket, call);
+    }
     if (result && executable_read && from_stub && covers_text) {
         auto expected = State::waiting;
         if (g_runtime->state.compare_exchange_strong(expected, State::resolving)) {
@@ -327,8 +370,94 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
     return result;
 }
 
+std::wstring hex(std::uint64_t value) {
+    wchar_t buffer[32]{};
+    swprintf_s(buffer, L"0x%llx", static_cast<unsigned long long>(value));
+    return buffer;
+}
+
+// Non-main modules may unload before the worker reports a call. Their section
+// metadata is best effort, guarded against that race; recorded addresses remain.
+bool module_section(HMODULE module, std::uintptr_t address, char* name) noexcept {
+    __try {
+        const auto* base = reinterpret_cast<const std::uint8_t*>(module);
+        if (!readable(base, sizeof(IMAGE_DOS_HEADER))) return false;
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < sizeof(*dos) || dos->e_lfanew > 0x100000) return false;
+        const auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+        if (!readable(pe, sizeof(*pe)) || pe->Signature != IMAGE_NT_SIGNATURE || pe->FileHeader.NumberOfSections > 96) return false;
+        const auto* sections = IMAGE_FIRST_SECTION(pe);
+        if (!readable(sections, sizeof(*sections) * pe->FileHeader.NumberOfSections)) return false;
+        const auto rva = address - reinterpret_cast<std::uintptr_t>(base);
+        for (WORD i = 0; i < pe->FileHeader.NumberOfSections; ++i) {
+            if (rva >= sections[i].VirtualAddress && rva - sections[i].VirtualAddress < sections[i].Misc.VirtualSize) {
+                std::memcpy(name, sections[i].Name, 8);
+                name[8] = 0;
+                return true;
+            }
+        }
+    } __except (plugins::recoverable_fault(GetExceptionCode())) { return false; }
+    return false;
+}
+
+std::wstring location(std::uintptr_t address) {
+    const auto& image = g_runtime->image;
+    const auto base = reinterpret_cast<std::uintptr_t>(image.base);
+    if (address >= base && address - base < image.size) {
+        const auto rva = address - base;
+        std::string section = "headers-or-gap";
+        for (WORD i = 0; i < image.section_count; ++i) {
+            const auto& item = image.sections[i];
+            if (rva >= item.range.rva && rva - item.range.rva < item.range.size) section = item.name.data();
+        }
+        return L"MonsterHunterWorld.exe section=" + widen(section) + L" rva=" + hex(rva);
+    }
+    MEMORY_BASIC_INFORMATION region{};
+    if (!VirtualQuery(reinterpret_cast<const void*>(address), &region, sizeof(region)) || region.State == MEM_FREE) return L"unmapped";
+    const auto allocation = reinterpret_cast<std::uintptr_t>(region.AllocationBase);
+    if (region.Type != MEM_IMAGE) return L"non-image allocation=" + hex(allocation) + L" offset=" + hex(address - allocation);
+    const auto module = static_cast<HMODULE>(region.AllocationBase);
+    const auto path = module_path(module);
+    char section[9]{};
+    module_section(module, address, section);
+    return std::wstring(path.empty() ? L"unavailable-module" : file_name_of(path)) +
+        L" section=" + (section[0] ? widen(section) : L"unavailable") + L" rva=" + hex(address - allocation);
+}
+
+void drain_trace(std::array<bool, ProtectTrace::limit>& reported, std::size_t& count) noexcept {
+    for (std::size_t i = 0; i < ProtectTrace::limit; ++i) {
+        ProtectCall call;
+        if (reported[i] || !g_runtime->trace.read(i, call)) continue;
+        reported[i] = true;
+        ++count;
+        try {
+            write(L"startup_vprotect_call index=" + std::to_wstring(i) + L" begin_qpc=" + std::to_wstring(call.begin_qpc) +
+                L" end_qpc=" + std::to_wstring(call.end_qpc) + L" thread=" + std::to_wstring(call.thread) +
+                L" caller=" + hex(call.caller) + L" caller_location=[" + location(call.caller) +
+                L"] target=" + hex(call.address) + L" target_location=[" + location(call.address) +
+                L"] size=" + hex(call.size) + L" new=" + hex(call.protection) +
+                L" old=" + (call.old_available ? hex(call.old_protection) : L"unavailable") +
+                L" result=" + std::to_wstring(call.success) + L" last_error=" + std::to_wstring(call.last_error) +
+                L" state=" + std::to_wstring(call.state) + L" from_bind=" + std::to_wstring(call.from_stub) +
+                L" covers_text=" + std::to_wstring(call.covers_text) + L" executable_read=" + std::to_wstring(call.executable_read));
+        } catch (...) { write(L"warning: startup VirtualProtect record formatting failed"); }
+    }
+}
+
 DWORD WINAPI deadline(void*) noexcept {
-    if (WaitForSingleObject(g_runtime->resolved.get(), 15000) == WAIT_TIMEOUT) {
+    std::array<bool, ProtectTrace::limit> reported{};
+    std::size_t count = 0;
+    const auto until = GetTickCount64() + 15000;
+    DWORD wait = WAIT_TIMEOUT;
+    for (;;) {
+        const auto now = GetTickCount64();
+        if (now >= until) break;
+        const auto remaining = until - now;
+        wait = WaitForSingleObject(g_runtime->resolved.get(), static_cast<DWORD>(std::min<ULONGLONG>(remaining, 250)));
+        drain_trace(reported, count);
+        if (wait != WAIT_TIMEOUT) break;
+    }
+    if (wait == WAIT_TIMEOUT) {
         auto expected = State::waiting;
         bool skipped = g_runtime->state.compare_exchange_strong(expected, State::skipped);
         if (!skipped) {
@@ -342,6 +471,18 @@ DWORD WINAPI deadline(void*) noexcept {
             visible_warning(L"CMFM did not find a verified post-unpack startup point. Plugins were skipped.");
         }
     }
+    g_runtime->trace.stop();
+    // Give calls already inside the API a bounded chance to publish. Never
+    // wait on them from the game thread, and expose missing records explicitly.
+    Sleep(20);
+    drain_trace(reported, count);
+    try {
+        const auto total = g_runtime->trace.total();
+        const auto retained = std::min<std::uint64_t>(total, ProtectTrace::limit);
+        write(L"startup_vprotect_summary total=" + std::to_wstring(total) + L" recorded=" + std::to_wstring(count) +
+              L" limit=" + std::to_wstring(ProtectTrace::limit) + L" truncated=" + std::to_wstring(total - retained) +
+              L" pending=" + std::to_wstring(retained - count) + L" state_ids=0:waiting,1:resolving,2:hooked,3:running,4:completed,5:skipped");
+    } catch (...) { write(L"warning: startup VirtualProtect summary unavailable"); }
     return 0;
 }
 
@@ -385,6 +526,10 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
         runtime->image = current_image();
         runtime->resolved.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
         g_runtime = runtime;
+        write(L"bootstrap_stage=image_metadata_ready image_base=" + hex(reinterpret_cast<std::uintptr_t>(runtime->image.base)) +
+              L" entry_rva=" + hex(runtime->image.entry) + L" text_rva=" + hex(runtime->image.text.rva) +
+              L" text_size=" + hex(runtime->image.text.size) + L" bind_rva=" + hex(runtime->image.bind.rva) +
+              L" bind_size=" + hex(runtime->image.bind.size));
         if (!runtime->image.size || !runtime->image.text.size || !runtime->resolved) {
             write(L"phase_pre_main_skipped: executable metadata or event unavailable");
             visible_warning(L"CMFM could not verify this executable's startup layout.");
@@ -395,6 +540,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             visible_warning(L"CMFM could not initialize its startup hook.");
             return;
         }
+        write(L"bootstrap_stage=minhook_initialized");
         // Pin before any hook can reference our code, including warning threads.
         HMODULE pinned = nullptr;
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
@@ -402,6 +548,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             write(L"phase_pre_main_skipped: core lifetime pin failed");
             return;
         }
+        write(L"bootstrap_stage=core_pinned");
         const bool packed = runtime->image.entry >= runtime->image.bind.rva &&
             runtime->image.entry - runtime->image.bind.rva < runtime->image.bind.size;
         if (!packed) {
@@ -419,10 +566,13 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             visible_warning(L"CMFM could not install its startup observer without a hook conflict.");
             return;
         }
+        write(L"bootstrap_stage=observer_target_verified target=" + hex(reinterpret_cast<std::uintptr_t>(runtime->protect_target)) +
+              L" location=[" + location(reinterpret_cast<std::uintptr_t>(runtime->protect_target)) + L"]");
         void* original = nullptr;
         auto result = MH_CreateHook(runtime->protect_target, std::bit_cast<void*>(&protect_observer), &original);
         if (result == MH_OK) {
             runtime->protect_original = std::bit_cast<Protect>(original);
+            write(L"bootstrap_stage=observer_hook_created");
             result = MH_EnableHook(runtime->protect_target);
         }
         if (result != MH_OK) {
@@ -432,6 +582,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
         }
         runtime->observer_enabled.store(true);
         std::memcpy(runtime->protect_patch.data(), runtime->protect_target, runtime->protect_patch.size());
+        runtime->trace.start();
         write(L"phase_pre_main_observer_armed; security cookie and SteamStub unchanged");
         Handle thread(CreateThread(nullptr, 0, deadline, nullptr, 0, nullptr));
         if (!thread) {
@@ -440,6 +591,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             write(L"phase_pre_main_skipped: observer deadline thread unavailable");
             visible_warning(L"CMFM could not start its startup observer deadline.");
         }
+        write(L"bootstrap_stage=observer_deadline_ready");
     } catch (...) {
         if (g_runtime) {
             g_runtime->state.store(State::skipped);
