@@ -1,5 +1,10 @@
 # Launcher startup implementation handoff (2026-10-08)
 
+> **Update 2026-10-08:** run launcher-mo2-1 tested this build in the real game
+> under MO2 (no force-load, overlay on): CMFM confirmed before resume, loaded
+> before usvfs and SteamStub, and the virtual folder still reached the game.
+> No exe TLS callbacks exist. See [research/entry-slot.md](research/entry-slot.md).
+
 The missing launcher and core startup proof are implemented. The helpers Claude
 left uncommitted are retained, with path fixes and log-write error tracking.
 There is no plugin loading, Stracker shim, graphics hook or menu yet.
