@@ -28,3 +28,33 @@ force-load, Steam overlay on, core d589db2 (v0.1.0-dev.3), launcher 6591057.
   it starts.
 
 Run folder: `local/runs/plugin-mo2-1` (CMFM logs, hello.log, module report).
+
+## Run stracker-mo2-1 (confirmed)
+
+Stracker's Loader compatibility (`stracker_compat` with its `loader.dll`
+shim, 6e0dc18). MO2 profile `cmfm` with the `Stracker's Loader` mod
+**disabled** and a test mod holding byte-identical copies of its
+loader-config.json (logfile and logcmd on, logLevel ERROR), MonsterLoader.dll
+and QuestLoader.dll. "CMFM Launcher", no force-load, overlay on.
+
+- `stracker_compat` reported active: 2 Stracker plugins found, 2 loaded,
+  0 failed; game version 421810; config found. No CMFM warning, no Stracker
+  console, no loader.log (nothing at ERROR). The game exited normally.
+- **The game version is readable at PRE_MAIN**, before the game's CRT
+  start: Stracker's pattern matched once and its pointer held "421810".
+- Load order: hello 880.3 ms, stracker_compat 881.3, CMFM's loader.dll 882.8
+  (from the CMFM mod), MonsterLoader 895.2, QuestLoader 1044.3. DINPUT8 came
+  from System32 at 5011 ms; no Stracker dinput8.dll or loader.dll loaded.
+- PRE_MAIN took 626 ms. The shim's own work (config, version scan) is about
+  12 ms; the rest is the plugins' DllMain signature scans (MonsterLoader about
+  149 ms, QuestLoader about 462 ms). Under Stracker's Loader that work ran
+  after DINPUT8 at about 4.4 s. It moved earlier, so the DLSS winmm.dll, dxgi
+  and device creation came about 640 ms later than in plugin-mo2-1.
+- The module list records the Stracker plugins by their real mod path (the
+  shim loads them by full virtual path); Stracker's relative-path loads were
+  recorded by the virtual path. `GetModuleFileNameW` gives the virtual path
+  in both cases under usvfs.
+
+Run folder: `local/runs/stracker-mo2-1`. Not yet tested: leftover Stracker
+files, the full 19-plugin set (LuaEngine first), SPL force-load, overlay off,
+manual and Steam launch options.
