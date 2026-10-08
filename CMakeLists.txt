@@ -70,6 +70,10 @@ target_include_directories(cmfm_api INTERFACE include)
 
 # Plugin manifests and load order (core side of the plugin API).
 add_library(cmfm_plugins STATIC
+    src/core/plugins/discovery.cpp
+    src/core/plugins/discovery.hpp
+    src/core/plugins/host.cpp
+    src/core/plugins/host.hpp
     src/core/plugins/load_order.cpp
     src/core/plugins/load_order.hpp
     src/core/plugins/manifest.cpp
@@ -117,6 +121,35 @@ add_executable(cmfm_plugin_tests tests/test_plugins.cpp)
 target_link_libraries(cmfm_plugin_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_plugin_tests)
 add_test(NAME plugin_manifest_order COMMAND cmfm_plugin_tests)
+
+# The plugin host against fixture plugins, one DLL per declared case.
+add_executable(cmfm_plugin_host_tests tests/test_plugin_host.cpp)
+target_link_libraries(cmfm_plugin_host_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_plugin_host_tests)
+set(CMFM_PLUGIN_FIXTURES "${CMAKE_BINARY_DIR}/plugin_fixtures/$<CONFIG>")
+function(cmfm_plugin_fixture name)
+    add_library(cmfm_plugin_fixture_${name} SHARED tests/plugin_fixture.cpp)
+    target_link_libraries(cmfm_plugin_fixture_${name} PRIVATE cmfm_api)
+    target_compile_definitions(cmfm_plugin_fixture_${name} PRIVATE "FIXTURE_NAME=\"${name}\"" ${ARGN})
+    cmfm_project_target(cmfm_plugin_fixture_${name})
+    set_target_properties(cmfm_plugin_fixture_${name} PROPERTIES
+        OUTPUT_NAME ${name}
+        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+    add_dependencies(cmfm_plugin_host_tests cmfm_plugin_fixture_${name})
+endfunction()
+cmfm_plugin_fixture(alpha)
+cmfm_plugin_fixture(beta "FIXTURE_AFTER=\"gamma\"")
+cmfm_plugin_fixture(gamma FIXTURE_ORDER=5)
+cmfm_plugin_fixture(delta FIXTURE_ORDER=10 "FIXTURE_BEFORE=\"beta\"")
+cmfm_plugin_fixture(cycle_x "FIXTURE_AFTER=\"cycle_y\"")
+cmfm_plugin_fixture(cycle_y "FIXTURE_AFTER=\"cycle_x\"")
+cmfm_plugin_fixture(newer_api FIXTURE_API=0x20000u)
+cmfm_plugin_fixture(failing FIXTURE_FAIL FIXTURE_PHASES=0x1u)
+cmfm_plugin_fixture(wrong_exe FIXTURE_WRONG_EXE)
+cmfm_plugin_fixture(no_exports FIXTURE_NO_EXPORTS)
+cmfm_plugin_fixture(phased FIXTURE_PHASES=0x21u)
+add_test(NAME plugin_host
+    COMMAND cmfm_plugin_host_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.

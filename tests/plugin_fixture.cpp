@@ -1,0 +1,90 @@
+// A test plugin, built once per FIXTURE_NAME with different declarations.
+// It records init and phase calls in the file named by CMFM_TEST_PLUGIN_RECORD.
+#include "cmfm/cmfm_plugin.h"
+
+#include <windows.h>
+
+#include <string>
+
+#ifdef FIXTURE_NO_EXPORTS
+// A DLL with exports, but not the plugin ones.
+extern "C" __declspec(dllexport) int not_a_plugin() { return 0; }
+#else
+
+#ifndef FIXTURE_API
+#define FIXTURE_API CMFM_API_VERSION
+#endif
+#ifndef FIXTURE_ORDER
+#define FIXTURE_ORDER 0
+#endif
+#ifndef FIXTURE_PHASES
+#define FIXTURE_PHASES 0u
+#endif
+
+namespace {
+void record(const std::string& line) {
+    wchar_t path[1024]{};
+    if (!GetEnvironmentVariableW(L"CMFM_TEST_PLUGIN_RECORD", path, 1024)) return;
+    const HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    const auto text = line + "\n";
+    DWORD written = 0;
+    WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &written, nullptr);
+    CloseHandle(file);
+}
+
+bool ends_with(const wchar_t* path, const wchar_t* tail) {
+    const std::wstring text = path ? path : L"";
+    const std::wstring end = std::wstring(L"\\") + tail;
+    return text.size() >= end.size() && text.compare(text.size() - end.size(), end.size(), end) == 0;
+}
+
+void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
+    record(std::string(FIXTURE_NAME) + " phase " + std::to_string(phase));
+}
+
+#ifdef FIXTURE_AFTER
+const char* const after[] = {FIXTURE_AFTER, nullptr};
+#define FIXTURE_AFTER_LIST after
+#else
+#define FIXTURE_AFTER_LIST nullptr
+#endif
+#ifdef FIXTURE_BEFORE
+const char* const before[] = {FIXTURE_BEFORE, nullptr};
+#define FIXTURE_BEFORE_LIST before
+#else
+#define FIXTURE_BEFORE_LIST nullptr
+#endif
+#ifdef FIXTURE_WRONG_EXE
+const char* const exes[] = {"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", nullptr};
+#define FIXTURE_EXE_LIST exes
+#else
+#define FIXTURE_EXE_LIST nullptr
+#endif
+
+const cmfm_plugin_info_t info = {
+    sizeof(cmfm_plugin_info_t), FIXTURE_API, FIXTURE_NAME, "Fixture " FIXTURE_NAME, "0.0.1", FIXTURE_PHASES,
+    FIXTURE_ORDER, FIXTURE_AFTER_LIST, FIXTURE_BEFORE_LIST, FIXTURE_EXE_LIST,
+    FIXTURE_PHASES ? on_phase : nullptr,
+};
+}  // namespace
+
+extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
+    return &info;
+}
+
+extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api,
+                                                                      const cmfm_init_t* init) {
+    const bool paths = init->size == sizeof(cmfm_init_t) && ends_with(init->folder, L"" FIXTURE_NAME) &&
+                       ends_with(init->folder_real, L"" FIXTURE_NAME);
+    record(std::string(FIXTURE_NAME) + " init" + (paths ? "" : " bad-paths"));
+    api->log(init->self, CMFM_LOG_INFO, "fixture " FIXTURE_NAME " started");
+#ifdef FIXTURE_FAIL
+    api->set_status(init->self, CMFM_STATUS_DISABLED, "fixture refuses to start");
+    return CMFM_ERROR;
+#else
+    return CMFM_OK;
+#endif
+}
+#endif
