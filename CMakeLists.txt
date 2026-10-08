@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(cmfm VERSION 0.1.0 LANGUAGES CXX)
+project(cmfm VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "CMFM targets 64-bit Windows only")
@@ -17,6 +17,9 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# C only checks that the public plugin header builds as plain C.
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Static CRT: the early-loaded cmfm.dll should import no DLL beyond KERNEL32.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -35,7 +38,8 @@ endif()
 # Project code builds with warnings as errors. Third-party code, when there is
 # some, gets its own targets without these options.
 function(cmfm_project_target target)
-    target_compile_options(${target} PRIVATE /W4 /WX /permissive- /utf-8 /Zc:__cplusplus /EHsc)
+    target_compile_options(${target} PRIVATE /W4 /WX /utf-8
+        "$<$<COMPILE_LANGUAGE:CXX>:/permissive-;/Zc:__cplusplus;/EHsc>")
     target_compile_definitions(${target} PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
         CMFM_VERSION=L"${PROJECT_VERSION}-dev"
@@ -59,6 +63,10 @@ add_library(cmfm_common STATIC
     src/common/windows.hpp)
 target_include_directories(cmfm_common PUBLIC src)
 cmfm_project_target(cmfm_common)
+
+# The public plugin API: one C header, the only thing plugins build against.
+add_library(cmfm_api INTERFACE)
+target_include_directories(cmfm_api INTERFACE include)
 
 add_executable(cmfm_launcher WIN32 src/launcher/main.cpp)
 target_link_libraries(cmfm_launcher PRIVATE cmfm_common shell32 user32)
@@ -87,6 +95,14 @@ add_executable(cmfm_core_tests tests/test_core.cpp)
 target_link_libraries(cmfm_core_tests PRIVATE cmfm_common)
 cmfm_project_target(cmfm_core_tests)
 add_test(NAME core_startup_abi COMMAND cmfm_core_tests "$<TARGET_FILE:cmfm>")
+
+# The plugin ABI layout, compiled as C and as C++ (tests/abi_layout.h).
+foreach(language IN ITEMS c cpp)
+    add_executable(cmfm_abi_${language} tests/test_abi.${language})
+    target_link_libraries(cmfm_abi_${language} PRIVATE cmfm_api)
+    cmfm_project_target(cmfm_abi_${language})
+    add_test(NAME plugin_abi_${language} COMMAND cmfm_abi_${language})
+endforeach()
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.
