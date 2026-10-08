@@ -54,10 +54,16 @@ set(CMFM_DIST "${CMAKE_BINARY_DIR}/dist/$<CONFIG>")
 add_library(cmfm_common STATIC
     src/common/launch_plan.cpp
     src/common/launch_plan.hpp
+    src/common/game_version.cpp
+    src/common/game_version.hpp
     src/common/log_file.cpp
     src/common/log_file.hpp
+    src/common/memory.cpp
+    src/common/memory.hpp
     src/common/paths.cpp
     src/common/paths.hpp
+    src/common/pattern.cpp
+    src/common/pattern.hpp
     src/common/sha256.cpp
     src/common/sha256.hpp
     src/common/startup.hpp
@@ -142,7 +148,7 @@ add_library(cmfm_stracker_loader SHARED
     plugins/stracker_compat/loader.cpp
     plugins/stracker_compat/loader_abi.h
     plugins/stracker_compat/shim.h)
-target_link_libraries(cmfm_stracker_loader PRIVATE cmfm_stracker_logic)
+target_link_libraries(cmfm_stracker_loader PRIVATE cmfm_stracker_logic cmfm_common)
 cmfm_project_target(cmfm_stracker_loader)
 set_target_properties(cmfm_stracker_loader PROPERTIES
     OUTPUT_NAME loader
@@ -268,6 +274,11 @@ add_executable(cmfm_stracker_logic_tests tests/test_stracker_logic.cpp)
 target_link_libraries(cmfm_stracker_logic_tests PRIVATE cmfm_stracker_logic)
 cmfm_project_target(cmfm_stracker_logic_tests)
 add_test(NAME stracker_logic COMMAND cmfm_stracker_logic_tests)
+
+add_executable(cmfm_pattern_tests tests/test_pattern.cpp)
+target_link_libraries(cmfm_pattern_tests PRIVATE cmfm_common)
+cmfm_project_target(cmfm_pattern_tests)
+add_test(NAME pattern COMMAND cmfm_pattern_tests)
 
 # A stand-in Stracker plugin that imports loader.dll, kept away from the shim.
 add_library(cmfm_stracker_plugin_fixture SHARED tests/stracker_plugin_fixture.cpp)

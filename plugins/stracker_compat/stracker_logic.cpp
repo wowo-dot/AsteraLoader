@@ -3,7 +3,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#include <cstring>
 #include <map>
 #include <utility>
 
@@ -235,65 +234,6 @@ bool parse_config(std::string_view text, Config& out, std::vector<std::string>& 
         if (!known) problems.push_back("logLevel is not \"DEBUG\", \"INFO\", \"WARNING\" or \"ERROR\"; using \"ERROR\"");
     }
     return true;
-}
-
-Pattern parse_bits(std::string_view bits) {
-    Pattern pattern;
-    std::uint8_t byte = 0, mask = 0;
-    int count = 0;
-    for (const char c : bits) {
-        if (c != '0' && c != '1' && c != '.') continue;
-        byte = static_cast<std::uint8_t>((byte << 1) | (c == '1'));
-        mask = static_cast<std::uint8_t>((mask << 1) | (c != '.'));
-        if (++count == 8) {
-            pattern.bytes.push_back(byte);
-            pattern.mask.push_back(mask);
-            byte = mask = 0;
-            count = 0;
-        }
-    }
-    return pattern;
-}
-
-void find_all(std::span<const std::uint8_t> data, const Pattern& pattern, std::size_t base,
-              std::vector<std::size_t>& found, std::size_t limit) {
-    const auto size = pattern.bytes.size();
-    if (!size || pattern.mask.size() != size || data.size() < size) return;
-    const auto matches = [&](std::size_t at) {
-        for (std::size_t k = 0; k < size; ++k) {
-            if ((data[at + k] & pattern.mask[k]) != (pattern.bytes[k] & pattern.mask[k])) return false;
-        }
-        return true;
-    };
-    // Candidates come from memchr on the last fully fixed byte.
-    std::size_t anchor = size;
-    for (std::size_t k = size; k-- > 0;) {
-        if (pattern.mask[k] == 0xFF) {
-            anchor = k;
-            break;
-        }
-    }
-    if (anchor == size) {
-        for (std::size_t at = 0; at + size <= data.size() && found.size() < limit; ++at) {
-            if (matches(at)) found.push_back(base + at);
-        }
-        return;
-    }
-    const auto* begin = data.data();
-    const auto last = data.size() - size + anchor;  // last place the anchor byte can be
-    auto from = anchor;
-    while (from <= last && found.size() < limit) {
-        const auto* hit = static_cast<const std::uint8_t*>(std::memchr(begin + from, pattern.bytes[anchor], last - from + 1));
-        if (!hit) break;
-        const auto at = static_cast<std::size_t>(hit - begin) - anchor;
-        if (matches(at)) found.push_back(base + at);
-        from = static_cast<std::size_t>(hit - begin) + 1;
-    }
-}
-
-bool plausible_version(std::string_view text) {
-    if (text.empty() || text.size() > 63) return false;
-    return std::all_of(text.begin(), text.end(), [](char c) { return c >= 0x20 && c <= 0x7E; });
 }
 
 std::vector<std::wstring> plugin_files(std::vector<DirectoryEntry> entries) {

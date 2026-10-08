@@ -17,6 +17,8 @@
 #include "shim.h"
 #include "stracker_logic.hpp"
 
+#include "common/game_version.hpp"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -148,26 +150,6 @@ bool read_file(const std::wstring& path, std::string& out) {
     return ok;
 }
 
-// Committed, readable memory: the scan and the version pointer may only touch that.
-bool readable(const void* address, std::size_t size) {
-    auto cursor = reinterpret_cast<std::uintptr_t>(address);
-    const auto end = cursor + size;
-    if (end < cursor) return false;
-    while (cursor < end) {
-        MEMORY_BASIC_INFORMATION info{};
-        if (!VirtualQuery(reinterpret_cast<const void*>(cursor), &info, sizeof(info))) return false;
-        const auto access = info.Protect & 0xFF;
-        if (info.State != MEM_COMMIT || (info.Protect & PAGE_GUARD) || access == PAGE_NOACCESS ||
-            access == PAGE_EXECUTE) {
-            return false;
-        }
-        const auto next = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
-        if (next <= cursor) return false;
-        cursor = next;
-    }
-    return true;
-}
-
 void load_config(const std::wstring& game, cmfm_stracker_result& result) {
     std::string text;
     std::vector<std::string> problems;
@@ -197,71 +179,16 @@ void old_warning(const std::wstring& game) {
     }
 }
 
-void version_failed(const char* detail) {
-    loader::LOG(loader::ERR) << "Build Number check failed.";
-    loader::LOG(loader::ERR) << "Could not find game version";
-    loader::LOG(loader::ERR) << "Loader needs to be updated.";
-    loader::LOG(loader::ERR) << "(" << detail << ")";
-}
-
 void find_version(const void* image, cmfm_stracker_result& result) {
-    const auto* base = static_cast<const std::uint8_t*>(image);
-    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
-    if (!base || !readable(dos, sizeof(*dos)) || dos->e_magic != IMAGE_DOS_SIGNATURE ||
-        !readable(base + dos->e_lfanew, sizeof(IMAGE_NT_HEADERS64))) {
-        version_failed("the game image header is unreadable");
+    const auto found = cmfm::find_game_version(image);
+    if (found.text.empty()) {
+        loader::LOG(loader::ERR) << "Build Number check failed.";
+        loader::LOG(loader::ERR) << "Could not find game version";
+        loader::LOG(loader::ERR) << "Loader needs to be updated.";
+        loader::LOG(loader::ERR) << "(" << found.failure << ")";
         return;
     }
-    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    const std::size_t size = nt->OptionalHeader.SizeOfImage;
-
-    // Stracker scans every committed region of the image and needs exactly one match.
-    const auto pattern = parse_bits(kVersionPattern);
-    std::vector<std::size_t> found;
-    for (std::size_t offset = 0; offset < size && found.size() < 2;) {
-        MEMORY_BASIC_INFORMATION info{};
-        if (!VirtualQuery(base + offset, &info, sizeof(info))) break;
-        const auto region_end = std::min<std::size_t>(
-            size, static_cast<std::size_t>(static_cast<const std::uint8_t*>(info.BaseAddress) + info.RegionSize - base));
-        if (region_end <= offset) break;
-        if (readable(base + offset, region_end - offset)) {
-            find_all({base + offset, region_end - offset}, pattern, offset, found, 2);
-        }
-        offset = region_end;
-    }
-    if (found.size() != 1) {
-        version_failed(found.empty() ? "pattern not found" : "pattern found more than once");
-        return;
-    }
-
-    const auto* instruction = base + found[0] - kVersionInstructionBack;
-    if (found[0] < kVersionInstructionBack || !readable(instruction, 7)) {
-        version_failed("the version instruction is unreadable");
-        return;
-    }
-    std::int32_t displacement = 0;
-    std::memcpy(&displacement, instruction + 3, sizeof(displacement));
-    const auto pointer_address =
-        version_pointer_address(reinterpret_cast<std::uintptr_t>(base + found[0]), displacement);
-    const auto* pointer = reinterpret_cast<const char* const*>(pointer_address);
-    if (pointer_address < reinterpret_cast<std::uintptr_t>(base) ||
-        pointer_address + sizeof(void*) > reinterpret_cast<std::uintptr_t>(base) + size ||
-        !readable(pointer, sizeof(*pointer))) {
-        version_failed("the version pointer is outside the game image");
-        return;
-    }
-    const char* text = *pointer;
-    if (!text) {
-        version_failed("the version pointer is not set yet");
-        return;
-    }
-    std::string version;
-    for (std::size_t k = 0; k < 64 && readable(text + k, 1) && text[k]; ++k) version += text[k];
-    if (!plausible_version(version)) {
-        version_failed("the version text is not readable text");
-        return;
-    }
-    g_version = version;
+    g_version = found.text;
     loader::GameVersion = g_version.c_str();
     result.version_found = 1;
     copy_text(result.game_version, sizeof(result.game_version), g_version);
