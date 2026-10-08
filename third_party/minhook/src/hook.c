@@ -34,6 +34,11 @@
 #include "buffer.h"
 #include "trampoline.h"
 
+// CMFM adapter: process-scoped enumeration; upstream Toolhelp is the fallback.
+#ifdef CMFM_MINHOOK_PROCESS_THREADS
+BOOL WINAPI cmfm_enumerate_process_threads(HANDLE heap, LPDWORD *ids, UINT *count);
+#endif
+
 #ifndef ARRAYSIZE
     #define ARRAYSIZE(A) (sizeof(A)/sizeof((A)[0]))
 #endif
@@ -263,6 +268,14 @@ static VOID ProcessThreadIPs(HANDLE hThread, UINT pos, UINT action)
 static BOOL EnumerateThreads(PFROZEN_THREADS pThreads)
 {
     BOOL succeeded = FALSE;
+
+#ifdef CMFM_MINHOOK_PROCESS_THREADS
+    if (cmfm_enumerate_process_threads(g_hHeap, &pThreads->pItems, &pThreads->size))
+    {
+        pThreads->capacity = pThreads->size;
+        return TRUE;
+    }
+#endif
 
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (hSnapshot != INVALID_HANDLE_VALUE)

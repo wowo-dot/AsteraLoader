@@ -150,6 +150,53 @@ for these runs. Further work can also measure the hook setup/removal costs
 separately before optimizing the startup delay. WinMain/device phases,
 Stracker replacement and menu work remain separate next steps.
 
+## Startup optimization (prepared, not yet measured in MHW)
+
+The source of the system-wide enumeration cost is MinHook 1.3.4's
+`EnumerateThreads`: `CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)` captures
+all system threads before filtering by process. The CMFM adapter first uses
+the documented Windows process-snapshot API, with `GetCurrentProcess()` and
+`PSS_CAPTURE_THREADS` only. It returns current-process IDs excluding the caller.
+No memory clone, thread context or handle-table capture is requested.
+
+The adapter owns snapshot/marker cleanup and returns its ID array on MinHook's
+private heap. Any capture/query/walk/allocation failure discards the partial
+list and uses MinHook's original Toolhelp path. Suspension, instruction-pointer
+relocation, patching and resume logic remain unchanged. The 13-line vendored
+adapter patch is recorded in `third_party/README.md`; notices and the original
+dependency pin are retained. API references:
+[capture](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-psscapturesnapshot),
+[flags](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/ne-processsnapshot-pss_capture_flags).
+
+Normal PRE_MAIN restoration now queues both owned startup patches and applies
+them under one freeze. Each patch must still match CMFM's saved bytes; conflicts
+and partial failures retain individual recovery. Trampolines remain allocated
+for in-flight calls. The full-text transition and unique CRT signatures are
+unchanged. No cached thread list or unprotected instruction patching is used.
+
+Local measurements in `local/runs/startup-opt-standin-1`:
+
+| Measurement | Result |
+|---|---:|
+| system Toolhelp enumeration, 9 samples, 16 owned workers | median 50,107 µs; range 49,050–52,481 µs |
+| process-only PSS enumeration, same test | median 59 µs; range 58–125 µs |
+| observer enable, synthetic helper run | 398 µs |
+| CRT entry enable, same run | 229 µs |
+| paired startup restoration, same run | 242 µs |
+
+All 25 Release CTest cases passed with project warnings as errors. Tests verify
+the owned workers are found and the caller excluded; eight workers keep calling
+two targets through 12 paired enable/disable cycles; a pre-existing suspension
+stays intact. The same hook test passes with PSS failure forced, exercising
+Toolhelp fallback. Existing phase, ABI, launcher, plugin and Stracker tests pass.
+The core still imports only KERNEL32.
+
+`startup_hook_timing` now reports operation duration, successful process
+snapshots and Toolhelp fallbacks. `startup_signature_scan_us` separates the
+signature search from hook enable. These are local measurements, not a claim
+about MHW's improvement. The next user-run comparison keeps the current MO2
+profile/mod setup and changes only the installed core.
+
 ## Diagnostic build used in pre-main-2
 
 The observer records the first 256 `VirtualProtect` calls while armed, including

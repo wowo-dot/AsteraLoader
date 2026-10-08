@@ -2,7 +2,13 @@
 
 - MinHook **v1.3.4**, commit `c3fcafdc10146beb5919319d0683e44e3c30d537`,
   from <https://github.com/TsudaKageyu/minhook>. `minhook/include` and
-  `minhook/src` are copied unchanged from that commit. The x64 build uses
+  `minhook/src` are based on that commit. `hook.c` has one CMFM adapter patch:
+  with `CMFM_MINHOOK_PROCESS_THREADS`, thread enumeration first uses
+  `src/core/hooks/thread_snapshot.cpp` (Windows PSS, current process, IDs only).
+  Failure falls back to the original Toolhelp enumerator. Thread suspension,
+  instruction-pointer relocation, patching and resume code are unchanged.
+  No public MinHook API was changed. All other vendored files are unchanged.
+  The x64 build uses
   `buffer.c`, `hook.c`, `trampoline.c` and `hde64.c`. Its BSD-2 notices,
   including HDE notices, are in `minhook/LICENSE.txt` and installed with CMFM.
   The build requires no download.

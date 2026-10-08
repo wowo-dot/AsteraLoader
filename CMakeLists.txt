@@ -84,6 +84,11 @@ add_library(cmfm_plugins STATIC
 target_link_libraries(cmfm_plugins PUBLIC cmfm_api cmfm_common)
 cmfm_project_target(cmfm_plugins)
 
+# Process-only thread IDs for MinHook; project code keeps /W4 /WX.
+add_library(cmfm_thread_snapshot STATIC src/core/hooks/thread_snapshot.cpp src/core/hooks/thread_snapshot.hpp)
+target_include_directories(cmfm_thread_snapshot PUBLIC src)
+cmfm_project_target(cmfm_thread_snapshot)
+
 # MinHook 1.3.4, c3fcafdc10146beb5919319d0683e44e3c30d537.
 # Vendored source; BSD-2 notices in third_party/minhook/LICENSE.txt.
 add_library(cmfm_minhook STATIC
@@ -92,7 +97,8 @@ add_library(cmfm_minhook STATIC
     third_party/minhook/src/trampoline.c
     third_party/minhook/src/hde/hde64.c)
 target_include_directories(cmfm_minhook PUBLIC third_party/minhook/include)
-target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMFM_MINHOOK_PROCESS_THREADS)
+target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
 
 add_library(cmfm_startup STATIC
     src/core/startup/entry_signature.cpp
@@ -168,6 +174,29 @@ install(FILES "$<TARGET_FILE:cmfm_hello>" DESTINATION cmfm/plugins/hello COMPONE
 
 include(CTest)
 if(BUILD_TESTING)
+
+add_executable(cmfm_thread_snapshot_tests tests/test_thread_snapshot.cpp)
+target_link_libraries(cmfm_thread_snapshot_tests PRIVATE cmfm_thread_snapshot)
+cmfm_project_target(cmfm_thread_snapshot_tests)
+add_test(NAME hook_thread_snapshot COMMAND cmfm_thread_snapshot_tests)
+
+add_executable(cmfm_hook_thread_tests tests/test_hook_threads.cpp)
+target_link_libraries(cmfm_hook_thread_tests PRIVATE cmfm_minhook)
+cmfm_project_target(cmfm_hook_thread_tests)
+add_test(NAME hook_threads COMMAND cmfm_hook_thread_tests)
+
+# Force enumeration failure only here to exercise unchanged Toolhelp fallback.
+add_library(cmfm_minhook_fallback STATIC
+    third_party/minhook/src/buffer.c third_party/minhook/src/hook.c
+    third_party/minhook/src/trampoline.c third_party/minhook/src/hde/hde64.c
+    tests/thread_snapshot_failure.c)
+target_include_directories(cmfm_minhook_fallback PUBLIC third_party/minhook/include)
+target_compile_definitions(cmfm_minhook_fallback PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMFM_MINHOOK_PROCESS_THREADS)
+add_executable(cmfm_hook_fallback_tests tests/test_hook_threads.cpp)
+target_link_libraries(cmfm_hook_fallback_tests PRIVATE cmfm_minhook_fallback)
+cmfm_project_target(cmfm_hook_fallback_tests)
+add_test(NAME hook_thread_fallback COMMAND cmfm_hook_fallback_tests)
+set_tests_properties(hook_thread_snapshot hook_threads hook_thread_fallback PROPERTIES TIMEOUT 30)
 
 add_executable(cmfm_tests tests/test_common.cpp)
 target_link_libraries(cmfm_tests PRIVATE cmfm_common shell32)

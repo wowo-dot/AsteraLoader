@@ -8,6 +8,7 @@
 #include "core/plugins/guard.hpp"
 #include "core/startup/entry_signature.hpp"
 #include "core/startup/protect_trace.hpp"
+#include "core/hooks/thread_snapshot.hpp"
 
 #include <MinHook.h>
 #include <intrin.h>
@@ -139,6 +140,25 @@ void write(std::wstring_view text) noexcept {
     try { g_runtime->log(text); } catch (...) { /* Logging cannot stop startup. */ }
 }
 
+LONGLONG ticks() noexcept {
+    LARGE_INTEGER now{};
+    QueryPerformanceCounter(&now);
+    return now.QuadPart;
+}
+
+void hook_timing(std::wstring_view operation, LONGLONG begin, hooks::ThreadSnapshotCounts before) noexcept {
+    const auto end = ticks();
+    const auto after = hooks::thread_snapshot_counts();
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    try {
+        if (frequency.QuadPart) write(L"startup_hook_timing operation=" + std::wstring(operation) +
+            L" elapsed_us=" + std::to_wstring((end - begin) * 1000000 / frequency.QuadPart) +
+            L" process_snapshots=" + std::to_wstring(after.succeeded - before.succeeded) +
+            L" toolhelp_fallbacks=" + std::to_wstring((after.attempts - before.attempts) - (after.succeeded - before.succeeded)));
+    } catch (...) { /* Diagnostics cannot stop startup. */ }
+}
+
 std::wstring widen(const std::string& utf8) {
     if (utf8.empty()) return {};
     const auto size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
@@ -179,7 +199,10 @@ void disable_observer() noexcept {
             write(L"warning: startup API observer changed by another hook; its code was left intact");
             return;
         }
+        const auto before = hooks::thread_snapshot_counts();
+        const auto begin = ticks();
         const auto result = MH_DisableHook(g_runtime->protect_target);
+        hook_timing(L"observer_disable", begin, before);
         if (result != MH_OK && result != MH_ERROR_DISABLED) {
             write(L"warning: could not remove startup API observer");
         } else {
@@ -197,10 +220,40 @@ bool disable_entry() noexcept {
         write(L"warning: CRT entry changed by another hook; its code was left intact");
         return false;
     }
+    const auto before = hooks::thread_snapshot_counts();
+    const auto begin = ticks();
     const auto result = MH_DisableHook(g_runtime->entry_target);
+    hook_timing(L"crt_entry_disable", begin, before);
     const auto restored = result == MH_OK || result == MH_ERROR_DISABLED;
     if (restored) g_runtime->entry_enabled.store(false);
     return restored;
+}
+
+bool restore_startup_hooks() noexcept {
+    g_runtime->trace.stop();
+    // Normal entry removes both verified patches under one MinHook freeze.
+    // Conflicts and partial failures retain the existing per-hook recovery.
+    if (g_runtime->observer_enabled.load() && g_runtime->entry_enabled.load() &&
+        readable(g_runtime->protect_target, g_runtime->protect_patch.size()) &&
+        !std::memcmp(g_runtime->protect_target, g_runtime->protect_patch.data(), g_runtime->protect_patch.size()) &&
+        readable(g_runtime->entry_target, g_runtime->entry_patch.size()) &&
+        !std::memcmp(g_runtime->entry_target, g_runtime->entry_patch.data(), g_runtime->entry_patch.size())) {
+        const auto before = hooks::thread_snapshot_counts();
+        const auto begin = ticks();
+        auto result = MH_QueueDisableHook(g_runtime->protect_target);
+        if (result == MH_OK) result = MH_QueueDisableHook(g_runtime->entry_target);
+        if (result == MH_OK) result = MH_ApplyQueued();
+        hook_timing(L"startup_restore_batch", begin, before);
+        if (result == MH_OK) {
+            g_runtime->observer_enabled.store(false);
+            g_runtime->entry_enabled.store(false);
+            write(L"startup_api_observer_removed");
+            return true;
+        }
+        write(L"warning: batched startup hook removal failed; attempting individual removal");
+    }
+    disable_observer();
+    return disable_entry();
 }
 
 void report_plugins() {
@@ -219,10 +272,9 @@ int __cdecl crt_entry() noexcept {
     auto expected = State::hooked;
     if (!g_runtime->state.compare_exchange_strong(expected, State::running)) return g_runtime->entry_original();
     SetEvent(g_runtime->resolved.get());
-    disable_observer();
     // Restore the startup wrapper before executing it. Do not touch the
     // cookie initializer, common-main body, or any SteamStub instruction.
-    const auto restored = disable_entry();
+    const auto restored = restore_startup_hooks();
     try {
         if (!restored) throw 0;
         write(L"phase_pre_main_enter thread_id=" + std::to_wstring(GetCurrentThreadId()));
@@ -269,7 +321,10 @@ bool install_entry(const CrtEntry& candidate) {
     }
     g_runtime->entry_target = target;
     g_runtime->entry_original = std::bit_cast<Entry>(original);
+    const auto before = hooks::thread_snapshot_counts();
+    const auto begin = ticks();
     result = MH_EnableHook(target);
+    hook_timing(L"crt_entry_enable", begin, before);
     if (result != MH_OK) {
         MH_RemoveHook(target);
         write(L"phase_pre_main_hook_failed: " + widen(MH_StatusToString(result)));
@@ -356,7 +411,14 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
             try {
                 std::string reason;
                 CrtEntry candidate{};
-                if (guarded_scan(&candidate, &reason) && install_entry(candidate)) {
+                const auto scan_begin = ticks();
+                const bool found = guarded_scan(&candidate, &reason);
+                const auto scan_end = ticks();
+                LARGE_INTEGER frequency{};
+                QueryPerformanceFrequency(&frequency);
+                if (frequency.QuadPart) write(L"startup_signature_scan_us=" + std::to_wstring(
+                    (scan_end - scan_begin) * 1000000 / frequency.QuadPart));
+                if (found && install_entry(candidate)) {
                     write(L"unpacked_crt_verified_after_protection_change");
                 } else {
                     write(L"phase_pre_main_pending: " + widen(reason));
@@ -576,7 +638,10 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
         if (result == MH_OK) {
             runtime->protect_original = std::bit_cast<Protect>(original);
             write(L"bootstrap_stage=observer_hook_created");
+            const auto before = hooks::thread_snapshot_counts();
+            const auto begin = ticks();
             result = MH_EnableHook(runtime->protect_target);
+            hook_timing(L"observer_enable", begin, before);
         }
         if (result != MH_OK) {
             write(L"phase_pre_main_skipped: " + widen(MH_StatusToString(result)));

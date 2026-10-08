@@ -90,6 +90,8 @@ if(NOT EXPECT_TRUNCATION)
     endforeach()
 endif()
 foreach(marker IN ITEMS "unpacked_crt_verified_after_protection_change" "phase_pre_main_complete"
+                        "startup_hook_timing operation=startup_restore_batch"
+                        "startup_signature_scan_us="
                         "startup_api_observer_removed"
                         "plugin name=pre_main_probe version=0.0.1 status=active")
     string(FIND "${core}" "${marker}" found)
