@@ -58,3 +58,27 @@ and QuestLoader.dll. "CMFM Launcher", no force-load, overlay on.
 Run folder: `local/runs/stracker-mo2-1`. Not yet tested: leftover Stracker
 files, the full 19-plugin set (LuaEngine first), SPL force-load, overlay off,
 manual and Steam launch options.
+
+## Runs stracker-mo2-2 and stracker-mo2-3: leftover Stracker files (confirmed)
+
+The same setup with the `Stracker's Loader` mod enabled again, so its
+dinput8.dll and loader.dll are in the virtual game folder.
+
+- `stracker_compat` reports **degraded**: "Stracker's Loader files are still
+  in the game folder (dinput8.dll, loader.dll); CMFM replaces them, so disable
+  or remove them". CMFM shows its warning popup. The plugins still load once
+  at PRE_MAIN through CMFM's shim; the game runs and exits normally.
+- Stracker's own dinput8.dll (4963 ms) and loader.dll (4966 ms, a second
+  module named loader.dll) still run. Its requests for the same plugins get
+  the modules already loaded: **no plugin was mapped twice** (stracker-mo2-3,
+  watcher). stracker-mo2-2 had no watcher.
+- Correction: after stracker-mo2-2 the shim was changed (3ce2d5d) to load
+  plugins by Stracker's relative path, on the theory that a relative load is
+  recorded by the virtual path and a full-path load is not. stracker-mo2-3
+  disproved it: the plugins are recorded by their real mod path either way,
+  and usvfs resolves Stracker's later requests to those same files. The
+  relative call stays because it is Stracker's own; the entry-slot-1
+  observation (Stracker's loads recorded by the virtual path) remains
+  unexplained.
+
+Run folders: `local/runs/stracker-mo2-2`, `local/runs/stracker-mo2-3`.

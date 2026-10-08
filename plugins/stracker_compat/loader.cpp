@@ -292,11 +292,11 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
         try {
             loader::LOG(loader::INFO) << "Loading plugin " << shown;
         } catch (...) { /* A name the ANSI code page cannot hold; load it anyway. */ }
-        // Load by Stracker's relative path, which Windows resolves through the
-        // game exe's folder first, as Stracker does. Under MO2 the module is
-        // then recorded by its virtual path, so a leftover Stracker loader
-        // asking for the same path finds it loaded instead of mapping a
-        // second copy (a full virtual path is recorded by the real one).
+        // Load by Stracker's own relative path, resolved through the game
+        // exe's folder first, so Windows and MO2 treat it exactly as they
+        // treat Stracker's loads. Under MO2 the module is recorded by its real
+        // mod path, and a leftover Stracker loader asking for the same path
+        // gets the loaded module, not a second copy (run stracker-mo2-3).
         //
         // A damaged DLL would make Windows show a "Bad Image" box and wait for
         // a click; the failure is reported through CMFM instead. Only this
