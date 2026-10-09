@@ -191,3 +191,28 @@ of CMFM, started from the plain "Monster Hunter: World" entry. Two launches.
   though its window appears later.
 
 Run folder: `local/runs/stracker-baseline-1`.
+
+## Runs stracker-baseline-2 and stracker-all-2: like for like without LuaEngine (confirmed)
+
+The user uninstalled LuaEngine, leaving 19 plugin DLLs in both profiles.
+There was one launch each into the save, and both exited with code 0.
+
+- Without LuaEngine, Stracker's Loader no longer crashes, so the
+  stracker-baseline-1 crash needed LuaEngine.
+- Through CMFM, all 19 plugins loaded, none failed, and PRE_MAIN took 3.8 s.
+- Start-up markers in ms after process creation, CMFM first, then Stracker's
+  Loader:
+
+  | Marker | CMFM | Stracker's Loader | Difference |
+  |---|---|---|---|
+  | XINPUT9_1_0 | 8020 | 11088 | +3.07 s |
+  | XAudio2_9 | 9162 | 12177 | +3.02 s |
+  | WININET | 9217 | 12243 | +3.03 s |
+  | d3d11on12 (last module) | 9548 | 12565 | +3.02 s |
+
+  With the same plugins, the game reaches these points about 3 s sooner
+  under CMFM. Most of the gain is the plugins' own loading: 3.6 s at
+  PRE_MAIN, against 6.2 s after the device under Stracker's Loader. That is
+  one launch each.
+
+Run folders: `local/runs/stracker-baseline-2`, `local/runs/stracker-all-2`.
