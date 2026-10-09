@@ -14,8 +14,11 @@ For the first three calls through the armed import:
 - `phase_device_call_enter thread_id=... call=... entry_qpc=...` captures
   entry to the C helper, immediately after preserving last error and before
   validation, logging, allocation or the worker handshake. The generated
-  import bridge has only saved registers at that point. Compare `entry_qpc`
-  to the watcher's dxgi load QPC: a large earlier gap is outside this helper.
+  import bridge has only saved registers at that point. Convert `entry_qpc`
+  to milliseconds after process creation using the core's attach QPC and
+  process-relative attach time, then compare the watcher's dxgi `load_ms`.
+  The watcher records PE load times, not QPC; a large earlier gap is outside
+  this helper.
 - `startup_hook_timing operation=device_return_arm elapsed_us=...` records
   the observer handshake with `begin_qpc`, `end_qpc`, thread/call and success.
   Fields measure event reset/signalling, worker wake, thread open/suspend,
