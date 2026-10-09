@@ -1,6 +1,6 @@
 /* AL plugin API, version 1.4. C ABI, 64-bit Windows.
  *
- * A plugin is one DLL in its own folder:  <game>\astera\plugins\<name>\<name>.dll
+ * A plugin is one DLL in its own folder:  <game>\AsteraLoader\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
  * plugin; AL loads only <name>.dll.
  *
@@ -186,7 +186,7 @@ typedef struct al_init_t {
                                    handle (under MO2: the real mod folder) */
     /* Added in 1.1: */
     const wchar_t* data_folder; /* a writable folder for this plugin's own data,
-                                   astera\data\<name> beside AL's logs; NULL if it
+                                   AsteraLoader\data\<name> beside AL's logs; NULL if it
                                    could not be created */
 } al_init_t;
 

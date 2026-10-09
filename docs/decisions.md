@@ -98,3 +98,9 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
       file and folder names), so the rename happens before 1.0, as one
       mechanical series with tests green after each step, plus one
       coordinated update of the DLSS mod.
+    - The user's choices: the API prefix `al_`/`AL_` and interface names
+      "al.x"; the files `AsteraLoader.exe` and
+      `<game>\AsteraLoader\AsteraLoader.dll`, plugins in
+      `<game>\AsteraLoader\plugins\<name>\`. A folder named `astera`
+      (the first pass) looked like game content, Astera being the in-game
+      hub, so the folder and files carry the full name.

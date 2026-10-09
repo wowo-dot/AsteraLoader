@@ -17,9 +17,9 @@ game runs without it. Update the loader and the mod together.
 | `cmfm_*` types and functions, `CMFM_*` macros | `al_*`, `AL_*` (for example `al_plugin_info_t`, `AL_API_VERSION`, `AL_CALL`, `AL_PLUGIN_EXPORT`) |
 | exports `cmfm_plugin_info`, `cmfm_plugin_init` | `al_plugin_info`, `al_plugin_init` |
 | interfaces `"cmfm.d3d12"`, `"cmfm.hooks"`, `"cmfm.game"`, `"cmfm.scanner"` | `"al.d3d12"`, `"al.hooks"`, `"al.game"`, `"al.scanner"` |
-| `cmfm_launcher.exe`, `cmfm\cmfm.dll` | `astera_launcher.exe`, `astera\astera.dll` |
-| plugins in `<game>\cmfm\plugins\<name>\` | `<game>\astera\plugins\<name>\` |
-| plugin data in `cmfm\data\<name>`, logs in `cmfm\logs\plugins` | `astera\data\<name>`, `astera\logs\plugins` |
+| `cmfm_launcher.exe`, `cmfm\cmfm.dll` | `AsteraLoader.exe`, `AsteraLoader\AsteraLoader.dll` |
+| plugins in `<game>\cmfm\plugins\<name>\` | `<game>\AsteraLoader\plugins\<name>\` |
+| plugin data in `cmfm\data\<name>`, logs in `cmfm\logs\plugins` | `AsteraLoader\data\<name>`, `AsteraLoader\logs\plugins` |
 
 `AL_VERSION` is deliberately not a name in the header: OpenAL uses it. The
 loader's tests build the header after OpenAL's `AL_` names, so a plugin can
@@ -36,15 +36,15 @@ include both.
    chain code in `src/cmfm/cmfm_hooks.{hpp,cpp}`. Renaming the mod's own
    internal names (the `src/cmfm` folder, `mhw_cmfm_hooks`) is optional.
 3. Packaging: `tools/package_release.py` and `tests/test_package_release.py`
-   install to `astera/plugins/mhw_dlss/`. The README text says "an Astera
-   Loader plugin" and "Uninstall: delete the astera/plugins/mhw_dlss folder".
+   install to `AsteraLoader/plugins/mhw_dlss/`. The README text says "an Astera
+   Loader plugin" and "Uninstall: delete the AsteraLoader/plugins/mhw_dlss folder".
 4. MO2: the "MHW DLSS (CMFM plugin)" mod's files move from
-   `cmfm\plugins\mhw_dlss\` to `astera\plugins\mhw_dlss\`. Take
+   `cmfm\plugins\mhw_dlss\` to `AsteraLoader\plugins\mhw_dlss\`. Take
    `mhw_dlss.ini` with them; it is the user's configuration.
 
 ## Checking it
 
-The loader's core log (`astera\logs\core.<pid>.log`) should show:
+The loader's core log (`AsteraLoader\logs\core.<pid>.log`) should show:
 
 - `plugin name=mhw_dlss version=<new> status=active`
 - `d3d12_state=running presentation_owner=mhw_dlss frames=<n>` at SHUTDOWN

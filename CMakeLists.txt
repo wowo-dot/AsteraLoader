@@ -21,7 +21,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Static CRT: the early-loaded astera.dll should import no DLL beyond KERNEL32.
+# Static CRT: the early-loaded AsteraLoader.dll should import no DLL beyond KERNEL32.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(Git QUIET)
@@ -48,7 +48,7 @@ function(al_project_target target)
     target_link_options(${target} PRIVATE /WX)
 endfunction()
 
-# Install layout: dist/<config>/astera_launcher.exe and dist/<config>/astera/astera.dll.
+# Install layout: dist/<config>/AsteraLoader.exe and dist/<config>/AsteraLoader/AsteraLoader.dll.
 set(AL_DIST "${CMAKE_BINARY_DIR}/dist/$<CONFIG>")
 
 add_library(al_common STATIC
@@ -136,29 +136,29 @@ add_library(al_startup STATIC
 target_link_libraries(al_startup PUBLIC al_plugins PRIVATE al_minhook)
 al_project_target(al_startup)
 
-add_executable(astera_launcher WIN32 src/launcher/main.cpp)
-target_link_libraries(astera_launcher PRIVATE al_common shell32 user32)
-al_project_target(astera_launcher)
-set_target_properties(astera_launcher PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}")
+add_executable(al_launcher WIN32 src/launcher/main.cpp)
+target_link_libraries(al_launcher PRIVATE al_common shell32 user32)
+al_project_target(al_launcher)
+set_target_properties(al_launcher PROPERTIES OUTPUT_NAME AsteraLoader RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}")
 
-add_library(astera SHARED src/core/dllmain.cpp)
-target_link_libraries(astera PRIVATE al_startup)
-al_project_target(astera)
-set_target_properties(astera PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}/astera")
+add_library(al_loader SHARED src/core/dllmain.cpp)
+target_link_libraries(al_loader PRIVATE al_startup)
+al_project_target(al_loader)
+set_target_properties(al_loader PROPERTIES OUTPUT_NAME AsteraLoader RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}/AsteraLoader")
 
 # Package only production binaries and the licence, never stand-ins or fixtures.
-install(FILES "$<TARGET_FILE:astera_launcher>" DESTINATION .)
-install(FILES "$<TARGET_FILE:astera>" DESTINATION astera)
+install(FILES "$<TARGET_FILE:al_launcher>" DESTINATION .)
+install(FILES "$<TARGET_FILE:al_loader>" DESTINATION AsteraLoader)
 install(FILES LICENSE DESTINATION .)
 install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
 install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
 # Stracker's Loader compatibility, shipped with AL as a plugin:
-# astera/plugins/stracker_compat/stracker_compat.dll (the AL plugin) and
+# AsteraLoader/plugins/stracker_compat/stracker_compat.dll (the AL plugin) and
 # loader.dll beside it, which exports Stracker's exact ABI. Like Stracker's
 # loader.dll it is MSVC release with the static CRT (the project default):
 # Stracker plugins run their own inline operator<< on its std::stringstream.
-set(AL_STRACKER_DIST "${AL_DIST}/astera/plugins/stracker_compat")
+set(AL_STRACKER_DIST "${AL_DIST}/AsteraLoader/plugins/stracker_compat")
 add_library(al_stracker_logic STATIC
     plugins/stracker_compat/stracker_logic.cpp
     plugins/stracker_compat/stracker_logic.hpp)
@@ -184,20 +184,20 @@ set_target_properties(al_stracker_compat PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${AL_STRACKER_DIST}")
 
 install(FILES "$<TARGET_FILE:al_stracker_compat>" "$<TARGET_FILE:al_stracker_loader>"
-    DESTINATION astera/plugins/stracker_compat)
+    DESTINATION AsteraLoader/plugins/stracker_compat)
 install(FILES third_party/notices/StrackerLoader-MIT.txt third_party/notices/StrackerLoader-log-BSD-2.txt
     DESTINATION licences)
 
 # The smallest AL plugin, in C, as an example for plugin authors. It is not
 # part of the AL package: `cmake --install <build> --component examples`
-# stages it in its own mod layout, astera/plugins/hello/hello.dll.
+# stages it in its own mod layout, AsteraLoader/plugins/hello/hello.dll.
 add_library(al_hello SHARED examples/hello/hello.c)
 target_link_libraries(al_hello PRIVATE al_api)
 al_project_target(al_hello)
 set_target_properties(al_hello PROPERTIES
     OUTPUT_NAME hello
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/astera/plugins/hello")
-install(FILES "$<TARGET_FILE:al_hello>" DESTINATION astera/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/hello")
+install(FILES "$<TARGET_FILE:al_hello>" DESTINATION AsteraLoader/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
 
 # A throwaway diagnostic plugin, staged with the examples for test runs only:
 # it finds the game's per-frame function and reports its thread and stack.
@@ -206,8 +206,8 @@ target_link_libraries(al_site_probe PRIVATE al_api)
 al_project_target(al_site_probe)
 set_target_properties(al_site_probe PROPERTIES
     OUTPUT_NAME site_probe
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/astera/plugins/site_probe")
-install(FILES "$<TARGET_FILE:al_site_probe>" DESTINATION astera/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/site_probe")
+install(FILES "$<TARGET_FILE:al_site_probe>" DESTINATION AsteraLoader/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -243,7 +243,7 @@ add_test(NAME common COMMAND al_tests)
 add_executable(al_core_tests tests/test_core.cpp)
 target_link_libraries(al_core_tests PRIVATE al_common)
 al_project_target(al_core_tests)
-add_test(NAME core_startup_abi COMMAND al_core_tests "$<TARGET_FILE:astera>")
+add_test(NAME core_startup_abi COMMAND al_core_tests "$<TARGET_FILE:al_loader>")
 
 # The plugin ABI layout, compiled as C and as C++ (tests/abi_layout.h).
 foreach(language IN ITEMS c cpp)
@@ -441,12 +441,12 @@ al_project_target(al_phase_probe)
 set_target_properties(al_phase_probe PROPERTIES OUTPUT_NAME phase_probe
     RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
 add_test(NAME remaining_phases
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>" "-DCORE=$<TARGET_FILE:al_loader>"
     "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:al_phase_probe>"
     "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases" -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
 set_tests_properties(remaining_phases PROPERTIES TIMEOUT 45)
 add_test(NAME remaining_phases_setup_thread
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>" "-DCORE=$<TARGET_FILE:al_loader>"
     "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:al_phase_probe>"
     "-DDEVICE_THREAD=1" "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_setup_thread"
     -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
@@ -469,7 +469,7 @@ foreach(role IN ITEMS owner probe)
 endforeach()
 target_compile_definitions(al_graphics_owner PRIVATE GRAPHICS_OWNER)
 add_test(NAME graphics_native_chains COMMAND "${CMAKE_COMMAND}"
-    "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    "-DLAUNCHER=$<TARGET_FILE:al_launcher>" "-DCORE=$<TARGET_FILE:al_loader>"
     "-DFAKE_GAME=$<TARGET_FILE:fake_graphics_game>" "-DOWNER=$<TARGET_FILE:al_graphics_owner>"
     "-DPROBE=$<TARGET_FILE:al_graphics_probe>" "-DWORK=${CMAKE_BINARY_DIR}/graphics_native_chains"
     -P "${CMAKE_SOURCE_DIR}/tests/graphics.cmake")
@@ -493,8 +493,8 @@ foreach(role IN ITEMS alpha beta gamma)
     set_target_properties(al_game_hook_${role} PROPERTIES OUTPUT_NAME hook_${role}
         RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
 endforeach()
-add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-    "-DCORE=$<TARGET_FILE:astera>" "-DFAKE_GAME=$<TARGET_FILE:fake_game_hooks>"
+add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+    "-DCORE=$<TARGET_FILE:al_loader>" "-DFAKE_GAME=$<TARGET_FILE:fake_game_hooks>"
     "-DPLUGIN_alpha=$<TARGET_FILE:al_game_hook_alpha>" "-DPLUGIN_beta=$<TARGET_FILE:al_game_hook_beta>"
     "-DPLUGIN_gamma=$<TARGET_FILE:al_game_hook_gamma>" "-DWORK=${CMAKE_BINARY_DIR}/game_hooks_native"
     -P "${CMAKE_SOURCE_DIR}/tests/game_hooks_native.cmake")
@@ -523,8 +523,8 @@ set_target_properties(fake_packed_game PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>")
 add_test(NAME startup_phase
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
         "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_phase"
@@ -532,8 +532,8 @@ add_test(NAME startup_phase
 set_tests_properties(startup_phase PROPERTIES TIMEOUT 45)
 add_test(NAME startup_helper_transition
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
         "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_helper_transition"
@@ -541,16 +541,16 @@ add_test(NAME startup_helper_transition
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_helper_transition PROPERTIES TIMEOUT 45)
 add_test(NAME startup_cached_transition
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>" "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>" "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
         "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_cached_transition"
         -P "${CMAKE_SOURCE_DIR}/tests/startup_cache.cmake")
 set_tests_properties(startup_cached_transition PROPERTIES TIMEOUT 60)
 add_test(NAME startup_trace_overflow
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
         "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_trace_overflow"
@@ -559,8 +559,8 @@ add_test(NAME startup_trace_overflow
 set_tests_properties(startup_trace_overflow PROPERTIES TIMEOUT 45)
 add_test(NAME startup_missing_transition
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
         "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_missing_transition"
@@ -570,8 +570,8 @@ set_tests_properties(startup_missing_transition PROPERTIES TIMEOUT 45)
 
 add_test(NAME launcher_injection
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_injection"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_injection.cmake")
@@ -584,7 +584,7 @@ al_project_target(al_test_launcher)
 add_test(NAME launcher_failures
     COMMAND "${CMAKE_COMMAND}"
         "-DLAUNCHER=$<TARGET_FILE:al_test_launcher>"
-        "-DCORE=$<TARGET_FILE:astera>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_failures"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_failures.cmake")

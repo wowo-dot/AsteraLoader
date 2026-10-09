@@ -1,7 +1,7 @@
 #pragma once
 
 // Pure pieces of AL's crash handler: who owns a module, what an exception
-// code means, and the crash settings in astera.ini. Everything here works
+// code means, and the crash settings in AsteraLoader.ini. Everything here works
 // without the heap, so the handler can use it while the process is failing.
 
 #include <cstdint>
@@ -12,8 +12,8 @@ namespace al::crash {
 enum class OwnerKind {
     unknown,
     game,             // the game exe
-    core,             // astera.dll
-    plugin,           // an AL plugin, or a DLL it ships: <...>\astera\plugins\<name>\...
+    core,             // AsteraLoader.dll
+    plugin,           // an AL plugin, or a DLL it ships: <...>\AsteraLoader\plugins\<name>\...
     stracker_plugin,  // a Stracker plugin: <...>\nativePC\plugins\<file>
     windows,          // System32, SysWOW64, WinSxS
     other,            // anything else: drivers, overlays, other loaders
@@ -40,7 +40,7 @@ bool fatal(unsigned long code) noexcept;
 const char* exception_name(unsigned long code) noexcept;
 
 enum class Minidump { off, small, full };
-// The `crash_minidump = off | small | full` line of astera.ini; off when absent
+// The `crash_minidump = off | small | full` line of AsteraLoader.ini; off when absent
 // or unreadable.
 Minidump minidump_setting(std::string_view ini_text) noexcept;
 

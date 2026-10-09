@@ -3,8 +3,8 @@
  * It logs the folder paths AL hands it, which game this is (the "al.game"
  * service, API 1.1), each phase it sees with its payload (API 1.2 and 1.3),
  * and counts the game's presents through "al.d3d12" (API 1.3). Install
- * it as <game>\astera\plugins\hello\hello.dll (under MO2: its own mod with that
- * layout). AL writes its log to astera\logs\plugins\hello.log.
+ * it as <game>\AsteraLoader\plugins\hello\hello.dll (under MO2: its own mod with that
+ * layout). AL writes its log to AsteraLoader\logs\plugins\hello.log.
  */
 #include "al/al_plugin.h"
 

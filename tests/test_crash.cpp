@@ -43,21 +43,21 @@ void pure() {
     const auto owner = [](const wchar_t* path, bool core = false, bool game = false) {
         return crash::classify(path, core, game);
     };
-    auto o = owner(L"D:\\Games\\MHW\\astera\\plugins\\mhw_dlss\\mhw_dlss.dll");
+    auto o = owner(L"D:\\Games\\MHW\\AsteraLoader\\plugins\\mhw_dlss\\mhw_dlss.dll");
     check(o.kind == OwnerKind::plugin && o.name == L"mhw_dlss", "Astera Loader plugin");
-    o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\MHW DLSS (Astera Loader plugin)\\astera\\plugins\\mhw_dlss\\sl.common.dll");
+    o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\MHW DLSS (Astera Loader plugin)\\AsteraLoader\\plugins\\mhw_dlss\\sl.common.dll");
     check(o.kind == OwnerKind::plugin && o.name == L"mhw_dlss", "a DLL a plugin ships, MO2's real folder");
     o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\Stracker plugins\\NativePC\\Plugins\\more_auto_shoutouts.dll");
     check(o.kind == OwnerKind::stracker_plugin && o.name == L"more_auto_shoutouts.dll", "Stracker plugin, any case");
     o = owner(L"\\Device\\HarddiskVolume2\\Windows\\System32\\KERNELBASE.dll");
     check(o.kind == OwnerKind::windows && o.name == L"KERNELBASE.dll", "Windows");
-    o = owner(L"D:\\Games\\MHW\\astera\\astera.dll", true);
+    o = owner(L"D:\\Games\\MHW\\AsteraLoader\\AsteraLoader.dll", true);
     check(o.kind == OwnerKind::core, "Astera Loader core by base");
     o = owner(L"D:\\Games\\MHW\\MonsterHunterWorld.exe", false, true);
     check(o.kind == OwnerKind::game && o.name == L"MonsterHunterWorld.exe", "the game by base");
     o = owner(L"C:\\Program Files (x86)\\Steam\\gameoverlayrenderer64.dll");
     check(o.kind == OwnerKind::other && o.name == L"gameoverlayrenderer64.dll", "other modules");
-    o = owner(L"D:\\Games\\MHW\\astera\\plugins\\");
+    o = owner(L"D:\\Games\\MHW\\AsteraLoader\\plugins\\");
     check(o.kind == OwnerKind::other, "a plugins folder without a plugin name");
     check(owner(L"").kind == OwnerKind::unknown, "no path");
 
@@ -100,7 +100,7 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     g_case = folder;
     if (mode != L"replaced") SetUnhandledExceptionFilter(previous_filter);
-    crash::install({(folder / L"logs").wstring(), (folder / L"astera.ini").wstring(), "test", "feedbeef"});
+    crash::install({(folder / L"logs").wstring(), (folder / L"AsteraLoader.ini").wstring(), "test", "feedbeef"});
     if (!crash::installed()) return 3;
     crash::note_phase(mode == L"exiting" ? AL_PHASE_SHUTDOWN : AL_PHASE_FIRST_PRESENT);
     g_hold = mode == L"raced";
@@ -160,8 +160,8 @@ fs::path prepare(const fs::path& work, const wchar_t* name, const fs::path& rela
 }
 
 void plugin_thread(const fs::path& work, const fs::path& fixture) {
-    const auto folder = prepare(work, L"plugin_thread", L"astera/plugins/crashy/crashy.dll", fixture);
-    const auto code = run_child(L"plain", folder, folder / L"astera/plugins/crashy/crashy.dll");
+    const auto folder = prepare(work, L"plugin_thread", L"AsteraLoader/plugins/crashy/crashy.dll", fixture);
+    const auto code = run_child(L"plain", folder, folder / L"AsteraLoader/plugins/crashy/crashy.dll");
     check(code == 0xC0000005u, "a plugin thread's crash ends the process with its code");
     const auto report = read_file(find_report(folder, L".txt"));
     check(has(report, "al=test exe_sha256=feedbeef"), "report header");
@@ -213,9 +213,9 @@ void raced_exit(const fs::path& work, const fs::path& fixture) {
 }
 
 void exiting_with_dump(const fs::path& work, const fs::path& fixture) {
-    const auto folder = prepare(work, L"exiting", L"astera/plugins/crashy/crashy.dll", fixture);
-    std::ofstream(folder / L"astera.ini") << "crash_minidump = small\r\n";
-    const auto code = run_child(L"exiting", folder, folder / L"astera/plugins/crashy/crashy.dll");
+    const auto folder = prepare(work, L"exiting", L"AsteraLoader/plugins/crashy/crashy.dll", fixture);
+    std::ofstream(folder / L"AsteraLoader.ini") << "crash_minidump = small\r\n";
+    const auto code = run_child(L"exiting", folder, folder / L"AsteraLoader/plugins/crashy/crashy.dll");
     check(code == 0xC0000005u, "exit-time crash code");
     const auto report = read_file(find_report(folder, L".txt"));
     check(has(report, "phase=shutdown (while the game was exiting)"), "exit-time phase");

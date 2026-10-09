@@ -31,10 +31,10 @@ The report holds:
 
 Owners are read from the module's path:
 
-- `...\astera\plugins\<name>\...` is AL plugin `<name>`. That includes the
+- `...\AsteraLoader\plugins\<name>\...` is AL plugin `<name>`. That includes the
   DLLs a plugin ships, such as the DLSS mod's `sl.*` and `nvngx_*`.
 - `...\nativePC\plugins\<file>` is a Stracker plugin.
-- `astera.dll` and the game exe are recognised by their base address.
+- `AsteraLoader.dll` and the game exe are recognised by their base address.
 - System32, SysWOW64 and WinSxS are Windows; anything else is listed by
   name.
 
@@ -59,14 +59,14 @@ SHUTDOWN, AL moves the notice to `last-crash.exit.txt` and adds an
 `afterwards=` line to the report. It waits up to 2 s for the crashing thread
 to finish writing.
 
-Minidumps are opt-in, in `<game>\astera\astera.ini`:
+Minidumps are opt-in, in `<game>\AsteraLoader\AsteraLoader.ini`:
 
 ```ini
 crash_minidump = small   ; off (default), small, or full (very large)
 ```
 
 `dbghelp.dll` is loaded from System32 at install only when minidumps are
-on, so `astera.dll` still imports only KERNEL32. The dump is written last,
+on, so `AsteraLoader.dll` still imports only KERNEL32. The dump is written last,
 next to the report, and the report's last line names it or says `failed`.
 AL keeps the newest 20 reports and 20 dumps.
 
@@ -117,9 +117,9 @@ the user's to add, since `src/core/startup/` is theirs.
 `crash_handler` (`tests/test_crash.cpp`, fixture `tests/crash_fixture.cpp`):
 
 - **Pure:** owners for AL plugin, plugin-shipped, Stracker (any case),
-  Windows, core, game and other paths; fatal codes; the astera.ini setting.
+  Windows, core, game and other paths; fatal codes; the AsteraLoader.ini setting.
 - **Child processes** crash for real with the handler installed:
-  - a thread started by a DLL under `astera\plugins\crashy\` writes through
+  - a thread started by a DLL under `AsteraLoader\plugins\crashy\` writes through
     null. The report names plugin `crashy` as both faulting module and
     thread origin, at FIRST_PRESENT. The previous filter still ran, and the
     notice names the plugin and is shown once;

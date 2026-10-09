@@ -45,7 +45,7 @@ Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept {
     const auto name = file_name(path);
     if (is_core) return {OwnerKind::core, name};
     if (is_game) return {OwnerKind::game, name};
-    constexpr std::wstring_view plugins = L"\\astera\\plugins\\";
+    constexpr std::wstring_view plugins = L"\\asteraloader\\plugins\\";  // lower case for find_folded
     if (const auto at = find_folded(path, plugins); at != std::wstring_view::npos) {
         auto rest = path.substr(at + plugins.size());
         const auto end = rest.find_first_of(L"\\/");

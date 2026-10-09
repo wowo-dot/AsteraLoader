@@ -88,8 +88,8 @@ void planning() {
 }
 
 void paths() {
-    check(al::iequals(L"ASTERA.DLL", L"astera.dll"), "case-insensitive filename");
-    check(al::file_name_of(L"C:/mods/astera.dll") == L"astera.dll", "filename");
+    check(al::iequals(L"ASTERALOADER.DLL", L"AsteraLoader.dll"), "case-insensitive filename");
+    check(al::file_name_of(L"C:/mods/AsteraLoader.dll") == L"AsteraLoader.dll", "filename");
     check(al::directory_of(L"C:\\x") == L"C:\\", "drive root kept absolute");
     check(al::directory_of(L"\\\\?\\C:\\x") == L"\\\\?\\C:\\", "extended drive root kept absolute");
     check(al::directory_of(L"/x") == L"/", "slash root preserved");

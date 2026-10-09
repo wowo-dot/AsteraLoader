@@ -18,10 +18,10 @@ class Registry;
 namespace al::plugins {
 
 struct HostOptions {
-    std::wstring plugins_root;  // <game>\astera\plugins as the game sees it
+    std::wstring plugins_root;  // <game>\AsteraLoader\plugins as the game sees it
     std::wstring logs_folder;   // AL's log folder; plugin logs go in <logs>\plugins
     std::wstring exe_sha256;    // the running exe, lower-case hex; empty if unknown
-    // API 1.1. Empty means a folder beside logs_folder (<astera>\data, <astera>\cache)
+    // API 1.1. Empty means a folder beside logs_folder (<AsteraLoader>\data, <AsteraLoader>\cache)
     // or, for game_folder, the exe's folder.
     std::wstring data_root;     // plugin data folders: <data_root>\<name>
     std::wstring cache_folder;  // the scanner's cache, one file per exe hash

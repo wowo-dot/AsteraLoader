@@ -27,7 +27,7 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   about 950–1040 ms). MO2 starts the exe suspended and injects usvfs at 13 ms.
 
 **Decided 2026-10-08:** AL loads through its own launcher
-(`astera_launcher.exe`, the SKSE route), not a proxy DLL. See
+(`AsteraLoader.exe`, the SKSE route), not a proxy DLL. See
 [decisions.md](decisions.md) item 6.
 
 ## 1. Load point
@@ -38,7 +38,7 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   swap chain.
 - **MUST** run that entry on a normal thread outside the loader lock, so the
   plugin can call LoadLibrary and create threads.
-- **MUST** work in every launch setup that goes through `astera_launcher.exe`,
+- **MUST** work in every launch setup that goes through `AsteraLoader.exe`,
   with no force-load and no Steam overlay dependency:
   - MO2, with the launcher as an MO2 executable;
   - a manual install, with the launcher started directly or through Steam

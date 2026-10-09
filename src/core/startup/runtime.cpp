@@ -191,7 +191,7 @@ void visible_warning(std::wstring_view message) noexcept {
     try {
         if (g_runtime->warned.exchange(true)) return;
         auto copy = std::make_unique<std::wstring>(message);
-        copy->append(L"\nSee astera\\logs for details. The game continues.");
+        copy->append(L"\nSee AsteraLoader\\logs for details. The game continues.");
         Handle thread(CreateThread(nullptr, 0, show_warning, copy.get(), 0, nullptr));
         if (thread) copy.release();
     } catch (...) { /* The logged status remains available for the future menu. */ }
@@ -312,7 +312,7 @@ int __cdecl crt_entry() noexcept {
                     : L"startup_crt_cache_write=unavailable; next launch will scan");
             } catch (...) { write(L"startup_crt_cache_write=unavailable; next launch will scan"); }
         }
-        const auto root = join_path(directory_of(module_path()), L"astera\\plugins");
+        const auto root = join_path(directory_of(module_path()), L"AsteraLoader\\plugins");
         write(L"plugin_discovery_root=" + redact_profile(root, environment(L"USERPROFILE")));
         g_runtime->host.load_all({root, g_runtime->logs_folder, hash});
         report_plugins();

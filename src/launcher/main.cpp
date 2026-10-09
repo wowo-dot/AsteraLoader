@@ -294,7 +294,7 @@ DWORD launch() {
         if (!launcher_file) fail(L"Open launcher path");
         const auto launcher_real = al::final_path(launcher_file.get());
         if (launcher_real.empty()) fail(L"Resolve launcher file's real path");
-        const auto own_folder = al::join_path(al::directory_of(launcher_real), L"astera");
+        const auto own_folder = al::join_path(al::directory_of(launcher_real), L"AsteraLoader");
         if (!CreateDirectoryW(own_folder.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
             fail(L"Create Astera Loader log parent folder");
         }
@@ -326,10 +326,10 @@ DWORD launch() {
 
         // Resolve from the launcher's visible folder, then keep the file open
         // and use its real path for injection. usvfs need not be ready in the child.
-        const auto visible_core = al::join_path(al::directory_of(launcher_path), L"astera\\astera.dll");
+        const auto visible_core = al::join_path(al::directory_of(launcher_path), L"AsteraLoader\\AsteraLoader.dll");
         al::Handle core_file(CreateFileW(visible_core.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                          nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-        if (!core_file) fail(L"Open astera\\astera.dll beside the launcher");
+        if (!core_file) fail(L"Open AsteraLoader\\AsteraLoader.dll beside the launcher");
         const auto core_real = al::final_path(core_file.get());
         const auto core_native = al::final_path(core_file.get(), VOLUME_NAME_NT);
         if (core_real.empty() || core_native.empty()) fail(L"Resolve Astera Loader DLL file's real path");
@@ -403,7 +403,7 @@ DWORD launch() {
         log_exe_hash(log, plan.exe);
         if (!confirmed) {
             notify(log, L"Astera Loader did not confirm startup. The game has been resumed without active Astera Loader.\n"
-                        L"See the logs in the launcher's astera\\logs folder.", MB_ICONWARNING);
+                        L"See the logs in the launcher's AsteraLoader\\logs folder.", MB_ICONWARNING);
         }
         if (WaitForSingleObject(child.process.get(), INFINITE) != WAIT_OBJECT_0) fail(L"Wait for game exit");
         DWORD exit_code = 0;
@@ -416,7 +416,7 @@ DWORD launch() {
                MB_ICONERROR);
     } catch (...) {
         child.stop_before_resume();
-        notify(log, L"Astera Loader launcher encountered an unexpected error. See astera\\logs.", MB_ICONERROR);
+        notify(log, L"Astera Loader launcher encountered an unexpected error. See AsteraLoader\\logs.", MB_ICONERROR);
     }
     return 1;
 }

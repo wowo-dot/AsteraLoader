@@ -14,7 +14,7 @@ namespace al::crash {
 
 struct Options {
     std::wstring logs_folder;    // reports go to <logs>\crashes
-    std::wstring settings_file;  // astera.ini ("crash_minidump = off|small|full"); may be missing
+    std::wstring settings_file;  // AsteraLoader.ini ("crash_minidump = off|small|full"); may be missing
     std::string version;         // for the report, e.g. "0.1.0-dev 266f909b73d6"
     std::string exe_sha256;
 };

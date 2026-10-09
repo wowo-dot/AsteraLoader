@@ -19,7 +19,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (output.empty()) return 90;
     al::LogFile log;
     if (!log.open(output)) return 91;
-    const auto core = GetModuleHandleW(L"astera.dll");
+    const auto core = GetModuleHandleW(L"AsteraLoader.dll");
     log.line(core ? L"core_loaded_before_main=1" : L"core_loaded_before_main=0");
     log.line(L"main_thread_id=" + std::to_wstring(GetCurrentThreadId()));
 #ifdef AL_FAKE_PACKED

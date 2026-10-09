@@ -255,7 +255,7 @@ def install_mo2(args: argparse.Namespace) -> None:
     profile = selected_profile(Path(config["mo2_ini"]))
     profile_folder = Path(config["mo2_profiles"]) / profile
     forced = forced_libraries(profile_folder, config["launcher_title"])
-    logs = mods / config["loader_mod"] / "astera" / "logs"
+    logs = mods / config["loader_mod"] / "AsteraLoader" / "logs"
     run_folder.mkdir(parents=True, exist_ok=True)
     (run_folder / "logs-before.txt").write_text(
         "\n".join(sorted(p.relative_to(logs).as_posix() for p in logs.rglob("*") if p.is_file())) + "\n"
@@ -339,7 +339,7 @@ def collect(args: argparse.Namespace) -> None:
     config = settings()
     if game_running():
         fail("the game is still running; its logs are not finished. Collect after it closes")
-    loader = Path(config["mo2_mods"]) / config["loader_mod"] / "astera"
+    loader = Path(config["mo2_mods"]) / config["loader_mod"] / "AsteraLoader"
     folder = launch_folder(args)
     run_folder = LOCAL / "runs" / args.run
     # Logs are named by process id, and ids get reused, so a name seen before

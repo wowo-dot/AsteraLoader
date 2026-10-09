@@ -433,7 +433,7 @@ std::vector<std::string> Hub::summary() const {
     for (const auto& chain : chains_) {
         std::string line = "d3d12_chain method=" + method_name(chain.method) + " layers=";
         for (std::size_t k = 0; k < chain.layers.size(); ++k) {
-            line += (k ? "," : "") + (chain.layers[k].client ? chain.layers[k].client->name : std::string("astera"));
+            line += (k ? "," : "") + (chain.layers[k].client ? chain.layers[k].client->name : std::string("AsteraLoader"));
         }
         line += std::string(" installed=") +
                 (installed_[AL_D3D12_METHOD_FAMILY(chain.method)] ? "yes" : "no");

@@ -4,7 +4,7 @@ Status 2026-10-09: the plugin API, hub, event layer and native hook installer
 are implemented and tested outside the game. The real WARP stand-in runs
 through the production launcher and core, installs all five families, fires
 SWAPCHAIN_CREATED / FIRST_PRESENT and verifies Present and resize ordering.
-All 37 CTest cases pass; `astera.dll` imports only KERNEL32. First MHW run
+All 37 CTest cases pass; `AsteraLoader.dll` imports only KERNEL32. First MHW run
 `graphics-mo2-1` (tag v0.1.0-dev.10): both families installed over the Steam
 overlay's own patches, the two phases fired once, every present was counted
 and seven resizes raised events, with the DLSS mod off
@@ -129,7 +129,7 @@ Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
     thread's Present, a faulting callback, resize, status and the
     unavailable paths;
   - `example_hello`: the same through the host and a real plugin DLL.
-- `astera.dll` still imports only KERNEL32: the DXGI headers add no import.
+- `AsteraLoader.dll` still imports only KERNEL32: the DXGI headers add no import.
 
 ## The hook layer (implemented)
 
@@ -232,7 +232,7 @@ Verification for the hook layer, in the fake game:
   - the inner Present reaches the original without events or detours;
   - detours see the right objects;
   - a second plugin's detour on the same method runs in order;
-  - `astera.dll` still imports only KERNEL32.
+  - `AsteraLoader.dll` still imports only KERNEL32.
 
 `graphics_native_chains` executes this plan with four presents (Present and
 Present1), ResizeBuffers and eight-argument ResizeBuffers1, two ordered

@@ -75,7 +75,7 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
                     std::wstring(launcher_dir) + L") or in the current folder (" +
                     std::wstring(current_dir) +
                     L").\nPass the game's path as the first argument, for example as Steam "
-                    L"launch options: \"<path>\\astera_launcher.exe\" %command%";
+                    L"launch options: \"<path>\\AsteraLoader.exe\" %command%";
             return false;
         }
     }

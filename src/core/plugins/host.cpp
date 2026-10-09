@@ -444,7 +444,7 @@ bool load(al_plugin_t& plugin, const Candidate& candidate, std::wstring_view exe
     // Do not bind an AL plugin to a DLL name already owned by the process.
     // Reserve proxy/framework names even if that module has not loaded yet.
     const auto base_name = candidate.name + L".dll";
-    for (const auto reserved : {L"astera", L"loader", L"dinput8", L"winmm", L"dxgi", L"d3d12",
+    for (const auto reserved : {L"AsteraLoader", L"loader", L"dinput8", L"winmm", L"dxgi", L"d3d12",
                                L"kernel32", L"kernelbase", L"ntdll", L"steam_api64", L"steamclient64", L"usvfs_x64"}) {
         if (iequals(candidate.name, reserved)) {
             reason = "its DLL name is reserved for the game, Windows or another loader";
@@ -549,7 +549,7 @@ void Host::load_all(const HostOptions& options) {
     state_ = std::make_unique<HostState>(options);
     state_->hub.set_phase_dispatch([this](al_phase_t phase, const void* data) { dispatch(phase, data); });
     const auto logs = strip_extended_prefix(options.logs_folder);
-    state_->crash = {logs, join_path(directory_of(options.plugins_root), L"astera.ini"),
+    state_->crash = {logs, join_path(directory_of(options.plugins_root), L"AsteraLoader.ini"),
                      to_utf8(std::wstring(AL_BUILD_VERSION) + L" " + AL_GIT_COMMIT), to_utf8(options.exe_sha256)};
     state_->previous_crash = crash::take_previous(logs);
     // Plain paths for plugins: AL's own folders may carry the long-path

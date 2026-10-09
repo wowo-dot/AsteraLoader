@@ -9,9 +9,9 @@ Until 2026-10-09 the whole project was called CMFM, and older docs, handoffs
 and run records use that name for the loader (`decisions.md` item 11).
 
 - **Astera Loader:** our own launcher and native loader (the SKSE route).
-  - `astera_launcher.exe` starts the game suspended, loads `astera.dll` into it,
+  - `AsteraLoader.exe` starts the game suspended, loads `AsteraLoader.dll` into it,
     then resumes it. AL puts no proxy DLL in the game folder.
-  - `astera.dll` is in before Steam's DRM stub and before any game code, in
+  - `AsteraLoader.dll` is in before Steam's DRM stub and before any game code, in
     every launch setup, and dispatches load phases to plugins.
   - Exposes a versioned C plugin API (`al_` prefix, `include/al/al_plugin.h`)
     with load phases.
@@ -27,7 +27,7 @@ and does not compete with it: AL never takes `winmm.dll`, `dinput8.dll`,
 `dxgi.dll` or any other proxy name.
 
 v1 is launcher-only. A proxy fallback for Steam's plain Play button is added
-only if Steam launch options (`"<path>\astera_launcher.exe" %command%`) turn out
+only if Steam launch options (`"<path>\AsteraLoader.exe" %command%`) turn out
 not to work.
 
 The first plugin client is the sibling DLSS / Frame Generation mod. Its
@@ -64,13 +64,13 @@ or assume other contributors use them.
   anti-cheat, licensing or platform protections. Astera Loader itself must not
   change gameplay or network behaviour. What plugins do is the user's choice.
 - The launcher is the only AL component that writes into the game process,
-  and only to load `astera.dll`:
+  and only to load `AsteraLoader.dll`:
   - it only creates `MonsterHunterWorld.exe` itself, suspended. It never
     attaches to a running game or touches any other process;
-  - it loads `astera.dll` by full path from AL's own folder, and changes
+  - it loads `AsteraLoader.dll` by full path from AL's own folder, and changes
     nothing else in the process;
   - it leaves Steam's DRM stub (SteamStub) and its checks to run untouched.
-    `astera.dll` and plugins install hooks only after the game's code is
+    `AsteraLoader.dll` and plugins install hooks only after the game's code is
     unpacked;
   - it needs no administrator rights, and has no network access or
     auto-update.
@@ -135,10 +135,10 @@ or assume other contributors use them.
   - passes the remaining arguments through, starts the game in the game
     folder, waits for it and returns its exit code;
   - fails visibly but never fatally. If it fails before resuming the game, it
-    ends the suspended process it created and says why. If `astera.dll` does
+    ends the suspended process it created and says why. If `AsteraLoader.dll` does
     not confirm it loaded, the game keeps running without AL, and the
     launcher says so.
-- Under MO2 the launcher derives `astera.dll`'s real path from a file handle
+- Under MO2 the launcher derives `AsteraLoader.dll`'s real path from a file handle
   and injects that, so loading AL does not depend on usvfs timing in the
   child.
 - Keep third-party dependencies explicit and pinned, and record their licences.

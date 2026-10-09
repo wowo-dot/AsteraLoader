@@ -3,7 +3,7 @@
 Status 2026-10-09: the plugin API, registry and native MinHook installer are
 implemented. Tested in the original fake game through the production
 launcher/core, with three plugin fixtures, late registration, concurrent
-callers and an existing external hook. All 41 tests pass and `astera.dll`
+callers and an existing external hook. All 41 tests pass and `AsteraLoader.dll`
 imports only KERNEL32. See `handoff-game-hook-installer-20261009.md`.
 Roadmap item 10.
 
@@ -160,7 +160,7 @@ host.game_hooks().set_installer(&g_game_installer);  // installs every pending c
 - one fixture toggles its detour while another thread calls the function in
   a loop;
 - an existing MinHook patch on a second function stays under AL's;
-- `astera.dll` still imports only KERNEL32.
+- `AsteraLoader.dll` still imports only KERNEL32.
 
 This is implemented as `game_hooks_native`: two initial fixtures register
 by pattern and address, a third joins by pattern at WIN_MAIN, and a worker
