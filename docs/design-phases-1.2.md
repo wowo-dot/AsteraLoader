@@ -1,7 +1,10 @@
 # Design: the remaining load phases (API 1.2, part 1)
 
 Status 2026-10-09: implemented and verified in original stand-ins (34 Release
-CTest cases pass); not yet verified in MHW. Roadmap item 8. The implementation
+CTest cases pass), and confirmed in MHW in `phases-mo2-1` and
+`phases-timing-1`/`-2`. See `research/plugins-in-game.md` and
+`research/phase-timing.md`. Actual SPL coexistence for the new phases remains
+unverified. Roadmap item 8. The implementation
 revises the initial call/return-site patch plan to preserve SPL's discovery and
 the standalone DLSS mod's complete game-function hash.
 
@@ -125,7 +128,9 @@ plugin lock; the host still contains plugin faults as in PRE_MAIN.
 Nothing per frame. Observers run during startup only; the WinMain interceptor
 stays on the stack until it returns. The worker waits on an event without
 polling. CMFM logs each phase's dispatch time and each plugin's time per phase.
-The real game's additional startup cost has not yet been measured.
+Measured device arming takes 43-87 us in the two timing runs; entry to
+forwarding, including diagnostics, is below 0.32 ms. The earlier larger
+startup gap did not reproduce; see `research/phase-timing.md` for the limits.
 
 ## Integration
 
