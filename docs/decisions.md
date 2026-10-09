@@ -58,3 +58,19 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
    load, which would need a hook or a proxy DLL (Claude's proposal; the user
    ran it in stracker-mo2-1 to -3 and did not object). This replaces the
    requirements draft's "defaults to Stracker's moment".
+9. **The launch-setup test matrix waits** (the user's call, after
+   overlay-off-1). Each part of AGENTS.md's "Verification" list returns
+   when it can show something new about CMFM:
+   - **Overlay on/off and the stability pass** (alt-tab, resize, cutscenes)
+     return with the graphics hooks (API 1.2). Until then CMFM does nothing
+     after PRE_MAIN. Under MO2 the overlay setting does not change what
+     loads (overlay-off-1).
+   - **Steam launch options** wait until a Steam-started game's load order
+     matters to a CMFM feature.
+   - **The manual install** waits for the release check.
+
+   Done so far, MO2 through the CMFM launcher entry:
+   - no force-load, overlay on and off;
+   - SPL force-loaded (spl-mo2-1);
+   - all of the user's Stracker plugins, compared with Stracker's Loader
+     (stracker-all-1 and -2, stracker-baseline-1 and -2).
