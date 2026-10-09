@@ -4,9 +4,12 @@ Status 2026-10-09: the plugin API, hub, event layer and native hook installer
 are implemented and tested outside the game. The real WARP stand-in runs
 through the production launcher and core, installs all five families, fires
 SWAPCHAIN_CREATED / FIRST_PRESENT and verifies Present and resize ordering.
-All 37 CTest cases pass; `cmfm.dll` imports only KERNEL32. Graphics hooks in
-MHW, and coexistence with the actual DLSS mod / SPL / overlay, remain
-unverified. See `handoff-graphics-installer-20261009.md` before a game run.
+All 37 CTest cases pass; `cmfm.dll` imports only KERNEL32. First MHW run
+`graphics-mo2-1` (tag v0.1.0-dev.10): both families installed over the Steam
+overlay's own patches, the two phases fired once, every present was counted
+and seven resizes raised events, with the DLSS mod off
+(`research/plugins-in-game.md`). Coexistence with the actual DLSS mod and SPL
+remains unverified; the DLSS mod must move to these detours first.
 
 ## What the DLSS mod actually does
 

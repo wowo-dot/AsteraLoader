@@ -257,3 +257,37 @@ same way.
 
 Run folders: `local/runs/phases-mo2-1` (launches 1 and 2),
 `local/runs/exit-ab-1`.
+
+## Run graphics-mo2-1: cmfm.d3d12 in the game (confirmed)
+
+The first run with graphics hooks: CMFM d404cad (API 1.3 and the user's native
+hook layer), hello 0.4.0 subscribed to PRE_PRESENT and POST_RESIZE. Profile
+`cmfm-stracker` with the DLSS mod unticked, because it still patches the same
+DXGI functions itself. The user loaded the save, opened the Steam overlay,
+alt-tabbed, changed window mode and quit through Exit Game.
+
+- At DEVICE_CREATED (5.09 s, render thread) the hub installed the factory
+  family: CreateSwapChain and CreateSwapChainForHwnd. With the install the
+  phase took 3.5 ms, against 26 µs before.
+- At the game's swap-chain creation (5.19 s, same thread) it installed the
+  swap-chain family: Present, ResizeBuffers, Present1, ResizeBuffers1.
+- All six target functions were already patched by the Steam overlay
+  (`gameoverlayrenderer64.dll`). The installer logged each one with its
+  destination module and went on top; the overlay's hooks still run
+  underneath.
+- SWAPCHAIN_CREATED fired once: 2560x1440, B8G8R8A8_UNORM, 3 buffers, with
+  the queue. FIRST_PRESENT fired once at 5.87 s.
+- hello counted 14,467 presents through PRE_PRESENT, exactly CMFM's own
+  frame count, about 247 per second. Its callback took 0.13 µs on average,
+  at most 1.3 µs. CMFM's layer and entry stub are not timed separately yet.
+- Seven resizes raised POST_RESIZE, all 2560x1440 with S_OK: the game's own
+  resize right after the first present, then the user's alt-tab and
+  window-mode changes.
+- 19 of 19 Stracker plugins loaded. The core log had no warnings, WinMain
+  returned 0, and the exit code was 0.
+
+Not yet run: the DLSS mod with frame generation (it has to move to
+cmfm.d3d12 detours first), SPL force-loaded, a long session.
+
+Run folder: `local/runs/graphics-mo2-1`.
+

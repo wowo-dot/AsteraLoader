@@ -65,9 +65,9 @@ In this order; the first four are small.
    FIRST_PRESENT, GAME_READY, and a shutdown notice so plugins can save.
    Status 2026-10-09: WIN_MAIN, DEVICE_CREATED and SHUTDOWN done and
    confirmed in the game (phases-mo2-1, phases-timing-1/2, tag
-    v0.1.0-dev.9). SWAPCHAIN_CREATED and FIRST_PRESENT are implemented with
-    graphics coordination (11) and tested on WARP, pending a game run;
-    GAME_READY needs a game-side signal.
+   v0.1.0-dev.9). SWAPCHAIN_CREATED and FIRST_PRESENT come with graphics
+   coordination (11) and are confirmed in the game (graphics-mo2-1, tag
+   v0.1.0-dev.10). GAME_READY needs a game-side signal.
 9. **Per-save plugin data** (SKSE's co-save): each plugin stores its own
    data per save slot, kept in step with saving, loading and deleting.
    Needs hooks into MHW's save and load. Moved up because it is what made
@@ -81,10 +81,11 @@ In this order; the first four are small.
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,
     device, queue and swap-chain access.
-    Status 2026-10-09: API 1.3 "cmfm.d3d12" designed and implemented on
-    the core side and native hook layer, tested outside the game on real
-    WARP/DXGI objects (design-d3d12-1.3.md). DLSS detour migration and a
-    game run are next; the installed game build has not been replaced.
+    Status 2026-10-09: API 1.3 "cmfm.d3d12" implemented (core side and
+    native hook layer), tested on WARP/DXGI stand-ins and confirmed in the
+    game with the DLSS mod off (graphics-mo2-1, tag v0.1.0-dev.10;
+    design-d3d12-1.3.md). Next: the DLSS mod moves to the shared detours
+    (DLSS project), then a run with frame generation on.
 12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.
