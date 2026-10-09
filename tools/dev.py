@@ -378,7 +378,17 @@ def collect(args: argparse.Namespace) -> None:
             shutil.copy2(log, target / log.name)
     for cache in (cmfm / "cache").glob("scan.*.txt"):
         shutil.copy2(cache, folder / "scan-cache.txt")
+    # Crash reports, dumps and notices written since the install.
+    crashes = [p for p in (cmfm / "logs" / "crashes").glob("*") if p.is_file() and p.stat().st_mtime_ns > cutoff]
+    for crash in crashes:
+        (folder / "crashes").mkdir(exist_ok=True)
+        shutil.copy2(crash, folder / "crashes" / crash.name)
     print(f"copied to {folder.relative_to(ROOT)}: " + ", ".join(sorted(p.name for p in target.iterdir())))
+    for report in sorted(p for p in crashes if p.suffix == ".txt" and p.name.startswith("crash-")):
+        print(f"\ncrash report {report.name}")
+        for line in report.read_text(encoding="utf-8", errors="replace").splitlines():
+            if re.match(r"(phase|exception|at|owner|thread_started_in|minidump|afterwards)=", line):
+                print("  " + line)
     if len(new["core"]) > 2:
         print(f"note: {len(new['core'])} launches; plugin logs cover only the last two")
 
@@ -389,7 +399,7 @@ def collect(args: argparse.Namespace) -> None:
         for line in core.read_text(encoding="utf-8", errors="replace").splitlines():
             text = re.sub(r"^\[qpc=\d+ bootstrap_us=\d+\] ", "", line)
             if re.match(r"(plugin name=|phase_pre_main_(enter|complete|skipped|failed)|startup_signature_|"
-                        r"startup_crt_cache_written|warning)", text):
+                        r"startup_crt_cache_written|warning|previous_session_crash|d3d12_state)", text):
                 print("  " + text)
     for launcher in new["launcher"]:
         lines = launcher.read_text(encoding="utf-8", errors="replace").splitlines()

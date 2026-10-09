@@ -1,8 +1,10 @@
 # Design: CMFM's crash handler
 
-Status 2026-10-09: implemented and tested outside the game (`crash_handler`
-test: real crashes in child processes). Not yet seen in the game. The
-next-launch notice needs one line in the startup runtime (below).
+Status 2026-10-09: implemented, tested outside the game (`crash_handler`
+test: real crashes in child processes), and seen in the game in
+`crash-mo2-1`: the report named the Stracker plugin auto_food_skill.dll,
+on its own thread, correctly. That run also showed exit-time crashes can
+come before CMFM's SHUTDOWN, which led to the withdrawal rule below.
 Requirements: `requirements-dlss-mod.md` §5; roadmap "CMFM Menu milestone",
 moved forward because a loader hosting about 20 third-party DLLs needs it
 early. Code: `src/core/crash/`.
@@ -42,7 +44,19 @@ Unless the crash happened after SHUTDOWN, it also writes
 `<logs>\crashes\last-crash.txt`. It is one sentence for the user: when the
 crash happened, which plugin was involved, the exception and the report's
 path. Exit-time crashes, such as `more_auto_shoutouts` reading freed memory
-while the game shuts down, are reported but not announced.
+while the game shuts down, are reported but not announced. That covers
+two cases:
+
+- the crash comes after SHUTDOWN;
+- the crash comes on another thread and the game still returns from WinMain
+  afterwards.
+
+The game tears down inside WinMain, so a plugin thread can crash there just
+before SHUTDOWN (crash-mo2-1: 2 ms before). Windows takes a moment to end the
+process, the main thread finishes first, and the exit code is 0. At
+SHUTDOWN, CMFM moves the notice to `last-crash.exit.txt` and adds an
+`afterwards=` line to the report. It waits up to 2 s for the crashing thread
+to finish writing.
 
 Minidumps are opt-in, in `<game>\cmfm\cmfm.ini`:
 
@@ -113,7 +127,10 @@ the user's to add, since `src/core/startup/` is theirs.
     The report finds the Stracker plugin on the stack and marks the main
     thread, and the replacing filter still runs after CMFM's;
   - an exit-time crash with `crash_minidump = small` writes a dump and no
-    notice.
+    notice;
+  - a plugin thread crashes, the last filter stalls the way error reporting
+    can, and the main thread reaches SHUTDOWN and exits 0. The report gains
+    `afterwards=` and the notice is withdrawn.
 
   Each child ends in a last filter that terminates it, so Windows error
   reporting never runs during the tests.

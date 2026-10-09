@@ -330,3 +330,24 @@ loading screens and cutscenes, full-screen toggles.
 
 Run folder: `local/runs/graphics-dlss-1`.
 
+## Run crash-mo2-1: the first real crash report (confirmed)
+
+CMFM 6464dfe with the crash handler, same profile as graphics-dlss-1 (the
+DLSS plugin, hello, 19 Stracker plugins). The user quit through Exit Game.
+
+- `auto_food_skill.dll` crashed on its own thread: an access violation
+  reading game memory at `+0x1fdc1`, the same spot the DLSS mod's crash log
+  caught in phases-mo2-1.
+- The report named it correctly: the Stracker plugin as faulting module and
+  as the thread's origin, with the stack and registers.
+- The crash came 2 ms before CMFM's SHUTDOWN dispatch. The game tears down
+  inside WinMain, and the plugin's thread was still reading. WinMain still
+  returned 0, and the exit code was 0.
+- So the report said "while the game was running" and left a notice for
+  the next launch, which was misleading. Fixed after the run: a crash
+  followed by a normal return from WinMain withdraws the notice and marks
+  the report (`design-crash-handler.md`). This run's notice was retired by
+  hand.
+
+Run folder: `local/runs/crash-mo2-1` (the report is in `crashes/`).
+

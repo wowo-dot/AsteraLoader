@@ -74,6 +74,7 @@ void pure() {
 // --- child side ---
 
 fs::path g_case;  // the child's case folder
+bool g_hold = false;  // the last filter stalls, as Windows error reporting can, instead of ending the process
 
 void marker(const wchar_t* name) {
     std::ofstream(g_case / name) << "called";
@@ -82,6 +83,7 @@ void marker(const wchar_t* name) {
 // The filter that was there before CMFM's (as the game's C runtime's is).
 LONG WINAPI previous_filter(EXCEPTION_POINTERS* info) {
     marker(L"previous.txt");
+    if (g_hold) Sleep(INFINITE);
     TerminateProcess(GetCurrentProcess(), info->ExceptionRecord->ExceptionCode);
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -100,6 +102,7 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
     crash::install({(folder / L"logs").wstring(), (folder / L"cmfm.ini").wstring(), "test", "feedbeef"});
     if (!crash::installed()) return 3;
     crash::note_phase(mode == L"exiting" ? CMFM_PHASE_SHUTDOWN : CMFM_PHASE_FIRST_PRESENT);
+    g_hold = mode == L"raced";
     if (mode == L"replaced") SetUnhandledExceptionFilter(replacing_filter);
     const HMODULE module = LoadLibraryW(dll.c_str());
     if (!module) return 4;
@@ -108,6 +111,13 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
                                                                                           : "crash_on_thread"));
     if (!function) return 5;
     function();
+    if (g_hold) {
+        // The game's own exit wins the race: WinMain returns while the
+        // crashing thread waits in the filter chain.
+        for (int k = 0; k < 500 && !fs::exists(folder / L"previous.txt"); ++k) Sleep(10);
+        crash::note_phase(CMFM_PHASE_SHUTDOWN);
+        ExitProcess(0);
+    }
     Sleep(30000);  // the crashing thread ends the process
     return 6;
 }
@@ -189,6 +199,18 @@ void replaced_filter(const fs::path& work, const fs::path& fixture) {
     if (failures) std::cerr << report << '\n';
 }
 
+void raced_exit(const fs::path& work, const fs::path& fixture) {
+    const auto folder = prepare(work, L"raced", L"nativePC/plugins/auto_food.dll", fixture);
+    const auto code = run_child(L"raced", folder, folder / L"nativePC/plugins/auto_food.dll");
+    check(code == 0, "the game's exit wins the race");
+    const auto report = read_file(find_report(folder, L".txt"));
+    check(has(report, "owner=Stracker plugin auto_food.dll (the faulting module)") &&
+              has(report, "afterwards=the game still returned from WinMain"), "report notes the exit");
+    check(!fs::exists(folder / L"logs/crashes/last-crash.txt") && fs::exists(folder / L"logs/crashes/last-crash.exit.txt"),
+          "no notice when the game still exited normally");
+    if (failures) std::cerr << report << '\n';
+}
+
 void exiting_with_dump(const fs::path& work, const fs::path& fixture) {
     const auto folder = prepare(work, L"exiting", L"cmfm/plugins/crashy/crashy.dll", fixture);
     std::ofstream(folder / L"cmfm.ini") << "crash_minidump = small\r\n";
@@ -212,6 +234,7 @@ int wmain(int argc, wchar_t** argv) {
     fs::create_directories(work);
     plugin_thread(work, argv[1]);
     replaced_filter(work, argv[1]);
+    raced_exit(work, argv[1]);
     exiting_with_dump(work, argv[1]);
     if (failures) {
         std::cerr << failures << " crash handler check(s) failed\n";

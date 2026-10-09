@@ -27,6 +27,7 @@ constexpr int kMaxFrames = 48;
 std::atomic<bool> g_installed{false};  // install() ran
 std::atomic<bool> g_active{false};     // and put the handler in place
 std::atomic<bool> g_entered{false};
+std::atomic<bool> g_written{false};  // the report (and notice) of the first crash are on disk
 std::atomic<int> g_phase{-1};
 std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_previous{nullptr};  // the filter CMFM replaced
 std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_replacer{nullptr};  // one that replaced CMFM later
@@ -439,6 +440,7 @@ LONG WINAPI unhandled(EXCEPTION_POINTERS* info) {
         return previous ? previous(info) : EXCEPTION_CONTINUE_SEARCH;
     }
     if (info && info->ExceptionRecord && info->ContextRecord) write_guarded(info);
+    g_written = true;
     const auto replacer = g_replacer.load();
     const auto next = replacer ? replacer : g_previous.load();
     const LONG result = next ? next(info) : EXCEPTION_CONTINUE_SEARCH;
@@ -538,6 +540,21 @@ bool installed() noexcept {
 
 void note_phase(cmfm_phase_t phase) noexcept {
     g_phase = static_cast<int>(phase);
+    if (phase != CMFM_PHASE_SHUTDOWN || !g_entered.load()) return;
+    // The game still returned from WinMain after a crash on another thread:
+    // the crash raced the game's own shutdown and did not end the session.
+    // Withdraw the notice and say so in the report. The crashing thread may
+    // still be writing; give it up to two seconds.
+    for (int k = 0; k < 200 && !g_written.load(); ++k) Sleep(10);
+    if (!g_written.load()) return;
+    static Path exit_notice;
+    exit_notice.set(g_folder);
+    exit_notice.add(L"\\last-crash.exit.txt");
+    MoveFileExW(g_notice_path.data, exit_notice.data, MOVEFILE_REPLACE_EXISTING);
+    static Text line;
+    line.reset();
+    line.add("afterwards=the game still returned from WinMain: the crash happened while it was exiting; no notice\r\n");
+    save(g_report_path, line, OPEN_EXISTING, FILE_APPEND_DATA);
 }
 
 std::wstring take_previous(const std::wstring& logs_folder) {
