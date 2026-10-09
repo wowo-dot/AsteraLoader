@@ -97,6 +97,9 @@ In this order; the first four are small.
 - A status page per plugin, showing the report CMFM already builds.
 - A crash handler that names the faulting plugin and chains to existing
   handlers; opt-in minidumps; a "collect logs" bundle.
+  Status 2026-10-09: the crash handler is done ahead of the menu, tested
+  outside the game (design-crash-handler.md); the "collect logs" bundle
+  waits for the menu.
 
 ## Later
 

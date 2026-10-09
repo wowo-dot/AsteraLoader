@@ -77,6 +77,10 @@ target_include_directories(cmfm_api INTERFACE include)
 
 # Plugin manifests and load order (core side of the plugin API).
 add_library(cmfm_plugins STATIC
+    src/core/crash/handler.cpp
+    src/core/crash/handler.hpp
+    src/core/crash/report.cpp
+    src/core/crash/report.hpp
     src/core/graphics/hub.cpp
     src/core/graphics/hub.hpp
     src/core/graphics/layers.cpp
@@ -250,6 +254,20 @@ target_link_libraries(cmfm_graphics_installer_tests PRIVATE cmfm_startup cmfm_mi
 cmfm_project_target(cmfm_graphics_installer_tests)
 add_test(NAME graphics_installer COMMAND cmfm_graphics_installer_tests)
 set_tests_properties(graphics_installer PROPERTIES TIMEOUT 30)
+
+# The crash handler: child processes crash a fixture loaded from plugin paths.
+add_library(cmfm_crash_fixture SHARED tests/crash_fixture.cpp)
+cmfm_project_target(cmfm_crash_fixture)
+set_target_properties(cmfm_crash_fixture PROPERTIES
+    OUTPUT_NAME crash_fixture
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/crash_fixture/$<CONFIG>")
+add_executable(cmfm_crash_tests tests/test_crash.cpp)
+target_link_libraries(cmfm_crash_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_crash_tests)
+add_dependencies(cmfm_crash_tests cmfm_crash_fixture)
+add_test(NAME crash_handler
+    COMMAND cmfm_crash_tests "$<TARGET_FILE:cmfm_crash_fixture>" "${CMAKE_BINARY_DIR}/crash_handler")
+set_tests_properties(crash_handler PROPERTIES TIMEOUT 180)
 
 add_executable(cmfm_services_tests tests/test_services.cpp)
 target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)

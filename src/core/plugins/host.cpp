@@ -4,6 +4,7 @@
 #include "common/paths.hpp"
 #include "common/pattern.hpp"
 #include "common/windows.hpp"
+#include "core/crash/handler.hpp"
 #include "core/graphics/hub.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
@@ -138,6 +139,8 @@ struct HostState {
     Scanner scanner;  // before game, which uses it
     GameService game;
     graphics::Hub hub;
+    crash::Options crash;        // installed at WIN_MAIN
+    std::wstring previous_crash;  // the last session's crash notice, if any
     std::mutex mutex;  // guards interfaces
     struct Published {
         cmfm_plugin_t* owner;
@@ -497,6 +500,10 @@ Host::~Host() = default;
 void Host::load_all(const HostOptions& options) {
     state_ = std::make_unique<HostState>(options);
     state_->hub.set_phase_dispatch([this](cmfm_phase_t phase, const void* data) { dispatch(phase, data); });
+    const auto logs = strip_extended_prefix(options.logs_folder);
+    state_->crash = {logs, join_path(directory_of(options.plugins_root), L"cmfm.ini"),
+                     to_utf8(std::wstring(CMFM_VERSION) + L" " + CMFM_GIT_COMMIT), to_utf8(options.exe_sha256)};
+    state_->previous_crash = crash::take_previous(logs);
     // Plain paths for plugins: CMFM's own folders may carry the long-path
     // prefix of a resolved file path (\\?\D:\...), which plugins should not see.
     const auto data_root = strip_extended_prefix(
@@ -589,6 +596,10 @@ void Host::load_all(const HostOptions& options) {
 
 void Host::dispatch(cmfm_phase_t phase, const void* data) {
     if (phase >= CMFM_PHASE_COUNT) return;
+    crash::note_phase(phase);
+    // The game's C runtime has set its own top-level filter by now; CMFM's
+    // goes in front of it and passes every crash on to it.
+    if (phase == CMFM_PHASE_WIN_MAIN && state_) crash::install(state_->crash);
     // The device reaches the hub first, so detours are in place before
     // plugins hear of it.
     if (phase == CMFM_PHASE_DEVICE_CREATED && data && state_) {
@@ -628,6 +639,11 @@ void Host::close_graphics() {
     if (!hub.chains().empty() && state_->game.table()->graphics == CMFM_GRAPHICS_DX11) {
         hub.set_unavailable("the game runs DirectX 11 (graphics_option.ini)");
     }
+}
+
+std::vector<std::wstring> Host::notices() const {
+    if (!state_ || state_->previous_crash.empty()) return {};
+    return {state_->previous_crash};
 }
 
 ::cmfm::graphics::Hub& Host::graphics() {

@@ -64,6 +64,10 @@ public:
     // Initialised plugins in load order, then the ones that did not run.
     std::vector<PluginReport> report() const;
 
+    // What the user should be told once, now: a crash in the previous session
+    // (crash handler notice). Valid after load_all.
+    std::vector<std::wstring> notices() const;
+
     // The "cmfm.d3d12" service, for the hook layer. Registration closes when
     // dispatch(PRE_MAIN) returns; dispatch(DEVICE_CREATED) hands it the device.
     // Valid after load_all.
