@@ -246,15 +246,14 @@ same way.
   `auto_food_skill.dll` did once. The plugins keep reading game memory
   while the game tears down; the game still exits with code 0. The DLSS
   mod's crash log records it. Earlier runs were probably quit another way.
-- Cost: the phase hooks delay the game's first `D3D12CreateDevice` call by
-  about 0.7-0.8 s. From `dxgi.dll` to `D3D12Core.dll` (loaded inside that
-  first call) took 1060 and 1202 ms, against 262-398 ms in the three runs
-  without them. From `winmm.dll` (about WinMain) to `XINPUT9_1_0`: 4301 ms
-  warm, against 3535-3763 ms. The first launch was a cold start after a
-  reboot and slower overall. CMFM logs the first return-observer arm 4 ms
-  before `D3D12Core.dll` loads, so the time ends where the call is
-  forwarded. Whether it goes into arming on the first call is not yet
-  measured.
+- Start-up cost: in these two launches the time from `dxgi.dll` to
+  `D3D12Core.dll` (loaded inside the game's first `D3D12CreateDevice`) was
+  1060 and 1202 ms, against 262-398 ms in three runs without the phase
+  hooks. It did not reproduce: with timestamps on CMFM's device path
+  (`phase-timing.md`, runs phases-timing-1/2) the gap was 299 and 392 ms,
+  almost all of it before the game's call reached CMFM, and CMFM's own
+  path took under 0.32 ms per call. The first launch was also the first
+  after a Windows restart.
 
 Run folders: `local/runs/phases-mo2-1` (launches 1 and 2),
 `local/runs/exit-ab-1`.
