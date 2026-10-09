@@ -240,7 +240,7 @@ startup costs include the 26 ms signature search and about 620 ms inside the
 client/plugin phase; the latter was already present in the baseline and was
 not changed by this optimization.
 
-## CRT entry cache (prepared, not yet measured in MHW)
+## CRT entry cache (confirmed in MHW)
 
 The startup detector now shares the scanner's per-EXE-hash file:
 `<real CMFM folder>\cache\scan.<sha256>.txt`. Its reserved record is
@@ -282,9 +282,46 @@ The warm stand-in verification measured 5 µs. The existing full-scan ambiguity
 check still refuses multiple candidates. The core imports only KERNEL32 and
 the public/private ABIs are unchanged.
 
-The real-game comparison needs two launches of the installed build: the first
-searches and writes the answer; the second should report `cache` and measure
-the reduced check. A later cache arrival is allowed to fall back without delay.
+### Run startup-cache-1 (2026-10-09, confirmed)
+
+Both user-launched runs used core and launcher 3ef42b6, MO2 `cmfm`,
+`CMFM Launcher`, no force-load, with the Steam overlay module present.
+The core SHA-256 was
+`4798d7c53c9eab42221806b35e074eaacd65031c9e5e1e18f324862483d13afd`;
+the game hash was unchanged. Original Stracker's Loader was disabled;
+hello 0.2.0, stracker_compat 0.1.0 and the standalone DLSS winmm were enabled.
+
+| Measurement | Cold, PID 57056 | Warm, PID 10104 |
+|---|---:|---:|
+| startup signature source | scan | cache |
+| signature resolution | 27.154 ms | 0.085 ms |
+| cached RVA ready after bootstrap | 193.583 ms (none) | 201.648 ms |
+| PRE_MAIN hash wait | 0 us | 1 us |
+| before CreateProcess to resume | 18.326 ms | 13.477 ms |
+| PRE_MAIN enter to complete, including clients | 641.203 ms | 647.002 ms |
+
+The signature check took 99.7% less time on the warm path. This measures that
+operation, not overall loading time or frame rate; unpacking and client work
+vary between launches. Both runs identified wrapper `0x2742a48`, cookie
+initializer `0x2743690` and common-main `0x27428d4`. The cold run wrote exactly
+one `startup crt-entry-1 2742a48` record. The warm run had no rejection and no
+append; the shared cache file was byte-identical, retaining the plugin scanner's
+version-lookup record. Hello's independent scan still used that cache in both
+runs (0.07 ms cold, 0.04 ms warm).
+
+PRE_MAIN and hello's phase-0 callback ran once on each startup thread. Both
+startup patches were restored, both CMFM plugins stayed active, the shim
+loaded two legacy plugins with zero failures, and both games exited with
+code 0. There were no core warnings. Each hook operation used one process
+snapshot with zero Toolhelp fallbacks. The read-only watcher saw 158/156
+modules, one/zero torn polls and zero suspect layouts; the cold torn poll
+is a sampling limitation.
+
+Logs, cache copies, module evidence and `timing-analysis.json` are sealed under
+`local/runs/startup-cache-1`. Tested source 3ef42b6 is tagged
+`v0.1.0-dev.8`; the installed build and cache stay in place. A late cache arrival
+still falls back without waiting. Other launch/SPL/overlay configurations remain
+unverified for this build.
 
 ## Diagnostic build used in pre-main-2
 
