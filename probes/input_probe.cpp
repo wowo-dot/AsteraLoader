@@ -118,12 +118,14 @@ bool blocked(const Device& device) {
 using GetStateFn = HRESULT(STDMETHODCALLTYPE*)(IDirectInputDevice8W*, DWORD, LPVOID);
 using GetDataFn = HRESULT(STDMETHODCALLTYPE*)(IDirectInputDevice8W*, DWORD, LPDIDEVICEOBJECTDATA, LPDWORD, DWORD);
 using XInputStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
-GetStateFn g_get_state = nullptr;
-GetDataFn g_get_data = nullptr;
+// One original per hooked method: the keyboard's and the mouse's device
+// classes each have their own (input-probe-2).
+GetStateFn g_get_state[2] = {};
+GetDataFn g_get_data[2] = {};
 XInputStateFn g_xinput_state = nullptr;
 
-HRESULT STDMETHODCALLTYPE get_state(IDirectInputDevice8W* self, DWORD size, LPVOID data) {
-    const HRESULT result = g_get_state(self, size, data);
+HRESULT on_state(GetStateFn original, IDirectInputDevice8W* self, DWORD size, LPVOID data) {
+    const HRESULT result = original(self, size, data);
     if (Device* device = device_of(self)) {
         ++device->state_calls;
         device->state_size = size;
@@ -136,9 +138,9 @@ HRESULT STDMETHODCALLTYPE get_state(IDirectInputDevice8W* self, DWORD size, LPVO
     return result;
 }
 
-HRESULT STDMETHODCALLTYPE get_data(IDirectInputDevice8W* self, DWORD object_size, LPDIDEVICEOBJECTDATA events,
-                                   LPDWORD count, DWORD flags) {
-    const HRESULT result = g_get_data(self, object_size, events, count, flags);
+HRESULT on_data(GetDataFn original, IDirectInputDevice8W* self, DWORD object_size, LPDIDEVICEOBJECTDATA events,
+                LPDWORD count, DWORD flags) {
+    const HRESULT result = original(self, object_size, events, count, flags);
     if (Device* device = device_of(self)) {
         ++device->data_calls;
         if (!device->data_thread) device->data_thread = GetCurrentThreadId();
@@ -151,6 +153,16 @@ HRESULT STDMETHODCALLTYPE get_data(IDirectInputDevice8W* self, DWORD object_size
         }
     }
     return result;
+}
+
+template <int K>
+HRESULT STDMETHODCALLTYPE get_state(IDirectInputDevice8W* self, DWORD size, LPVOID data) {
+    return on_state(g_get_state[K], self, size, data);
+}
+template <int K>
+HRESULT STDMETHODCALLTYPE get_data(IDirectInputDevice8W* self, DWORD object_size, LPDIDEVICEOBJECTDATA events,
+                                   LPDWORD count, DWORD flags) {
+    return on_data(g_get_data[K], self, object_size, events, count, flags);
 }
 
 std::atomic<std::uint64_t> g_xinput_calls[4]{}, g_xinput_connected[4]{}, g_xinput_blocked{0};
@@ -197,28 +209,38 @@ void hook_input() {
         }
     }
     input->Release();
-    const bool shared = methods[0][0] == methods[1][0] && methods[0][1] == methods[1][1];
-    say(AL_LOG_INFO, "DirectInput methods: GetDeviceState %p, GetDeviceData %p (%s)", methods[0][0], methods[0][1],
-        shared ? "the mouse shares them" : "the mouse has its own");
-    if (!methods[0][0] || !methods[0][1] || !shared) {
-        say(AL_LOG_WARNING, "unexpected DirectInput layout; DirectInput not hooked");
-        return;
-    }
+    say(AL_LOG_INFO, "DirectInput methods: keyboard GetDeviceState %p GetDeviceData %p; mouse %p %p", methods[0][0],
+        methods[0][1], methods[1][0], methods[1][1]);
     if (MH_Initialize() != MH_OK) {
         say(AL_LOG_WARNING, "MinHook did not start; nothing hooked");
         return;
     }
-    bool ok = MH_CreateHook(methods[0][0], reinterpret_cast<void*>(&get_state), reinterpret_cast<void**>(&g_get_state)) == MH_OK &&
-              MH_CreateHook(methods[0][1], reinterpret_cast<void*>(&get_data), reinterpret_cast<void**>(&g_get_data)) == MH_OK;
+    // One hook per distinct method; a class that shares the keyboard's
+    // methods goes through the keyboard's detours.
+    GetStateFn* state_originals[2] = {&g_get_state[0], &g_get_state[1]};
+    GetDataFn* data_originals[2] = {&g_get_data[0], &g_get_data[1]};
+    void* state_detours[2] = {reinterpret_cast<void*>(&get_state<0>), reinterpret_cast<void*>(&get_state<1>)};
+    void* data_detours[2] = {reinterpret_cast<void*>(&get_data<0>), reinterpret_cast<void*>(&get_data<1>)};
+    unsigned hooked = 0;
+    for (int k = 0; k < 2; ++k) {
+        if (methods[k][0] && (k == 0 || methods[k][0] != methods[0][0]) &&
+            MH_CreateHook(methods[k][0], state_detours[k], reinterpret_cast<void**>(state_originals[k])) == MH_OK) {
+            ++hooked;
+        }
+        if (methods[k][1] && (k == 0 || methods[k][1] != methods[0][1]) &&
+            MH_CreateHook(methods[k][1], data_detours[k], reinterpret_cast<void**>(data_originals[k])) == MH_OK) {
+            ++hooked;
+        }
+    }
     const auto xinput = GetModuleHandleW(L"xinput9_1_0.dll");
     void* xinput_target = xinput ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
     if (xinput_target && MH_CreateHook(xinput_target, reinterpret_cast<void*>(&xinput_state),
                                        reinterpret_cast<void**>(&g_xinput_state)) != MH_OK) {
         xinput_target = nullptr;
     }
-    ok = ok && MH_EnableHook(MH_ALL_HOOKS) == MH_OK;
-    say(ok ? AL_LOG_INFO : AL_LOG_WARNING, "DirectInput %s; XInputGetState %s at %.3f s", ok ? "hooked" : "hook failed",
-        xinput_target ? "hooked" : "not found", seconds());
+    const bool ok = MH_EnableHook(MH_ALL_HOOKS) == MH_OK;
+    say(ok ? AL_LOG_INFO : AL_LOG_WARNING, "%u DirectInput method(s) hooked%s; XInputGetState %s at %.3f s", hooked,
+        ok ? "" : " but enabling failed", xinput_target ? "hooked" : "not found", seconds());
     say(AL_LOG_INFO, "F7 blocks the keyboard at DirectInput, F8 the mouse, F6 XInput pads; press again to undo");
 }
 
@@ -332,7 +354,7 @@ void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void* data) {
 }
 
 const al_plugin_info_t kInfo = {
-    sizeof(al_plugin_info_t), AL_API_VERSION, "input_probe", "Astera Loader input probe (diagnostic)", "0.2.0",
+    sizeof(al_plugin_info_t), AL_API_VERSION, "input_probe", "Astera Loader input probe (diagnostic)", "0.2.1",
     AL_PHASE_BIT(AL_PHASE_WIN_MAIN) | AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED) | AL_PHASE_BIT(AL_PHASE_EXITING) |
         AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
     0, nullptr, nullptr, nullptr, on_phase, nullptr,
@@ -349,6 +371,6 @@ extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* a
     g_start = qpc();
     g_frame = static_cast<const al_frame_t*>(api->get_interface(init->self, AL_FRAME_INTERFACE, AL_FRAME_VERSION));
     if (g_frame) g_frame->subscribe(g_self, AL_FRAME_BEGIN, on_frame, nullptr);
-    say(AL_LOG_INFO, "input_probe 0.2: al.frame %s", g_frame ? "yes" : "no");
+    say(AL_LOG_INFO, "input_probe 0.2.1: al.frame %s", g_frame ? "yes" : "no");
     return AL_OK;
 }
