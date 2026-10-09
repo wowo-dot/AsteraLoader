@@ -118,6 +118,8 @@ target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMF
 target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
 
 add_library(cmfm_startup STATIC
+    src/core/game_hooks/installer.cpp
+    src/core/game_hooks/installer.hpp
     src/core/graphics/installer.cpp
     src/core/graphics/installer.hpp
     src/core/graphics/interface_limits.cpp
@@ -196,6 +198,16 @@ set_target_properties(cmfm_hello PROPERTIES
     OUTPUT_NAME hello
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/cmfm/plugins/hello")
 install(FILES "$<TARGET_FILE:cmfm_hello>" DESTINATION cmfm/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
+
+# A throwaway diagnostic plugin, staged with the examples for test runs only:
+# it finds the game's per-frame function and reports its thread and stack.
+add_library(cmfm_site_probe SHARED probes/site_probe.cpp)
+target_link_libraries(cmfm_site_probe PRIVATE cmfm_api)
+cmfm_project_target(cmfm_site_probe)
+set_target_properties(cmfm_site_probe PROPERTIES
+    OUTPUT_NAME site_probe
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/cmfm/plugins/site_probe")
+install(FILES "$<TARGET_FILE:cmfm_site_probe>" DESTINATION cmfm/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
 
 include(CTest)
 if(BUILD_TESTING)
