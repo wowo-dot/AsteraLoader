@@ -14,4 +14,6 @@ bool guarded_init(cmfm_plugin_init_fn init, const cmfm_api_t* api, const cmfm_in
                   cmfm_result_t& result, unsigned long& fault) noexcept;
 bool guarded_phase(cmfm_phase_fn call, cmfm_plugin_t* plugin, cmfm_phase_t phase, const void* data,
                    unsigned long& fault) noexcept;
+bool guarded_d3d12_event(cmfm_d3d12_event_fn call, cmfm_plugin_t* plugin, cmfm_d3d12_event_t event,
+                         const void* data, void* user, unsigned long& fault) noexcept;
 }  // namespace cmfm::plugins

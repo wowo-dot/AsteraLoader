@@ -1,4 +1,4 @@
-/* CMFM plugin API, version 1.2. C ABI, 64-bit Windows.
+/* CMFM plugin API, version 1.3. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\cmfm\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -39,8 +39,13 @@
  *
  * Phases (1.2): besides PRE_MAIN, CMFM now dispatches WIN_MAIN,
  * DEVICE_CREATED and SHUTDOWN, each at most once and in that order, with a
- * payload struct as `data` (see below). The other phase numbers are reserved
- * and do not fire yet.
+ * payload struct as `data` (see below). 1.3 adds SWAPCHAIN_CREATED and
+ * FIRST_PRESENT between DEVICE_CREATED and SHUTDOWN. GAME_READY is reserved
+ * and does not fire yet.
+ *
+ * Direct3D 12 (1.3): the "cmfm.d3d12" service shares the game's DXGI and
+ * D3D12 calls between plugins: events, and detours chained on one hook per
+ * method.
  */
 #ifndef CMFM_PLUGIN_H
 #define CMFM_PLUGIN_H
@@ -57,7 +62,7 @@ extern "C" {
 #define CMFM_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define CMFM_API_VERSION_MAJOR 1u
-#define CMFM_API_VERSION_MINOR 2u
+#define CMFM_API_VERSION_MINOR 3u
 #define CMFM_API_VERSION CMFM_MAKE_VERSION(CMFM_API_VERSION_MAJOR, CMFM_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -83,8 +88,12 @@ typedef uint32_t cmfm_phase_t;
                                            a device, before the game uses it; the game's
                                            render-setup thread; cmfm_phase_device_t. Not
                                            under DirectX 11. */
-#define CMFM_PHASE_SWAPCHAIN_CREATED 3u /* reserved: does not fire yet */
-#define CMFM_PHASE_FIRST_PRESENT 4u     /* reserved: does not fire yet */
+#define CMFM_PHASE_SWAPCHAIN_CREATED 3u /* 1.3: the game created its first swap chain, before
+                                           it uses it; the creating thread;
+                                           cmfm_d3d12_swapchain_t */
+#define CMFM_PHASE_FIRST_PRESENT 4u     /* 1.3: the game's first Present, before it reaches the
+                                           swap chain and before PRE_PRESENT callbacks; the
+                                           game's present thread; cmfm_d3d12_present_t */
 #define CMFM_PHASE_GAME_READY 5u        /* reserved: does not fire yet */
 #define CMFM_PHASE_SHUTDOWN 6u          /* 1.2: WinMain returned, before CRT teardown;
                                            save your own data now; main thread;
@@ -244,6 +253,184 @@ typedef struct cmfm_scanner_t {
      * 32-bit value at instruction + offset. NULL if those bytes are unreadable. */
     void*(CMFM_CALL* rip_target)(const void* instruction, uint32_t offset, uint32_t length);
 } cmfm_scanner_t;
+
+/* "cmfm.d3d12" 1.0 (API 1.3): the game's Direct3D 12 calls, shared.
+ *
+ * CMFM puts one hook on each DXGI/D3D12 method a plugin asks for and calls
+ * every plugin's detour for it in a defined order, so plugins never patch
+ * these functions themselves and never stack patches on each other.
+ *
+ * Two ways in:
+ *   - subscribe: callbacks for common events (swap chain created, before and
+ *     after Present, around ResizeBuffers). Enough for overlays, menus and
+ *     counters.
+ *   - hook: a detour with the method's own signature, as with MinHook. CMFM
+ *     stores the function to continue with in *next before the first call.
+ *     Detours on IDXGIFactory and IDXGISwapChain methods need the
+ *     presentation role (claim_presentation), which one plugin holds.
+ *
+ * Register from cmfm_plugin_init or a PRE_MAIN on_phase call. Registration
+ * closes when PRE_MAIN ends; CMFM then hooks only the methods plugins asked
+ * for, nothing when none did. Under DirectX 11, or when CMFM cannot hook
+ * safely, nothing is called; status() says why.
+ *
+ * Order: lower `order` runs first, further from the original method; ties
+ * run in load order. CMFM's own event layer runs before every detour, so
+ * PRE_PRESENT callbacks draw before the presentation owner's Present.
+ *
+ * Internal calls: between begin_internal and end_internal, calls the thread
+ * makes to any hooked method go straight to the original, past every detour
+ * and event. A detour that routes a call into code which itself calls DXGI
+ * or D3D12 (Streamline's proxies, say) wraps that call, so every plugin sees
+ * each game call once. CMFM's events also skip a Present or ResizeBuffers
+ * that the same thread makes from inside another one.
+ *
+ * Threads: everything runs synchronously on the thread making the call.
+ * Present events fire for the game's present thread only, the first thread
+ * to present; detours see every thread. Present runs every frame: keep
+ * callbacks short and do not allocate. Objects in event data are the ones
+ * the game holds; AddRef any you keep. A callback that raises an exception
+ * disables its plugin, as for on_phase. Detours run directly in the chain,
+ * like any hook, so CMFM cannot catch their faults. */
+#define CMFM_D3D12_INTERFACE "cmfm.d3d12"
+#define CMFM_D3D12_VERSION CMFM_MAKE_VERSION(1, 0)
+
+typedef uint32_t cmfm_d3d12_event_t;
+#define CMFM_D3D12_SWAPCHAIN_CREATED 0u /* the game created a swap chain; cmfm_d3d12_swapchain_t */
+#define CMFM_D3D12_PRE_PRESENT 1u       /* the game called Present or Present1; draw overlays into
+                                           the buffer being presented; cmfm_d3d12_present_t */
+#define CMFM_D3D12_POST_PRESENT 2u      /* it returned; cmfm_d3d12_present_t with result */
+#define CMFM_D3D12_PRE_RESIZE 3u        /* the game called ResizeBuffers or ResizeBuffers1; release
+                                           every reference to the swap chain's buffers now;
+                                           cmfm_d3d12_resize_t */
+#define CMFM_D3D12_POST_RESIZE 4u       /* it returned; take new references; cmfm_d3d12_resize_t
+                                           with result */
+#define CMFM_D3D12_EVENT_COUNT 5u
+#define CMFM_D3D12_EVENT_BIT(event) (1u << (event))
+
+/* The game's swap chain and the objects around it. Event data points to
+ * CMFM's current copy, which changes when the game resizes or recreates. */
+typedef struct cmfm_d3d12_swapchain_t {
+    uint32_t size;
+    uint32_t reserved;
+    void* swapchain; /* the IDXGISwapChain the game holds */
+    void* queue;     /* the ID3D12CommandQueue the game created it with */
+    void* device;    /* the ID3D12Device the game uses (as at DEVICE_CREATED) */
+    void* window;    /* HWND */
+    uint32_t width;
+    uint32_t height;
+    uint32_t format; /* DXGI_FORMAT */
+    uint32_t buffer_count;
+    uint32_t flags;  /* DXGI_SWAP_CHAIN_FLAG bits */
+    uint32_t reserved2;
+} cmfm_d3d12_swapchain_t;
+
+typedef struct cmfm_d3d12_present_t {
+    uint32_t size;
+    uint32_t reserved;
+    const cmfm_d3d12_swapchain_t* swapchain;
+    uint64_t frame;         /* presents before this one: 0 for the game's first */
+    uint32_t back_buffer;   /* index of the buffer being presented */
+    uint32_t sync_interval;
+    uint32_t flags;         /* DXGI_PRESENT_* bits */
+    int32_t result;         /* POST_PRESENT: the HRESULT Present returned; 0 before */
+    int64_t present_qpc;    /* QueryPerformanceCounter when the game called Present */
+    int64_t previous_qpc;   /* the same for the previous present; 0 for the first */
+} cmfm_d3d12_present_t;
+
+typedef struct cmfm_d3d12_resize_t {
+    uint32_t size;
+    uint32_t reserved;
+    const cmfm_d3d12_swapchain_t* swapchain; /* PRE: as it is; POST: as it is now */
+    uint32_t buffer_count;  /* what the game asked for; 0 keeps the current count */
+    uint32_t width;         /* 0: the window's client width */
+    uint32_t height;
+    uint32_t format;        /* DXGI_FORMAT; 0 keeps the current format */
+    uint32_t flags;
+    int32_t result;         /* POST_RESIZE: the HRESULT ResizeBuffers returned; 0 before */
+} cmfm_d3d12_resize_t;
+
+typedef void(CMFM_CALL* cmfm_d3d12_event_fn)(cmfm_plugin_t* self, cmfm_d3d12_event_t event, const void* data,
+                                             void* user);
+
+/* A method: a COM interface family and the vtable slot, counted from
+ * QueryInterface = 0 as in the Windows SDK headers. */
+typedef uint32_t cmfm_d3d12_method_t;
+#define CMFM_D3D12_METHOD(family, slot) ((cmfm_d3d12_method_t)(((uint32_t)(family) << 16) | (uint32_t)(slot)))
+#define CMFM_D3D12_METHOD_FAMILY(method) ((uint32_t)(method) >> 16)
+#define CMFM_D3D12_METHOD_SLOT(method) ((uint32_t)(method) & 0xffffu)
+#define CMFM_D3D12_FACTORY 1u      /* IDXGIFactory up to IDXGIFactory7; presentation role */
+#define CMFM_D3D12_SWAPCHAIN 2u    /* IDXGISwapChain up to IDXGISwapChain4; presentation role */
+#define CMFM_D3D12_DEVICE 3u       /* ID3D12Device up to the newest the system has */
+#define CMFM_D3D12_QUEUE 4u        /* ID3D12CommandQueue */
+#define CMFM_D3D12_COMMAND_LIST 5u /* ID3D12GraphicsCommandList up to the newest */
+#define CMFM_D3D12_SLOT_LIMIT 256u /* slots are below this */
+
+#define CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN CMFM_D3D12_METHOD(CMFM_D3D12_FACTORY, 10)
+#define CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND CMFM_D3D12_METHOD(CMFM_D3D12_FACTORY, 15)
+#define CMFM_D3D12_SWAPCHAIN_PRESENT CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 8)
+#define CMFM_D3D12_SWAPCHAIN_GET_BUFFER CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 9)
+#define CMFM_D3D12_SWAPCHAIN_SET_FULLSCREEN_STATE CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 10)
+#define CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 13)
+#define CMFM_D3D12_SWAPCHAIN_RESIZE_TARGET CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 14)
+#define CMFM_D3D12_SWAPCHAIN_PRESENT1 CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 22)
+#define CMFM_D3D12_SWAPCHAIN_GET_CURRENT_BACK_BUFFER_INDEX CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 36)
+#define CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS1 CMFM_D3D12_METHOD(CMFM_D3D12_SWAPCHAIN, 39)
+#define CMFM_D3D12_DEVICE_CREATE_COMMAND_QUEUE CMFM_D3D12_METHOD(CMFM_D3D12_DEVICE, 8)
+#define CMFM_D3D12_QUEUE_EXECUTE_COMMAND_LISTS CMFM_D3D12_METHOD(CMFM_D3D12_QUEUE, 10)
+#define CMFM_D3D12_QUEUE_SIGNAL CMFM_D3D12_METHOD(CMFM_D3D12_QUEUE, 14)
+
+typedef struct cmfm_d3d12_hook_t {
+    cmfm_d3d12_method_t method;
+    int32_t order;  /* lower runs first; ties in load order */
+    void* detour;   /* the plugin's function, with the method's exact signature */
+    void** next;    /* where CMFM stores the function the detour continues with:
+                       the next detour, or the original method */
+} cmfm_d3d12_hook_t;
+
+typedef uint32_t cmfm_d3d12_state_t;
+#define CMFM_D3D12_WAITING 0u     /* registration open, or no hooked object seen yet */
+#define CMFM_D3D12_RUNNING 1u     /* hooks are in place */
+#define CMFM_D3D12_UNAVAILABLE 2u /* nothing will be called; reason says why */
+
+typedef struct cmfm_d3d12_status_t {
+    uint32_t size;            /* set to sizeof(cmfm_d3d12_status_t) before the call */
+    cmfm_d3d12_state_t state;
+    const char* reason;       /* UNAVAILABLE: why; otherwise NULL */
+    const char* owner;        /* the plugin holding the presentation role, or NULL */
+    uint64_t frames;          /* presents seen on the game's present thread */
+    int64_t last_present_qpc; /* 0 before the first */
+} cmfm_d3d12_status_t;
+
+typedef struct cmfm_d3d12_t {
+    uint32_t size;
+    uint32_t version; /* CMFM_D3D12_VERSION */
+    /* Calls `callback` for each event in `events` (CMFM_D3D12_EVENT_BIT
+     * mask). A plugin may subscribe more than once. CMFM_ERROR, with the
+     * reason in the plugin's log, after registration closed, or for an empty
+     * or unknown mask or no callback. */
+    cmfm_result_t(CMFM_CALL* subscribe)(cmfm_plugin_t* self, uint32_t events, int32_t order,
+                                        cmfm_d3d12_event_fn callback, void* user);
+    /* Registers `count` detours, all or none: CMFM_ERROR, with the reason in
+     * the plugin's log, if any is invalid, if registration closed, or if a
+     * FACTORY or SWAPCHAIN method is asked for without the presentation role.
+     * The same plugin may not hook a method twice. *next stays NULL if CMFM
+     * never hooks the method (DirectX 11, say). */
+    cmfm_result_t(CMFM_CALL* hook)(cmfm_plugin_t* self, const cmfm_d3d12_hook_t* hooks, uint32_t count);
+    /* Takes the presentation role: the right to detour IDXGIFactory and
+     * IDXGISwapChain methods, for a plugin that routes presentation, such as
+     * frame generation. The first claim wins; a later one gets CMFM_ERROR
+     * and its log names the holder. */
+    cmfm_result_t(CMFM_CALL* claim_presentation)(cmfm_plugin_t* self);
+    /* Marks the calling thread's following calls as internal (see above),
+     * until the matching end_internal. Pairs nest. A thread-local counter:
+     * cheap enough for every frame. */
+    void(CMFM_CALL* begin_internal)(cmfm_plugin_t* self);
+    void(CMFM_CALL* end_internal)(cmfm_plugin_t* self);
+    /* Fills *status up to status->size. Any thread; the strings stay valid
+     * until the process exits. */
+    void(CMFM_CALL* status)(cmfm_plugin_t* self, cmfm_d3d12_status_t* status);
+} cmfm_d3d12_t;
 
 typedef const cmfm_plugin_info_t*(CMFM_CALL* cmfm_plugin_info_fn)(void);
 typedef cmfm_result_t(CMFM_CALL* cmfm_plugin_init_fn)(const cmfm_api_t* api, const cmfm_init_t* init);

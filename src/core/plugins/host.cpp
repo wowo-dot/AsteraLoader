@@ -4,6 +4,7 @@
 #include "common/paths.hpp"
 #include "common/pattern.hpp"
 #include "common/windows.hpp"
+#include "core/graphics/hub.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
 #include "core/plugins/load_order.hpp"
@@ -13,7 +14,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -134,6 +137,7 @@ struct HostState {
 
     Scanner scanner;  // before game, which uses it
     GameService game;
+    graphics::Hub hub;
     std::mutex mutex;  // guards interfaces
     struct Published {
         cmfm_plugin_t* owner;
@@ -161,9 +165,12 @@ struct cmfm_plugin {
     std::uint64_t load_us = 0;
     std::uint64_t init_us = 0;
     std::array<std::uint64_t, CMFM_PHASE_COUNT> phase_us{};
-    mutable std::mutex mutex;  // guards status and reason
+    std::size_t load_index = 0;  // position in load order, once initialised
+    mutable std::mutex mutex;  // guards status, reason and graphics
     cmfm_status_t status = CMFM_STATUS_DISABLED;
     std::string reason;
+    std::atomic<bool> stopped{true};  // status is DISABLED; read without the lock every frame
+    std::unique_ptr<cmfm::graphics::Client> graphics;  // made on its first cmfm.d3d12 call
 };
 
 namespace cmfm::plugins {
@@ -187,6 +194,7 @@ void CMFM_CALL api_set_status(cmfm_plugin_t* self, cmfm_status_t status, const c
         std::lock_guard lock(self->mutex);
         self->status = status;
         self->reason = std::move(text);
+        self->stopped = status == CMFM_STATUS_DISABLED;
     } catch (...) { /* Never throw into a plugin. */ }
 }
 
@@ -223,6 +231,98 @@ void* CMFM_CALL scanner_rip_target(const void* instruction, std::uint32_t offset
 
 const cmfm_scanner_t kScanner{sizeof(cmfm_scanner_t), CMFM_SCANNER_VERSION, scanner_find, scanner_rip_target};
 
+// cmfm.d3d12: the hub's view of a plugin, made on its first call.
+graphics::Client& graphics_client(cmfm_plugin_t& plugin) {
+    std::lock_guard lock(plugin.mutex);
+    if (!plugin.graphics) {
+        auto client = std::make_unique<graphics::Client>();
+        client->self = &plugin;
+        client->name = plugin.manifest.name;
+        client->load_index = plugin.load_index;
+        client->stopped = &plugin.stopped;
+        client->log = [&plugin](std::string_view level, std::string_view text) { note(plugin, level, text); };
+        client->disable = [&plugin](std::string reason) {
+            note(plugin, "ERROR", "disabled: " + reason);
+            std::lock_guard inner(plugin.mutex);
+            plugin.status = CMFM_STATUS_DISABLED;
+            plugin.reason = std::move(reason);
+            plugin.stopped = true;
+        };
+        plugin.graphics = std::move(client);
+    }
+    return *plugin.graphics;
+}
+
+std::string event_names(std::uint32_t events) {
+    static const char* const names[CMFM_D3D12_EVENT_COUNT] = {"swapchain_created", "pre_present", "post_present",
+                                                              "pre_resize", "post_resize"};
+    std::string text;
+    for (std::uint32_t event = 0; event < CMFM_D3D12_EVENT_COUNT; ++event) {
+        if (events & CMFM_D3D12_EVENT_BIT(event)) text += (text.empty() ? "" : ",") + std::string(names[event]);
+    }
+    return text;
+}
+
+cmfm_result_t CMFM_CALL d3d12_subscribe(cmfm_plugin_t* self, std::uint32_t events, std::int32_t order,
+                                        cmfm_d3d12_event_fn callback, void* user) noexcept {
+    if (!self || !self->state) return CMFM_ERROR;
+    try {
+        auto& client = graphics_client(*self);
+        const auto problem = self->state->hub.subscribe(client, events, order, callback, user);
+        note(*self, problem.empty() ? "INFO" : "WARN",
+             problem.empty() ? "cmfm.d3d12: subscribed to " + event_names(events) + " at order " + std::to_string(order)
+                             : "cmfm.d3d12: cannot subscribe: " + problem);
+        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+    } catch (...) {
+        return CMFM_ERROR;
+    }
+}
+
+cmfm_result_t CMFM_CALL d3d12_hook(cmfm_plugin_t* self, const cmfm_d3d12_hook_t* hooks, std::uint32_t count) noexcept {
+    if (!self || !self->state) return CMFM_ERROR;
+    try {
+        auto& client = graphics_client(*self);
+        const auto problem = self->state->hub.hook(client, hooks, count);
+        note(*self, problem.empty() ? "INFO" : "WARN",
+             problem.empty() ? "cmfm.d3d12: registered " + std::to_string(count) + " detour(s)"
+                             : "cmfm.d3d12: cannot register detours: " + problem);
+        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+    } catch (...) {
+        return CMFM_ERROR;
+    }
+}
+
+cmfm_result_t CMFM_CALL d3d12_claim_presentation(cmfm_plugin_t* self) noexcept {
+    if (!self || !self->state) return CMFM_ERROR;
+    try {
+        auto& client = graphics_client(*self);
+        const auto problem = self->state->hub.claim_presentation(client);
+        note(*self, problem.empty() ? "INFO" : "WARN",
+             problem.empty() ? "cmfm.d3d12: holds the presentation role"
+                             : "cmfm.d3d12: cannot take the presentation role: " + problem);
+        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+    } catch (...) {
+        return CMFM_ERROR;
+    }
+}
+
+void CMFM_CALL d3d12_begin_internal(cmfm_plugin_t*) noexcept {
+    graphics::begin_internal();
+}
+
+void CMFM_CALL d3d12_end_internal(cmfm_plugin_t*) noexcept {
+    graphics::end_internal();
+}
+
+void CMFM_CALL d3d12_status(cmfm_plugin_t* self, cmfm_d3d12_status_t* status) noexcept {
+    if (!self || !self->state || !status) return;
+    self->state->hub.status(*status);
+}
+
+const cmfm_d3d12_t kD3d12{sizeof(cmfm_d3d12_t),    CMFM_D3D12_VERSION,   d3d12_subscribe,
+                          d3d12_hook,              d3d12_claim_presentation, d3d12_begin_internal,
+                          d3d12_end_internal,      d3d12_status};
+
 const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version) noexcept {
     if (!self || !self->state || !name) return nullptr;
     try {
@@ -230,6 +330,7 @@ const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, s
         auto& state = *self->state;
         if (wanted == CMFM_GAME_INTERFACE) return compatible(CMFM_GAME_VERSION, version) ? state.game.table() : nullptr;
         if (wanted == CMFM_SCANNER_INTERFACE) return compatible(CMFM_SCANNER_VERSION, version) ? &kScanner : nullptr;
+        if (wanted == CMFM_D3D12_INTERFACE) return compatible(CMFM_D3D12_VERSION, version) ? &kD3d12 : nullptr;
         std::lock_guard lock(state.mutex);
         const auto found = state.interfaces.find(wanted);
         if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
@@ -282,6 +383,7 @@ void refuse(cmfm_plugin_t& plugin, std::string reason) {
     std::lock_guard lock(plugin.mutex);
     plugin.status = CMFM_STATUS_DISABLED;
     plugin.reason = std::move(reason);
+    plugin.stopped = true;
 }
 
 // Loads the plugin DLL by its real path, resolved through a file handle, so
@@ -359,6 +461,7 @@ void initialise(cmfm_plugin_t& plugin) {
         std::lock_guard lock(plugin.mutex);
         plugin.status = CMFM_STATUS_ACTIVE;
         plugin.reason.clear();
+        plugin.stopped = false;
     }
     // From here on CMFM never unloads the plugin, whatever init returns.
     plugin.initialised = true;
@@ -372,11 +475,13 @@ void initialise(cmfm_plugin_t& plugin) {
         std::lock_guard lock(plugin.mutex);
         plugin.status = CMFM_STATUS_DISABLED;
         plugin.reason = "cmfm_plugin_init raised exception " + std::to_string(fault);
+        plugin.stopped = true;
         return;
     }
     if (result == CMFM_OK) return;
     std::lock_guard lock(plugin.mutex);
     plugin.status = CMFM_STATUS_DISABLED;
+    plugin.stopped = true;
     if (plugin.reason.empty()) plugin.reason = "cmfm_plugin_init returned " + std::to_string(result);
 }
 
@@ -391,6 +496,7 @@ Host::~Host() = default;
 
 void Host::load_all(const HostOptions& options) {
     state_ = std::make_unique<HostState>(options);
+    state_->hub.set_phase_dispatch([this](cmfm_phase_t phase, const void* data) { dispatch(phase, data); });
     // Plain paths for plugins: CMFM's own folders may carry the long-path
     // prefix of a resolved file path (\\?\D:\...), which plugins should not see.
     const auto data_root = strip_extended_prefix(
@@ -463,6 +569,7 @@ void Host::load_all(const HostOptions& options) {
             }
         }
         if (missing.empty()) {
+            plugin.load_index = plugins_.size();
             initialise(plugin);
         } else {
             refuse(plugin, "it needs " + missing + ", which did not start");
@@ -482,6 +589,12 @@ void Host::load_all(const HostOptions& options) {
 
 void Host::dispatch(cmfm_phase_t phase, const void* data) {
     if (phase >= CMFM_PHASE_COUNT) return;
+    // The device reaches the hub first, so detours are in place before
+    // plugins hear of it.
+    if (phase == CMFM_PHASE_DEVICE_CREATED && data && state_) {
+        const auto* device = static_cast<const cmfm_phase_device_t*>(data);
+        if (device->size >= offsetof(cmfm_phase_device_t, riid)) state_->hub.device_created(device->device);
+    }
     for (const auto& plugin : plugins_) {
         if (!plugin->initialised || !(plugin->manifest.phases & CMFM_PHASE_BIT(phase))) continue;
         {
@@ -498,8 +611,27 @@ void Host::dispatch(cmfm_phase_t phase, const void* data) {
             std::lock_guard lock(plugin->mutex);
             plugin->status = CMFM_STATUS_DISABLED;
             plugin->reason = "on_phase raised exception " + std::to_string(fault);
+            plugin->stopped = true;
         }
     }
+    if (phase == CMFM_PHASE_PRE_MAIN && state_) close_graphics();
+}
+
+// Ends cmfm.d3d12 registration once PRE_MAIN has run.
+void Host::close_graphics() {
+    std::uint32_t phases = 0;
+    for (const auto& plugin : plugins_) {
+        if (running(*plugin)) phases |= plugin->manifest.phases;
+    }
+    auto& hub = state_->hub;
+    hub.close(phases);
+    if (!hub.chains().empty() && state_->game.table()->graphics == CMFM_GRAPHICS_DX11) {
+        hub.set_unavailable("the game runs DirectX 11 (graphics_option.ini)");
+    }
+}
+
+::cmfm::graphics::Hub& Host::graphics() {
+    return state_->hub;
 }
 
 std::vector<PluginReport> Host::report() const {

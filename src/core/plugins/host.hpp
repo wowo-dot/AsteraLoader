@@ -8,6 +8,10 @@
 #include <string>
 #include <vector>
 
+namespace cmfm::graphics {
+class Hub;
+}
+
 namespace cmfm::plugins {
 
 struct HostOptions {
@@ -60,7 +64,14 @@ public:
     // Initialised plugins in load order, then the ones that did not run.
     std::vector<PluginReport> report() const;
 
+    // The "cmfm.d3d12" service, for the hook layer. Registration closes when
+    // dispatch(PRE_MAIN) returns; dispatch(DEVICE_CREATED) hands it the device.
+    // Valid after load_all.
+    ::cmfm::graphics::Hub& graphics();
+
 private:
+    void close_graphics();
+
     std::unique_ptr<HostState> state_;
     std::vector<std::unique_ptr<cmfm_plugin_t>> plugins_;
 };

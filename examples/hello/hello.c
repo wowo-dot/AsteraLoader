@@ -1,7 +1,8 @@
 /* hello: the smallest CMFM plugin, in plain C.
  *
  * It logs the folder paths CMFM hands it, which game this is (the "cmfm.game"
- * service, API 1.1) and each phase it sees with its payload (API 1.2). Install
+ * service, API 1.1), each phase it sees with its payload (API 1.2 and 1.3),
+ * and counts the game's presents through "cmfm.d3d12" (API 1.3). Install
  * it as <game>\cmfm\plugins\hello\hello.dll (under MO2: its own mod with that
  * layout). CMFM writes its log to cmfm\logs\plugins\hello.log.
  */
@@ -17,6 +18,8 @@ extern IMAGE_DOS_HEADER __ImageBase; /* this DLL */
 
 static const cmfm_api_t* g_api;
 static cmfm_plugin_t* g_self;
+static const cmfm_d3d12_t* g_d3d12;
+static uint64_t g_presents; /* PRE_PRESENT runs every frame: count, do not log */
 
 static void say(cmfm_log_level_t level, const char* format, ...) {
     char text[1024];
@@ -81,10 +84,39 @@ static void CMFM_CALL on_phase(cmfm_plugin_t* self, cmfm_phase_t phase, const vo
         say(CMFM_LOG_INFO, "device %s, adapter %s, minimum feature level 0x%x", device->device ? "present" : "missing",
             device->adapter ? "given" : "default", device->minimum_feature_level);
         say_guid("device interface the game asked for", (const GUID*)device->riid);
+    } else if (phase == CMFM_PHASE_SWAPCHAIN_CREATED && data) {
+        const cmfm_d3d12_swapchain_t* chain = (const cmfm_d3d12_swapchain_t*)data;
+        if (chain->size < sizeof(*chain)) return;
+        say(CMFM_LOG_INFO, "swap chain %ux%u, format %u, %u buffers, queue %s", chain->width, chain->height,
+            chain->format, chain->buffer_count, chain->queue ? "given" : "missing");
+    } else if (phase == CMFM_PHASE_FIRST_PRESENT && data) {
+        const cmfm_d3d12_present_t* present = (const cmfm_d3d12_present_t*)data;
+        if (present->size < sizeof(*present)) return;
+        say(CMFM_LOG_INFO, "first present: frame %llu, back buffer %u, sync interval %u",
+            (unsigned long long)present->frame, present->back_buffer, present->sync_interval);
     } else if (phase == CMFM_PHASE_SHUTDOWN && data) {
         const cmfm_phase_shutdown_t* shutdown = (const cmfm_phase_shutdown_t*)data;
         if (shutdown->size < sizeof(*shutdown)) return;
         say(CMFM_LOG_INFO, "WinMain returned %d", shutdown->exit_code);
+        if (g_d3d12) {
+            cmfm_d3d12_status_t status = {sizeof(cmfm_d3d12_status_t)};
+            g_d3d12->status(g_self, &status);
+            say(CMFM_LOG_INFO, "presents counted %llu; cmfm.d3d12 counted %llu, state %u%s%s",
+                (unsigned long long)g_presents, (unsigned long long)status.frames, status.state,
+                status.reason ? ": " : "", status.reason ? status.reason : "");
+        }
+    }
+}
+
+static void CMFM_CALL on_d3d12(cmfm_plugin_t* self, cmfm_d3d12_event_t event, const void* data, void* user) {
+    (void)self;
+    (void)user;
+    if (event == CMFM_D3D12_PRE_PRESENT) {
+        ++g_presents;
+    } else if (event == CMFM_D3D12_POST_RESIZE) {
+        const cmfm_d3d12_resize_t* resize = (const cmfm_d3d12_resize_t*)data;
+        say(CMFM_LOG_INFO, "resized to %ux%u, result 0x%08x", resize->swapchain->width, resize->swapchain->height,
+            (unsigned)resize->result);
     }
 }
 
@@ -93,9 +125,10 @@ static const cmfm_plugin_info_t info = {
     CMFM_API_VERSION,
     "hello",      /* name: also the folder and DLL name */
     "CMFM Hello", /* display name */
-    "0.3.0",      /* this plugin's version */
+    "0.4.0",      /* this plugin's version */
     CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_WIN_MAIN) |
-        CMFM_PHASE_BIT(CMFM_PHASE_DEVICE_CREATED) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN),
+        CMFM_PHASE_BIT(CMFM_PHASE_DEVICE_CREATED) | CMFM_PHASE_BIT(CMFM_PHASE_SWAPCHAIN_CREATED) |
+        CMFM_PHASE_BIT(CMFM_PHASE_FIRST_PRESENT) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN),
     0,    /* order */
     NULL, /* load_after */
     NULL, /* load_before */
@@ -139,6 +172,15 @@ CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* ap
                 CMFM_SCAN_CODE, &match, 1);
             say(CMFM_LOG_INFO, "version code found %u time(s), first at exe+0x%llx", count,
                 match ? (unsigned long long)((const char*)match - (const char*)GetModuleHandleW(NULL)) : 0ull);
+        }
+        /* API 1.3: events from the game's Direct3D 12 calls. Subscribe now:
+         * registration closes when PRE_MAIN ends. CMFM logs the outcome. */
+        g_d3d12 = (const cmfm_d3d12_t*)api->get_interface(init->self, CMFM_D3D12_INTERFACE, CMFM_D3D12_VERSION);
+        if (g_d3d12) {
+            g_d3d12->subscribe(init->self,
+                               CMFM_D3D12_EVENT_BIT(CMFM_D3D12_PRE_PRESENT) |
+                                   CMFM_D3D12_EVENT_BIT(CMFM_D3D12_POST_RESIZE),
+                               0, on_d3d12, NULL);
         }
     }
     return CMFM_OK;

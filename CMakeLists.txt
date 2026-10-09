@@ -77,6 +77,9 @@ target_include_directories(cmfm_api INTERFACE include)
 
 # Plugin manifests and load order (core side of the plugin API).
 add_library(cmfm_plugins STATIC
+    src/core/graphics/hub.cpp
+    src/core/graphics/hub.hpp
+    src/core/graphics/layers.cpp
     src/core/plugins/discovery.cpp
     src/core/plugins/discovery.hpp
     src/core/plugins/host.cpp
@@ -233,6 +236,11 @@ add_executable(cmfm_plugin_tests tests/test_plugins.cpp)
 target_link_libraries(cmfm_plugin_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_plugin_tests)
 add_test(NAME plugin_manifest_order COMMAND cmfm_plugin_tests)
+
+add_executable(cmfm_d3d12_hub_tests tests/test_d3d12_hub.cpp)
+target_link_libraries(cmfm_d3d12_hub_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_d3d12_hub_tests)
+add_test(NAME d3d12_hub COMMAND cmfm_d3d12_hub_tests)
 
 add_executable(cmfm_services_tests tests/test_services.cpp)
 target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
