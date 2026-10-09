@@ -46,7 +46,16 @@ supersedes the handoff where they differ) and `docs/research/entry-slot.md`.
 - Mod Organizer 2 (portable): `C:\Modding\MO2\ModOrganizer.exe`, data directory `D:\MO2\MHW`.
   Profiles: `Default`, `dlss`, `barebonesdlss`. Stracker's Loader is the MO2 mod
   `Stracker's Loader`.
-- IDA: `C:\Program Files\IDA Professional 9.3\ida.exe`
+- IDA 9.4: `C:\Program Files\IDA Professional 9.4\ida.exe` (the Hex-Rays IDA MCP
+  needs 9.4; 9.3 stays installed). Private database:
+  `local\ida\input-20261010\decrypted.i64`.
+- Decoded game image (read in place):
+  `D:\mh world modding\ai\glavenus\MonsterHunterWorld_decrypted.exe`, SHA-256
+  `d78611731e4a5f214e306d1d577d4782b59adaf1c75de54d2983caa45074884c`, decoded from
+  the tested exe `c2ebbbd2…90ea`. The exe on disk has SteamStub-encrypted code,
+  so offline signature checks run on this image.
+- Claude Code reversing tools: `C:\Users\akifs\.claude\re-tools\` (Python 3.12:
+  `py -3.12 -B`); x64dbg: `D:\reverse engine jank\x64dbg\release\x96dbg.exe`.
 - Python 3.10: `C:\Users\akifs\AppData\Local\Programs\Python\Python310\python.exe` (run with `-B`)
 - CMake/CTest (Visual Studio 18 2026, x64):
   `C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin`
@@ -99,7 +108,8 @@ or assume other contributors use them.
   - the MO2 profile, with or without force-load;
   - every loaded plugin with its version.
 - Measurement tools reading the game process (`tools/modwatch.py` and the
-  like) are strictly read-only:
+  like) are strictly read-only (x64dbg and Frida: see Reverse-Engineering
+  Tools):
   - access `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`;
   - no writes, no thread suspension, no remote threads or allocations.
 
@@ -107,6 +117,42 @@ or assume other contributors use them.
   parent module of each load. The launcher is not a measurement tool; see
   Safety and Scope.
 - When screenshotting the desktop, crop to the game window.
+
+## Reverse-Engineering Tools
+
+Claude Code has an IDA MCP (Hex-Rays), an x64dbg MCP, a Frida MCP and
+`sigscan.py`; the user-level `reversing` skill describes them. This file's
+rules come first.
+
+- **IDA:** open only the private database under `local\ida\` (copy a new one
+  there when needed), never anything in `ai\glavenus`. Ask through the MCP's
+  `execute_python` instead of writing one-off headless scripts. Names, types
+  and comments are saved to the private copy only; exports such as decompiled
+  functions go to `local\`.
+- **Signatures** (`py -3.12 -B C:\Users\akifs\.claude\re-tools\sigscan.py`, on
+  the decoded image):
+  - `audit <image> src probes` before staging a build that adds or changes a
+    pattern. A pattern the code searches for must match exactly once. A
+    pattern checked only at a pinned address may match elsewhere: on
+    2026-10-10 `kExitPattern` (`frame/sites.cpp`) matched 3 times, which is
+    fine there; the other three matched once.
+  - `make <image> <VA>` gives the shortest unique pattern for a new site and
+    `scan <image> "<pattern>"` checks one (`--rel N` resolves a rel32). Record
+    the pattern, RVA and exe hash in the design doc as usual.
+- **x64dbg and Frida on the running game** are research tools, not AL
+  components, and the only exception to the read-only rule above:
+  - the user launches through MO2 as always and says OK in the session before
+    each attach; never attach during startup (SteamStub, AL's load phases);
+  - prefer x64dbg hardware breakpoints and non-stopping logging breakpoints:
+    they change no code bytes, and the game re-checks its code with CRC;
+  - Frida hooks only functions AL or a plugin already hooks. Software
+    breakpoints, memory writes, other hooks and calls into game code each
+    need their own OK;
+  - offline is preferred: a paused game drops its online session;
+  - detach when done (x64dbg `detach`, never `terminate_session`) and note
+    what was attached, when and why in the run folder.
+- Point the tools at the game's code only, never at NVIDIA DLLs or other
+  mods' binaries (Safety and Scope).
 
 ## Engineering Rules
 
