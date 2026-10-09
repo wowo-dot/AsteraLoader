@@ -399,7 +399,7 @@ def collect(args: argparse.Namespace) -> None:
         for line in core.read_text(encoding="utf-8", errors="replace").splitlines():
             text = re.sub(r"^\[qpc=\d+ bootstrap_us=\d+\] ", "", line)
             if re.match(r"(plugin name=|phase_pre_main_(enter|complete|skipped|failed)|startup_signature_|"
-                        r"startup_crt_cache_written|warning|previous_session_crash|d3d12_state)", text):
+                        r"startup_crt_cache_written|warning|previous_session_crash|d3d12_state|game_hook)", text):
                 print("  " + text)
     for launcher in new["launcher"]:
         lines = launcher.read_text(encoding="utf-8", errors="replace").splitlines()

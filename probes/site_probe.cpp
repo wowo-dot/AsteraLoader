@@ -103,7 +103,12 @@ void describe(const char* label, const void* address) {
     }
 }
 
-void probe_update(void* main) {
+// The record does not give Main:Update's signature (sMain arrives in rcx).
+// Passing on all four integer argument registers and the return value keeps
+// the detour transparent whatever the real arity is.
+using UpdateFn = std::uintptr_t (*)(void*, void*, void*, void*);
+
+std::uintptr_t probe_update(void* main, void* a2, void* a3, void* a4) {
     const auto call = g_calls.fetch_add(1, std::memory_order_relaxed);
     const auto now = qpc();
     if (call == 0) {
@@ -114,7 +119,7 @@ void probe_update(void* main) {
         g_other_threads.fetch_add(1, std::memory_order_relaxed);
     }
     g_last_qpc.store(now, std::memory_order_relaxed);
-    reinterpret_cast<void (*)(void*)>(g_next)(main);
+    return reinterpret_cast<UpdateFn>(g_next)(main, a2, a3, a4);
 }
 
 void find_and_hook() {
