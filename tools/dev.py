@@ -294,35 +294,46 @@ def collect(args: argparse.Namespace) -> None:
     config = settings()
     cmfm = Path(config["mo2_mods"]) / config["cmfm_mod"] / "cmfm"
     folder = launch_folder(args)
-    before_file = LOCAL / "runs" / args.run / "logs-before.txt"
-    before = set(before_file.read_text(encoding="utf-8").split()) if before_file.exists() else set()
+    run_folder = LOCAL / "runs" / args.run
+    before = set()
+    for name in ("logs-before.txt", "logs-collected.txt"):
+        if (run_folder / name).exists():
+            before |= set((run_folder / name).read_text(encoding="utf-8").split())
     target = folder / "cmfm-logs"
     target.mkdir(exist_ok=True)
 
-    newest = {}
-    for kind in ("core", "launcher"):
-        candidates = [p for p in (cmfm / "logs").glob(f"{kind}.*.log") if p.name not in before]
-        if candidates:
-            newest[kind] = max(candidates, key=lambda p: p.stat().st_mtime)
-            shutil.copy2(newest[kind], target / newest[kind].name)
+    # Every launch since install-mo2 or the last collect, oldest first.
+    new = {kind: sorted((p for p in (cmfm / "logs").glob(f"{kind}.*.log") if p.name not in before),
+                        key=lambda p: p.stat().st_mtime)
+           for kind in ("core", "launcher")}
+    for log in new["core"] + new["launcher"]:
+        shutil.copy2(log, target / log.name)
+    # A later collect (the next --launch) skips these.
+    with open(run_folder / "logs-collected.txt", "a", encoding="utf-8") as collected:
+        collected.writelines(log.name + "\n" for log in new["core"] + new["launcher"])
+    # Plugin logs keep one previous launch; copy it too when there were two.
     for log in (cmfm / "logs" / "plugins").glob("*.log"):
-        if not log.name.endswith(".previous.log"):
+        if not log.name.endswith(".previous.log") or len(new["core"]) > 1:
             shutil.copy2(log, target / log.name)
     for cache in (cmfm / "cache").glob("scan.*.txt"):
         shutil.copy2(cache, folder / "scan-cache.txt")
     print(f"copied to {folder.relative_to(ROOT)}: " + ", ".join(sorted(p.name for p in target.iterdir())))
+    if len(new["core"]) > 2:
+        print(f"note: {len(new['core'])} launches; plugin logs cover only the last two")
 
-    if "core" in newest:
-        print(f"\n{newest['core'].name}")
-        for line in newest["core"].read_text(encoding="utf-8", errors="replace").splitlines():
-            text = re.sub(r"^\[qpc=\d+ bootstrap_us=\d+\] ", "", line)
-            if re.match(r"(plugin name=|phase_pre_main_(enter|complete|skipped|failed)|warning)", text):
-                print("  " + text)
-    else:
+    if not new["core"]:
         print("no new core log")
-    if "launcher" in newest:
-        lines = newest["launcher"].read_text(encoding="utf-8", errors="replace").splitlines()
+    for core in new["core"]:
+        print(f"\n{core.name}")
+        for line in core.read_text(encoding="utf-8", errors="replace").splitlines():
+            text = re.sub(r"^\[qpc=\d+ bootstrap_us=\d+\] ", "", line)
+            if re.match(r"(plugin name=|phase_pre_main_(enter|complete|skipped|failed)|startup_signature_|"
+                        r"startup_crt_cache_written|warning)", text):
+                print("  " + text)
+    for launcher in new["launcher"]:
+        lines = launcher.read_text(encoding="utf-8", errors="replace").splitlines()
         values = dict(line.split("=", 1) for line in lines if "=" in line and line.split("=", 1)[0].isidentifier())
+        print(f"\n{launcher.name}")
         if "before_create_qpc" in values and "resumed_qpc" in values:
             print(f"  paused {(int(values['resumed_qpc']) - int(values['before_create_qpc'])) / 1e4:.1f} ms "
                   "(assuming a 10 MHz QPC)")
