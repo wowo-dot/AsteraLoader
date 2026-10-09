@@ -46,7 +46,7 @@ LICENSE
    stamped `-dev` (`AL_BUILD_VERSION` in CMakeLists.txt, `project_version()`
    in dev.py). Needed: a release switch that drops `-dev`, and a version
    number. The loader's version is separate from the plugin API's (1.6).
-   The user's call: 1.0.0, or 0.x until the test matrix is done.
+   Decided: 0.x until the test matrix is done (decisions.md item 13).
 3. **Version info in the binaries.** Neither file has a Windows version
    resource, so Explorer's Properties tab and Windows' own crash reports
    show no product, version or origin. A small `.rc` for each:

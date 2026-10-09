@@ -119,3 +119,7 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     - Later: apply to SignPath Foundation (free for open-source projects)
       once the repository is public and builds come from CI. SignPath
       Foundation is then the publisher named in the signature.
+13. **The loader stays at 0.x until the test matrix is done** (the user's
+    call). The first public release is a 0.x version; 1.0.0 comes after
+    the launch-setup test matrix (item 9) passes. The loader's version is
+    separate from the plugin API's (1.6).
