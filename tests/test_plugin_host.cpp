@@ -1,5 +1,6 @@
 // Runs the plugin host against fixture plugins laid out in a temporary
 // plugins folder: argv[1] holds the built fixtures, argv[2] is a work folder.
+#include "work_dir.hpp"
 #include "common/log_file.hpp"
 #include "common/sha256.hpp"
 #include "common/windows.hpp"
@@ -50,7 +51,7 @@ void expect_refused(const std::vector<cmfm::plugins::PluginReport>& report, cons
 int wmain(int argc, wchar_t** argv) {
     if (argc != 3) return 2;
     const fs::path fixtures = argv[1];
-    const fs::path work = fs::path(argv[2]) / std::to_wstring(GetCurrentProcessId());
+    const fs::path work = cmfm_test::fresh_work_dir(argv[2]);
     const auto root = work / L"plugins";
     const auto logs = work / L"logs";
     fs::create_directories(root);

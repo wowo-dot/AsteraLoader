@@ -1,3 +1,4 @@
+#include "work_dir.hpp"
 #include "common/windows.hpp"
 #include "core/plugins/host.hpp"
 
@@ -11,7 +12,7 @@ namespace fs = std::filesystem;
 int wmain(int argc, wchar_t** argv) {
     if (argc != 3) return 2;
     const fs::path fixtures = argv[1];
-    const auto work = fs::path(argv[2]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[2]);
     const auto root = work / "plugins";
     for (const auto name : {L"seh_info", L"seh_init", L"seh_phase", L"cpp_init", L"phased"}) {
         fs::create_directories(root / name);

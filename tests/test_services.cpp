@@ -1,5 +1,6 @@
 // CMFM's built-in services on their own: "cmfm.game" and "cmfm.scanner".
 // argv[1] is a work folder.
+#include "work_dir.hpp"
 #include "common/pattern.hpp"
 #include "common/sha256.hpp"
 #include "common/windows.hpp"
@@ -159,7 +160,7 @@ void rip() {
 
 int wmain(int argc, wchar_t** argv) {
     if (argc != 2) return 2;
-    const auto work = fs::path(argv[1]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[1]);
     fs::create_directories(work);
     graphics();
     game(work);

@@ -3,6 +3,7 @@
 // place. Each child ends in a last filter that terminates it, so Windows
 // error reporting never runs. argv[1] is the fixture DLL, argv[2] a work
 // folder.
+#include "work_dir.hpp"
 #include "core/crash/handler.hpp"
 #include "core/crash/report.hpp"
 
@@ -230,7 +231,7 @@ int wmain(int argc, wchar_t** argv) {
     if (argc == 5 && std::wstring(argv[1]) == L"child") return child(argv[2], argv[3], argv[4]);
     if (argc != 3) return 2;
     pure();
-    const auto work = fs::path(argv[2]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[2]);
     fs::create_directories(work);
     plugin_thread(work, argv[1]);
     replaced_filter(work, argv[1]);

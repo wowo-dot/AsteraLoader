@@ -2,6 +2,7 @@
 // argv[1] is the built hello.dll, argv[2] a work folder.
 // Phases get stand-in payloads; "cmfm.d3d12" runs on fake DXGI objects,
 // with a stand-in installer linking each chain to fake original methods.
+#include "work_dir.hpp"
 #include "core/graphics/hub.hpp"
 #include "core/plugins/host.hpp"
 
@@ -90,7 +91,7 @@ int wmain(int argc, wchar_t** argv) {
     g_vtable[20] = reinterpret_cast<void*>(&fake_get_hwnd);
     g_vtable[36] = reinterpret_cast<void*>(&fake_back_buffer);
 
-    const auto work = fs::path(argv[2]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[2]);
     fs::create_directories(work / L"plugins" / L"hello");
     fs::copy_file(argv[1], work / L"plugins" / L"hello" / L"hello.dll");
 

@@ -1,6 +1,7 @@
 // API 1.1 through the plugin host: published interfaces, built-in services,
 // dependencies, data folders, timing and a plugin built for API 1.0.
 // argv[1] holds the built fixtures, argv[2] is a work folder.
+#include "work_dir.hpp"
 #include "common/log_file.hpp"
 #include "common/sha256.hpp"
 #include "common/windows.hpp"
@@ -45,7 +46,7 @@ const cmfm::plugins::PluginReport* find(const std::vector<cmfm::plugins::PluginR
 int wmain(int argc, wchar_t** argv) {
     if (argc != 3) return 2;
     const fs::path fixtures = argv[1];
-    const auto work = fs::path(argv[2]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[2]);
     const auto root = work / L"plugins";
     for (const auto name : {L"provider", L"consumer", L"needs_missing", L"needs_newer", L"failing", L"needs_failing",
                             L"legacy10", L"slow"}) {

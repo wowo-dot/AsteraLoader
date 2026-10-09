@@ -1,5 +1,6 @@
 // Runs CMFM's loader.dll shim against a fake game folder:
 // argv[1] the shim, argv[2] the stand-in Stracker plugin, argv[3] a work folder.
+#include "work_dir.hpp"
 #include "shim.h"
 
 #include <windows.h>
@@ -58,7 +59,7 @@ int wmain(int argc, wchar_t** argv) {
     const bool known = argc == 5 && std::wstring(argv[4]) == L"known";
     const std::string version_text = known ? "known-7" : "test-421";
     const fs::path shim_path = argv[1], fixture = argv[2];
-    const auto work = fs::path(argv[3]) / std::to_wstring(GetCurrentProcessId());
+    const auto work = cmfm_test::fresh_work_dir(argv[3]);
     const auto game = work / L"game";
     const auto plugins = game / L"nativePC" / L"plugins";
     fs::create_directories(plugins / L"folder.dll");
