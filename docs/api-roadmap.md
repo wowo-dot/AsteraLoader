@@ -80,7 +80,10 @@ In this order; the first four are small.
     Status 2026-10-09: API 1.4 "al.hooks" designed and implemented on the
     core side and native installer, tested with real patches in the fake
     game (design-game-hooks-1.4.md). Confirmed in MHW on Main:Update
-    (hooks-mo2-1).
+    (hooks-mo2-1). First plugin client: the DLSS mod 0.15.0 moved its three
+    live frame hooks onto it after a second hook on Main:Update had turned
+    its frame generation off; it now shares Main:Update with site_probe,
+    frame generation on (dlss-astera-1).
 11. **Graphics coordination** (the DLSS mod's main need,
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,

@@ -1,5 +1,10 @@
 # Handoff: the DLSS mod after the Astera Loader rename (2026-10-09)
 
+Status 2026-10-09: done. DLSS mod 0.15.0 (dlssupdate 871bea3) runs on
+Astera Loader 81a5b21 with frame generation on (run dlss-astera-1): its
+three live frame hooks are on `al.hooks`, and Main:Update is one chain,
+`layers=mhw_dlss,site_probe`.
+
 The loader formerly called CMFM is now **Astera Loader** ("AL"); CMFM is its
 menu plugin (`decisions.md` item 11). Only names changed. The ABI is the
 same API 1.4: same structs, sizes, versions, phases and rules. A plugin
