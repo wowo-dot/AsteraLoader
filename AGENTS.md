@@ -1,29 +1,33 @@
-# CMFM: Configuration Menu For Mods (Monster Hunter: World)
+# Astera Loader (AL) and CMFM (Monster Hunter: World)
 
 ## Objective
 
-CMFM is an open-source native framework for the Windows PC version of Monster
-Hunter: World (DirectX 12). It has two parts under one name:
+Astera Loader ("AL") is an open-source native loader and framework for the
+Windows PC version of Monster Hunter: World (DirectX 12). CMFM ("Configuration
+Menu For Mods") is its in-game settings menu, shipped as a first-party plugin.
+Until 2026-10-09 the whole project was called CMFM, and older docs, handoffs
+and run records use that name for the loader (`decisions.md` item 11).
 
-- **CMFM Core:** our own launcher and native loader (the SKSE route).
-  - `cmfm_launcher.exe` starts the game suspended, loads `cmfm.dll` into it,
-    then resumes it. CMFM puts no proxy DLL in the game folder.
-  - `cmfm.dll` is in before Steam's DRM stub and before any game code, in
+- **Astera Loader:** our own launcher and native loader (the SKSE route).
+  - `astera_launcher.exe` starts the game suspended, loads `astera.dll` into it,
+    then resumes it. AL puts no proxy DLL in the game folder.
+  - `astera.dll` is in before Steam's DRM stub and before any game code, in
     every launch setup, and dispatches load phases to plugins.
-  - Exposes a versioned C plugin API with load phases.
+  - Exposes a versioned C plugin API (`al_` prefix, `include/al/al_plugin.h`)
+    with load phases.
   - Coordinates Direct3D 12 / DXGI hooks between mods.
   - Makes Stracker's Loader unnecessary: existing Stracker plugins run
     unchanged with no `dinput8.dll` or `loader.dll` in the game folder.
-- **CMFM Menu:** the in-game settings menu. Plugins register typed settings,
-  status pages and warning popups.
+- **CMFM:** the in-game settings menu, a plugin of the loader. Plugins
+  register typed settings, status pages and warning popups.
 
 The user's guiding principle: fewer loaders, proxy DLLs and bandaids over the
-exe. CMFM replaces Stracker's Loader. It coexists with SharpPluginLoader (SPL)
-and does not compete with it: CMFM never takes `winmm.dll`, `dinput8.dll`,
+exe. AL replaces Stracker's Loader. It coexists with SharpPluginLoader (SPL)
+and does not compete with it: AL never takes `winmm.dll`, `dinput8.dll`,
 `dxgi.dll` or any other proxy name.
 
 v1 is launcher-only. A proxy fallback for Steam's plain Play button is added
-only if Steam launch options (`"<path>\cmfm_launcher.exe" %command%`) turn out
+only if Steam launch options (`"<path>\astera_launcher.exe" %command%`) turn out
 not to work.
 
 The first plugin client is the sibling DLSS / Frame Generation mod. Its
@@ -34,7 +38,7 @@ supersedes the handoff where they differ) and `docs/research/entry-slot.md`.
 
 ## Canonical Local Paths
 
-- Repository: `D:\mh world modding\CMFM`
+- Repository: `D:\mh world modding\AsteraLoader`
 - Sibling DLSS mod (read-only reference from here): `D:\mh world modding\dlssupdate`
 - Sibling CPU project (read-only reference): `D:\mh world modding\cpuopt`
 - Game directory: `D:\SteamLibrary\steamapps\common\Monster Hunter World`
@@ -57,16 +61,16 @@ or assume other contributors use them.
 - Never patch `MonsterHunterWorld.exe` or game assets on disk. In-memory hooks
   only at signature-verified sites, with clean removal.
 - Do not disable, bypass or weaken integrity checks, CRC/anti-tamper code, DRM,
-  anti-cheat, licensing or platform protections. CMFM Core itself must not
+  anti-cheat, licensing or platform protections. Astera Loader itself must not
   change gameplay or network behaviour. What plugins do is the user's choice.
-- The launcher is the only CMFM component that writes into the game process,
-  and only to load `cmfm.dll`:
+- The launcher is the only AL component that writes into the game process,
+  and only to load `astera.dll`:
   - it only creates `MonsterHunterWorld.exe` itself, suspended. It never
     attaches to a running game or touches any other process;
-  - it loads `cmfm.dll` by full path from CMFM's own folder, and changes
+  - it loads `astera.dll` by full path from AL's own folder, and changes
     nothing else in the process;
   - it leaves Steam's DRM stub (SteamStub) and its checks to run untouched.
-    `cmfm.dll` and plugins install hooks only after the game's code is
+    `astera.dll` and plugins install hooks only after the game's code is
     unpacked;
   - it needs no administrator rights, and has no network access or
     auto-update.
@@ -81,8 +85,8 @@ or assume other contributors use them.
 
 ## Runtime Testing Protocol
 
-- The user launches the game, always through MO2: the CMFM launcher entry
-  for CMFM runs, the plain "Monster Hunter: World" entry for baselines. Never
+- The user launches the game, always through MO2: the AL launcher entry
+  for AL runs, the plain "Monster Hunter: World" entry for baselines. Never
   launch MHW or the launcher through Steam, a script or computer-use. Steam
   launch-option tests are run by the user.
 - Before every launch, prepare a run folder (`local/runs/<name>`) and the
@@ -91,7 +95,7 @@ or assume other contributors use them.
 - Keep the installed test build in place between runs; announce any
   intentional stop or removal.
 - Run logs identify:
-  - the exe SHA-256 and the CMFM DLL SHA-256 and version;
+  - the exe SHA-256 and the AL DLL SHA-256 and version;
   - the MO2 profile, with or without force-load;
   - every loaded plugin with its version.
 - Measurement tools reading the game process (`tools/modwatch.py` and the
@@ -131,11 +135,11 @@ or assume other contributors use them.
   - passes the remaining arguments through, starts the game in the game
     folder, waits for it and returns its exit code;
   - fails visibly but never fatally. If it fails before resuming the game, it
-    ends the suspended process it created and says why. If `cmfm.dll` does
-    not confirm it loaded, the game keeps running without CMFM, and the
+    ends the suspended process it created and says why. If `astera.dll` does
+    not confirm it loaded, the game keeps running without AL, and the
     launcher says so.
-- Under MO2 the launcher derives `cmfm.dll`'s real path from a file handle
-  and injects that, so loading CMFM does not depend on usvfs timing in the
+- Under MO2 the launcher derives `astera.dll`'s real path from a file handle
+  and injects that, so loading AL does not depend on usvfs timing in the
   child.
 - Keep third-party dependencies explicit and pinned, and record their licences.
   Forking Stracker's Loader (MIT) needs its copyright notice; its log code
@@ -149,7 +153,7 @@ or assume other contributors use them.
 - Test Stracker compatibility against the user's installed plugins (list in
   the handoff). Test with and without leftover Stracker files.
 - Test every launch setup, each with the Steam overlay on and off:
-  - MO2 through the CMFM launcher entry, no force-load;
+  - MO2 through the AL launcher entry, no force-load;
   - the same with SPL force-loaded;
   - a manual install with the launcher started directly;
   - Steam launch options with `%command%`.

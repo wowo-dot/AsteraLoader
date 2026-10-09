@@ -1,4 +1,4 @@
-# CMFM API roadmap (2026-10-09)
+# AL API roadmap (2026-10-09)
 
 What the plugin API should offer beyond 1.0, in order. Agreed with the user on
 2026-10-09. Each step names who builds it: "Claude" for work that needs no
@@ -6,12 +6,12 @@ game or system hooks, "user" for hooks and the launcher's injection code.
 
 ## Where we are (API 1.0)
 
-- `cmfm_plugin_info` / `cmfm_plugin_init`; the API table has `log` and
+- `al_plugin_info` / `al_plugin_init`; the API table has `log` and
   `set_status`; init gives the plugin folder as the game sees it and as
   resolved through a file handle.
 - One phase, PRE_MAIN, confirmed in the game (pre-main-3, plugin-mo2-1).
 - Load order, refusals with reasons, per-plugin logs, fault containment.
-- Stracker's Loader compatibility as a CMFM plugin (stracker-mo2-1 to -3).
+- Stracker's Loader compatibility as an AL plugin (stracker-mo2-1 to -3).
 - `examples/hello`, the smallest plugin, in C.
 
 ## Principles
@@ -39,7 +39,7 @@ In this order; the first four are small.
 2. **Game identity:** exe SHA-256, PE timestamp, the game version string
    (the Stracker shim already finds "421810"), DX11 or DX12. Lets a plugin
    refuse an unknown game version without scanning for it.
-3. **Startup cost per plugin:** CMFM times each plugin's load, init and
+3. **Startup cost per plugin:** AL times each plugin's load, init and
    phase calls and writes them to the report and the core log. Today they
    are measured by hand from the watcher (QuestLoader: about 462 ms).
 4. **Dependencies:** `requires` with minimum versions. A missing or too old
@@ -56,7 +56,7 @@ In this order; the first four are small.
    - Results cached per exe hash, so later launches skip the scan.
    - Stracker's bit notation and the usual `48 8B ?? ??` form; helpers for
      RIP-relative operands.
-   - Helps CMFM-native and ported plugins. Existing Stracker plugins keep
+   - Helps AL-native and ported plugins. Existing Stracker plugins keep
      their own scanner.
 
 ## API 1.2: services that need hooks (user)
@@ -72,12 +72,12 @@ In this order; the first four are small.
    data per save slot, kept in step with saving, loading and deleting.
    Needs hooks into MHW's save and load. Moved up because it is what made
    SKSE indispensable for gameplay mods.
-10. **Shared hook service:** plugins ask CMFM to hook a function; one hook
+10. **Shared hook service:** plugins ask AL to hook a function; one hook
     engine in the process, a defined order when two plugins hook the same
     function, clean removal. Extends the "one hook per entry point" rule from
     D3D12/DXGI to game functions. Today every Stracker plugin bundles its
     own MinHook.
-    Status 2026-10-09: API 1.4 "cmfm.hooks" designed and implemented on the
+    Status 2026-10-09: API 1.4 "al.hooks" designed and implemented on the
     core side and native installer, tested with real patches in the fake
     game (design-game-hooks-1.4.md). Confirmed in MHW on Main:Update
     (hooks-mo2-1).
@@ -85,7 +85,7 @@ In this order; the first four are small.
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,
     device, queue and swap-chain access.
-    Status 2026-10-09: API 1.3 "cmfm.d3d12" implemented (core side and
+    Status 2026-10-09: API 1.3 "al.d3d12" implemented (core side and
     native hook layer), tested on WARP/DXGI stand-ins and confirmed in the
     game with the DLSS mod off (graphics-mo2-1, tag v0.1.0-dev.10;
     design-d3d12-1.3.md). The DLSS mod 0.14.0 runs on it with frame
@@ -104,7 +104,7 @@ In this order; the first four are small.
 
 - Typed settings; the plugin's own file stays the source of truth.
 - Warning popups with "don't show again".
-- A status page per plugin, showing the report CMFM already builds.
+- A status page per plugin, showing the report AL already builds.
 - A crash handler that names the faulting plugin and chains to existing
   handlers; opt-in minidumps; a "collect logs" bundle.
   Status 2026-10-09: the crash handler is done ahead of the menu, tested
@@ -135,7 +135,7 @@ In this order; the first four are small.
 - Its most valuable services are startup and game messages, the per-save
   co-save and "run on the main thread"; this roadmap has all three.
 - The richness lives outside SKSE: Address Library (stable IDs across game
-  versions) and CommonLibSSE (reversed classes, hook helpers). CMFM follows
+  versions) and CommonLibSSE (reversed classes, hook helpers). AL follows
   that split with a separate SDK.
 - MHW is at its final version (one exe hash), so signatures plus a cache
   replace an address library. It has no scripting language, and its UI is

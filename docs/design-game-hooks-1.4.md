@@ -1,13 +1,13 @@
-# Design: "cmfm.hooks", shared hooks on game functions (API 1.4)
+# Design: "al.hooks", shared hooks on game functions (API 1.4)
 
 Status 2026-10-09: the plugin API, registry and native MinHook installer are
 implemented. Tested in the original fake game through the production
 launcher/core, with three plugin fixtures, late registration, concurrent
-callers and an existing external hook. All 41 tests pass and `cmfm.dll`
+callers and an existing external hook. All 41 tests pass and `astera.dll`
 imports only KERNEL32. See `handoff-game-hook-installer-20261009.md`.
 Roadmap item 10.
 
-Confirmed in MHW in run hooks-mo2-1 (CMFM 8be5411): the diagnostic plugin
+Confirmed in MHW in run hooks-mo2-1 (AL 8be5411): the diagnostic plugin
 `probes/site_probe.cpp` hooked Main:Update (exe+0x1af2b60) by address, with
 SharpPluginLoader's pattern checked 25 bytes in. The chain was active from
 arming to SHUTDOWN and ran 9710 times on the game's main thread. No other mod
@@ -30,19 +30,19 @@ Two clients are ready:
 
 ## The API
 
-`"cmfm.hooks"` 1.0 in `include/cmfm/cmfm_plugin.h`:
+`"al.hooks"` 1.0 in `include/al/al_plugin.h`:
 
-- **`hook(cmfm_hook_t)`** returns a handle. Fields:
+- **`hook(al_hook_t)`** returns a handle. Fields:
   - `order` and a `name`, for logs;
   - the target, given one of two ways:
-    - **pattern search:** `pattern` (cmfm.scanner syntax, at least 5 bytes)
+    - **pattern search:** `pattern` (al.scanner syntax, at least 5 bytes)
       must match exactly once in the game's code; target = match + `offset`;
     - **address:** `address`, with `pattern` matching at `address - offset`.
 
     Either way the bytes are checked before anything is patched (AGENTS.md:
     hooks only at signature-verified sites), and the target must lie in the
     exe's executable sections;
-  - `detour`, with the target's signature, and `next`, where CMFM stores
+  - `detour`, with the target's signature, and `next`, where AL stores
     the function to continue with.
 - **`set_enabled(handle, on)`** takes a detour out of its chain, or puts it
   back in its place.
@@ -50,7 +50,7 @@ Two clients are ready:
 
 ### Rules
 
-- **Registration** is open from `cmfm_plugin_init` on, with no deadline.
+- **Registration** is open from `al_plugin_init` on, with no deadline.
   Hooks made before PRE_MAIN ends take effect when it ends, before the
   game's CRT starts. Later ones take effect at once.
 - **Order:** a lower `order` runs first, further from the original; ties run
@@ -64,9 +64,9 @@ Two clients are ready:
   - A detour taken out keeps its old `next`, so calls already inside it
     finish normally.
   - Plugins are never unloaded, so their code stays valid.
-- **Faults:** detours run directly, so CMFM cannot catch their faults, as
-  with any hook. CMFM's crash handler still names the plugin.
-- **No internal-call regions here.** Unlike cmfm.d3d12, a plugin's calls
+- **Faults:** detours run directly, so AL cannot catch their faults, as
+  with any hook. AL's crash handler still names the plugin.
+- **No internal-call regions here.** Unlike al.d3d12, a plugin's calls
   into game functions go through the chains like the game's own calls.
 
 ### Core side (implemented)
@@ -111,8 +111,8 @@ The original registry checked new registrations against the live patched
 entry, so a real WIN_MAIN join would reject the original signature. The
 registry now retains the bytes MinHook replaced (five at entry, or five
 above and two at entry for its hotpatch form). Signature validation overlays
-only that footprint with the pre-CMFM bytes, after checking the live patch
-still matches CMFM's recorded patch. Bytes outside it remain live checks.
+only that footprint with the pre-AL bytes, after checking the live patch
+still matches AL's recorded patch. Bytes outside it remain live checks.
 
 Pattern searches combine the scanner's live matches with verified matches
 at existing chain targets, deduplicate them and still require exactly one.
@@ -123,7 +123,7 @@ patch on a function.
 
 ### Installer contract
 
-Implement `cmfm::game_hooks::Installer` (`registry.hpp`) and hand it over in
+Implement `al::game_hooks::Installer` (`registry.hpp`) and hand it over in
 `phases::arm`, after PRE_MAIN:
 
 ```cpp
@@ -159,8 +159,8 @@ host.game_hooks().set_installer(&g_game_installer);  // installs every pending c
 - a third fixture joins at WIN_MAIN;
 - one fixture toggles its detour while another thread calls the function in
   a loop;
-- an existing MinHook patch on a second function stays under CMFM's;
-- `cmfm.dll` still imports only KERNEL32.
+- an existing MinHook patch on a second function stays under AL's;
+- `astera.dll` still imports only KERNEL32.
 
 This is implemented as `game_hooks_native`: two initial fixtures register
 by pattern and address, a third joins by pattern at WIN_MAIN, and a worker

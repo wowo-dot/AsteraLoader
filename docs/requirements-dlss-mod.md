@@ -1,13 +1,14 @@
-# What the DLSS mod needs from CMFM
+# What the DLSS mod needs from AL
 
-CMFM (Configuration Menu For Mods) is the user's planned framework. This file
+Astera Loader (AL) is the user's loader and framework; CMFM (Configuration Menu
+For Mods) is its menu plugin. Until 2026-10-09 both were called CMFM. This file
 lists what the DLSS / Frame Generation mod needs from it as a loader and
 settings host, so both projects can be designed against the same contract.
 Written 2026-10-08 by the DLSS project (`D:\mh world modding\dlssupdate`) after
 the loader review ([loaders.md](research/loaders.md)) and its shipped-layout runs
 game-50 to game-52. This is the canonical copy; the DLSS repository points here.
 
-Levels: **MUST** means without it the DLSS mod cannot be a CMFM plugin.
+Levels: **MUST** means without it the DLSS mod cannot be an AL plugin.
 **SHOULD** means we can work around it, but badly. **MAY** is nice to have.
 
 Facts this builds on (all confirmed, exe sha c2ebbbd2…):
@@ -21,12 +22,12 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   loads in time because we only need to beat device creation (game-52).
 - Stracker's plugins load after Streamline and NGX (game-50 load order). That
   is too late for frame generation.
-- Run entry-slot-1 (CMFM repository): under MO2 the only non-KnownDLL delay
+- Run entry-slot-1 (AL repository): under MO2 the only non-KnownDLL delay
   import the game calls before device creation is WINMM (586 ms, device at
   about 950–1040 ms). MO2 starts the exe suspended and injects usvfs at 13 ms.
 
-**Decided 2026-10-08:** CMFM loads through its own launcher
-(`cmfm_launcher.exe`, the SKSE route), not a proxy DLL. See
+**Decided 2026-10-08:** AL loads through its own launcher
+(`astera_launcher.exe`, the SKSE route), not a proxy DLL. See
 [decisions.md](decisions.md) item 6.
 
 ## 1. Load point
@@ -37,18 +38,18 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   swap chain.
 - **MUST** run that entry on a normal thread outside the loader lock, so the
   plugin can call LoadLibrary and create threads.
-- **MUST** work in every launch setup that goes through `cmfm_launcher.exe`,
+- **MUST** work in every launch setup that goes through `astera_launcher.exe`,
   with no force-load and no Steam overlay dependency:
   - MO2, with the launcher as an MO2 executable;
   - a manual install, with the launcher started directly or through Steam
     launch options (`%command%`);
   - the Steam overlay on or off.
 
-  Steam's plain Play button without launch options does not load CMFM
+  Steam's plain Play button without launch options does not load AL
   (agreed 2026-10-08). The DLSS mod's standalone winmm.dll covers that case.
 - **SHOULD** expose named phases a plugin can subscribe to:
   - `pre_main`: post-unpack, before CRT init; SPL's cookie trick reaches this.
-    CMFM itself arrives earlier (before SteamStub) but holds plugins until
+    AL itself arrives earlier (before SteamStub) but holds plugins until
     the game's code is unpacked;
   - `win_main`;
   - `device_created`;
@@ -58,29 +59,29 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
 
   The mod needs `pre_main` or anything before dxgi. The rest replace hooks it
   installs today.
-- ~~**SHOULD** choose CMFM's own entry slot so that it coexists with SPL
+- ~~**SHOULD** choose AL's own entry slot so that it coexists with SPL
   (winmm.dll) and Stracker's Loader (dinput8.dll).~~ Resolved by the launcher:
-  CMFM takes no proxy slot.
+  AL takes no proxy slot.
 
 ## 2. Plugin contract
 
 - **MUST** use a C ABI only: no C++ classes, STL types or exceptions across the
   boundary. Stracker's `LOG` puts a `std::stringstream` across it and ties
   every plugin to MSVC's release STL.
-- **MUST** use a versioned API table, e.g. `struct cmfm_api { uint32 size;
+- **MUST** use a versioned API table, e.g. `struct al_api { uint32 size;
   uint32 version; ... }`, with additive changes only within a major version.
-  CMFM refuses a plugin built for a newer major version, with a readable reason.
-- **MUST** have the plugin export `cmfm_plugin_info` (name, version, API
-  version, supported exe hashes, wanted phases) and `cmfm_plugin_init(const
-  cmfm_api*)`.
+  AL refuses a plugin built for a newer major version, with a readable reason.
+- **MUST** have the plugin export `al_plugin_info` (name, version, API
+  version, supported exe hashes, wanted phases) and `al_plugin_init(const
+  al_api*)`.
 - **MUST** load in a deterministic, declared order (priority plus before/after
   names), not the alphabetical order of a folder listing (Stracker plugins
   rely on names like `!First.dll`).
 - **MUST** give each plugin its own folder (`<plugins>\mhw_dlss\`) and pass
   its path in at init. Under MO2, GetModuleFileNameW reports the virtual game
   path while canonical() gives the real mod folder. That mismatch disabled
-  v0.13.8 (game-51). CMFM should hand plugins one consistent path. Having
-  CMFM supply both the virtual path and the real path would remove the
+  v0.13.8 (game-51). AL should hand plugins one consistent path. Having
+  AL supply both the virtual path and the real path would remove the
   guesswork.
 - **MUST NOT** change the process DLL search path or preload DLLs named
   `sl.*`, `nvngx_*` or `nvapi*`. The mod loads the NVIDIA runtime by full path
@@ -97,10 +98,10 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
 
 ## 3. Graphics coordination (most important)
 
-> Note (CMFM, 2026-10-09): the mod's shipped code (0.13.11) does not
+> Note (AL, 2026-10-09): the mod's shipped code (0.13.11) does not
 > substitute objects. The game keeps DXGI's own swap chain and queue, and
-> the mod redirects their methods to Streamline's proxies. CMFM's answer
-> is "cmfm.d3d12": one hook per method with the mod's detours chained in it,
+> the mod redirects their methods to Streamline's proxies. AL's answer
+> is "al.d3d12": one hook per method with the mod's detours chained in it,
 > plus a shared internal-call region. See `design-d3d12-1.3.md`.
 
 The mod owns presentation when frame generation is on. Streamline replaces
@@ -109,7 +110,7 @@ every frame.
 
 - **MUST** let exactly one plugin be the presentation owner. That plugin
   substitutes or upgrades the factory, swap chain and queue objects the game
-  receives. CMFM and other plugins then see the game-facing (proxy) objects.
+  receives. AL and other plugins then see the game-facing (proxy) objects.
 - **MUST** have CMFM's menu or overlay draw into the game-facing back buffer
   before the owner's Present, on the game's queue, with correct resource
   barriers. Drawn there, DLSS-G treats it as UI: it is in the final colour but
@@ -127,7 +128,7 @@ every frame.
   generation or switch Reflex while the menu captures input.
 - **MUST NOT** call NVAPI or Reflex sleep or markers, or run its own frame
   limiter that bypasses Reflex. The mod owns Reflex (PCL markers) and frame
-  pacing. A CMFM limiter must defer to the presentation owner.
+  pacing. An AL limiter must defer to the presentation owner.
 
 ## 4. Settings menu (milestone 8)
 
@@ -135,8 +136,8 @@ every frame.
   float range, read-only status line), with get, set and validate callbacks.
   Each setting is marked `live` or `restart required`.
 - **MUST** let the plugin keep its own config file as the source of truth.
-  For us that is `mhw_dlss.ini`, which stays editable by hand. CMFM reads and
-  writes through the plugin, so a broken CMFM store can never wipe it. SPL
+  For us that is `mhw_dlss.ini`, which stays editable by hand. AL reads and
+  writes through the plugin, so a broken AL store can never wipe it. SPL
   overwrites an unparsable loader-config.json with defaults; this rule avoids
   that.
 - **MUST** handle input: keyboard, mouse and controller, a configurable
@@ -150,7 +151,7 @@ every frame.
   - "disabled: reason".
 - **SHOULD** support AA-control lockout: grey out or annotate the game's own
   Anti-Aliasing and DLSS options while the mod owns AA, or at least warn when
-  they are changed. This item has been parked waiting for CMFM since
+  they are changed. This item has been parked waiting for AL since
   2026-09-26.
 - **SHOULD** offer a status page per plugin, e.g.:
   - mode;
@@ -178,12 +179,12 @@ Settings the DLSS mod will register:
   (beta backlog: log path privacy).
 - **MUST** use one coordinated crash handler. It records:
   - the faulting module, offset and owning plugin;
-  - the thread, and whether it is a game, CMFM or plugin thread.
+  - the thread, and whether it is a game, AL or plugin thread.
 
   It chains to existing handlers and never swallows exceptions. Minidumps are
   opt-in, written to a known folder. Today the mod's crash.jsonl misses
   non-host faults, and we rely on WER LocalDumps.
-- **SHOULD** offer a one-click "collect logs" zip for bug reports: CMFM logs,
+- **SHOULD** offer a one-click "collect logs" zip for bug reports: AL logs,
   plugin logs, the config files and the exe hash, with no game files.
 - **SHOULD** expose game identity: exe SHA-256, PE timestamp, the game version
   string (the same one Stracker's `GameVersion` reports), and DX11 or DX12
@@ -192,13 +193,13 @@ Settings the DLSS mod will register:
 ## 6. Compatibility
 
 - **MUST** make Stracker's Loader unnecessary (user's decision, 2026-10-08:
-  fewer loaders and proxy DLLs in the game folder). With CMFM installed,
+  fewer loaders and proxy DLLs in the game folder). With AL installed,
   existing Stracker plugins work unchanged and neither `dinput8.dll` nor
   Stracker's `loader.dll` is needed.
-  - CMFM ships a shim named `loader.dll` in its own folder. It exports the four
+  - AL ships a shim named `loader.dll` in its own folder. It exports the four
     symbols the 19 installed plugins use (LOG ctor/dtor, MinLogLevel,
     GameVersion) and an `Initialize` that does nothing on a second call.
-  - CMFM loads the shim by full path before any plugin. A plugin's `loader.dll`
+  - AL loads the shim by full path before any plugin. A plugin's `loader.dll`
     import then binds to it: Windows uses an already-loaded module of the same
     name instead of searching (documented DLL search order). No file goes in
     the game root.
@@ -218,7 +219,7 @@ Settings the DLSS mod will register:
       reference. Test it anyway;
     - dinput8.dll alone: Stracker shows a "loader.dll not found" error box.
 
-    CMFM should tell the user to remove both.
+    AL should tell the user to remove both.
   - Stracker's code is MIT; fork it with credit. Test against the 19 installed
     plugins, LuaEngine first.
 - **MUST** coexist with SPL: don't take or rewrite its winmm.dll, and don't
@@ -229,8 +230,8 @@ Settings the DLSS mod will register:
   with no force-load and no files outside its own folders. No exe patching.
   No disabling of integrity or anti-cheat. Online play stays possible.
 - **SHOULD** detect a second copy of a plugin, e.g. the DLSS mod's standalone
-  winmm.dll and its CMFM plugin together. The mod's single-instance mutex
-  keeps only the first one active; CMFM should tell the user.
+  winmm.dll and its AL plugin together. The mod's single-instance mutex
+  keeps only the first one active; AL should tell the user.
 - **MAY** support Proton/Linux. DLSS frame generation is not a target there.
 
 ## 7. Performance, security, distribution
@@ -248,12 +249,12 @@ Settings the DLSS mod will register:
 
 ## What the DLSS mod commits to in return
 
-- Ships as a CMFM plugin (`plugins\mhw_dlss\`) and keeps its standalone
-  winmm.dll mode for users without CMFM. The same DLL works both ways; the
+- Ships as an AL plugin (`plugins\mhw_dlss\`) and keeps its standalone
+  winmm.dll mode for users without AL. The same DLL works both ways; the
   mutex keeps one copy active.
 - Registers its settings, status and warnings through CMFM. Keeps
   mhw_dlss.ini as the readable source of truth.
-- Logs through CMFM's API.
+- Logs through AL's API.
 - Keeps the presentation-owner role as narrow as possible: only what frame
   generation and Reflex need.
 
@@ -268,12 +269,12 @@ All five were answered on 2026-10-08. See [decisions.md](decisions.md):
 
 The original questions follow for the record.
 
-1. **CMFM's entry slot.**
-   - winmm.dll (collides with us and SPL unless CMFM chain-loads them);
+1. **AL's entry slot.**
+   - winmm.dll (collides with us and SPL unless AL chain-loads them);
    - a different delay import (XINPUT9_1_0, IPHLPAPI, MFPlat, MFReadWrite and
      WININET are the non-KnownDLL candidates). We'd measure their load order
      in one run;
-   - CMFM *being* the shared winmm.dll host for both us and SPL.
+   - AL *being* the shared winmm.dll host for both us and SPL.
 
    Pre-CRT loading without MO2 force-load is only reliable through Steam's
    overlay imports (winmm, cfgmgr32).
@@ -281,6 +282,6 @@ The original questions follow for the record.
    MHW's UI?
 3. **Settings storage:** per-plugin files (preferred above), or a central CMFM
    store with import and export?
-4. **Stracker replacement:** decided that CMFM replaces it. Open: in CMFM v1
-   (recommended: it is small and makes CMFM useful on day one), or later?
-5. **Licence** for CMFM (repository: `D:\mh world modding\CMFM`).
+4. **Stracker replacement:** decided that AL replaces it. Open: in AL v1
+   (recommended: it is small and makes AL useful on day one), or later?
+5. **Licence** for AL (repository: `D:\mh world modding\AsteraLoader`).

@@ -1,10 +1,10 @@
-# Design: "cmfm.d3d12", graphics coordination (API 1.3)
+# Design: "al.d3d12", graphics coordination (API 1.3)
 
 Status 2026-10-09: the plugin API, hub, event layer and native hook installer
 are implemented and tested outside the game. The real WARP stand-in runs
 through the production launcher and core, installs all five families, fires
 SWAPCHAIN_CREATED / FIRST_PRESENT and verifies Present and resize ordering.
-All 37 CTest cases pass; `cmfm.dll` imports only KERNEL32. First MHW run
+All 37 CTest cases pass; `astera.dll` imports only KERNEL32. First MHW run
 `graphics-mo2-1` (tag v0.1.0-dev.10): both families installed over the Steam
 overlay's own patches, the two phases fired once, every present was counted
 and seven resizes raised events, with the DLSS mod off
@@ -15,7 +15,7 @@ graphics hooks remains unverified.
 ## What the DLSS mod actually does
 
 The design follows the DLSS mod's shipped code (`mhw_dlss.dll` 0.13.11,
-already a CMFM plugin), read 2026-10-09. It differs from
+already an AL plugin), read 2026-10-09. It differs from
 `requirements-dlss-mod.md` §3 in one important way:
 
 - **The game keeps DXGI's own objects.** The mod creates Streamline's proxy
@@ -36,16 +36,16 @@ already a CMFM plugin), read 2026-10-09. It differs from
   thread-local bypass counter. Streamline's pacer thread presents the same
   swap chain and is routed straight to native.
 - It checks that each hooked function's bytes are unchanged and turns itself
-  off when another hook appears. A CMFM hook on Present placed beside its
+  off when another hook appears. An AL hook on Present placed beside its
   own would therefore disable it.
 
-So CMFM cannot add its own Present hook next to the mod's. It has to own the
+So AL cannot add its own Present hook next to the mod's. It has to own the
 one hook per method, with the mod as one detour in it. Object substitution
 (the requirements' "upgrade") is not needed.
 
 ## The API
 
-`"cmfm.d3d12"` 1.0, in `include/cmfm/cmfm_plugin.h`:
+`"al.d3d12"` 1.0, in `include/al/al_plugin.h`:
 
 - `subscribe(events, order, callback, user)`. Events:
   - SWAPCHAIN_CREATED;
@@ -57,7 +57,7 @@ one hook per method, with the mod as one detour in it. Object substitution
   Present events fire for the game's present thread only (the first thread
   to present), and only for the swap chain the game created last.
 - `hook(hooks, count)`: detours with each method's own signature, named by
-  COM family and vtable slot. CMFM writes `*next` before the first call,
+  COM family and vtable slot. AL writes `*next` before the first call,
   as MinHook's `ppOriginal` does. Families are factory, swap chain, device,
   queue and command list. IUnknown slots are refused.
 - `claim_presentation()`: one plugin holds the right to detour factory and
@@ -69,27 +69,27 @@ one hook per method, with the mod as one detour in it. Object substitution
   the presentation owner, the frame count and the last present time.
 
 Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
-`cmfm_d3d12_swapchain_t` and `cmfm_d3d12_present_t`, from the same layer.
+`al_d3d12_swapchain_t` and `al_d3d12_present_t`, from the same layer.
 
 ### Rules
 
-- Registration is open in `cmfm_plugin_init` and PRE_MAIN only. The host
-  closes it when `dispatch(PRE_MAIN)` returns. CMFM then knows every
+- Registration is open in `al_plugin_init` and PRE_MAIN only. The host
+  closes it when `dispatch(PRE_MAIN)` returns. AL then knows every
   method it must hook, and the event lists are fixed: the present path
   takes no lock.
 - Order: a lower `order` runs first, further from the original; ties run
-  in load order. CMFM's own layer (`INT_MIN`) is entered before every
+  in load order. AL's own layer (`INT_MIN`) is entered before every
   detour, so PRE_PRESENT callbacks draw before the presentation owner
   routes the frame.
 - Nothing is hooked that no plugin uses:
-  - CMFM's layer joins the factory chains (CreateSwapChain,
+  - AL's layer joins the factory chains (CreateSwapChain,
     CreateSwapChainForHwnd) only when an event, either phase, or a
     swap-chain detour needs to see swap-chain creation;
   - it joins Present/Present1 only for present events or FIRST_PRESENT;
   - it joins ResizeBuffers/ResizeBuffers1 only for resize events.
 - When a callback faults, its plugin is disabled, as for `on_phase`.
-  Detours run directly in the chain, so CMFM cannot catch their faults.
-- Under DirectX 11 (`cmfm.game`), the host marks the service UNAVAILABLE
+  Detours run directly in the chain, so AL cannot catch their faults.
+- Under DirectX 11 (`al.game`), the host marks the service UNAVAILABLE
   at close.
 
 ### Cost per frame
@@ -97,7 +97,7 @@ Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
 - **Nobody registered:** no hooks at all.
 - **Only detours:** the hook layer's entry check (a thread-local read) plus
   the detours themselves.
-- **With present events:** CMFM's layer adds two QPC reads per callback, a
+- **With present events:** AL's layer adds two QPC reads per callback, a
   `GetCurrentBackBufferIndex` call when PRE_PRESENT has subscribers, and
   the callbacks. Nothing allocates.
 - **Measurement:** `Hub::summary()` reports calls, total, mean and maximum
@@ -111,7 +111,7 @@ Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
   - building and ordering the chains at `close`;
   - event dispatch with the fault guard and timing;
   - status and summary.
-- `src/core/graphics/layers.cpp`: CMFM's layer. These are plain detours
+- `src/core/graphics/layers.cpp`: AL's layer. These are plain detours
   with the DXGI signatures. They report swap-chain creation, Present and
   ResizeBuffers to the hub, then continue with `next`. A Present or
   ResizeBuffers the same thread makes from inside another one raises no
@@ -129,7 +129,7 @@ Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
     thread's Present, a faulting callback, resize, status and the
     unavailable paths;
   - `example_hello`: the same through the host and a real plugin DLL.
-- `cmfm.dll` still imports only KERNEL32: the DXGI headers add no import.
+- `astera.dll` still imports only KERNEL32: the DXGI headers add no import.
 
 ## The hook layer (implemented)
 
@@ -145,7 +145,7 @@ disabled MinHook hooks. Every layer is linked before queued activation;
 unpublished entries forward only to their original. An error restores the
 old `next` values and disables that family's new hooks. Hook records and
 trampolines stay pinned so partial activation cannot leave dangling entries.
-If a later family fails, already-installed entries also bypass CMFM layers.
+If a later family fails, already-installed entries also bypass AL layers.
 
 The entry bridge preserves flags, volatile integer registers and XMM0-5
 around a nonthrowing selector, restores the original caller's stack, then
@@ -159,7 +159,7 @@ serializes first installation and calls `Installer::report` after recording
 the result; the phase runtime reports again after SHUTDOWN. No C plugin ABI
 or standalone DLSS code changed.
 
-The installer implements `cmfm::graphics::Installer` (`hub.hpp`) and is handed to the hub
+The installer implements `al::graphics::Installer` (`hub.hpp`) and is handed to the hub
 in `phases::arm`, after PRE_MAIN:
 
 ```cpp
@@ -173,7 +173,7 @@ The hub calls `install(family, object, chains)` at these points:
   the game's render-setup thread. It installs the DEVICE, QUEUE,
   COMMAND_LIST and FACTORY families, in that order. `object` is the game's
   device.
-- **When the game creates its first swap chain**, from CMFM's factory
+- **When the game creates its first swap chain**, from AL's factory
   layer, after the original returned and before the game sees the swap
   chain. It installs the SWAPCHAIN family, and `object` is that swap
   chain.
@@ -197,11 +197,11 @@ What `install` must do:
    Refuse two chains that resolve to one target.
 2. **Allow a target someone else already patched** (Steam overlay, SPL,
    ReShade), and log whose module the jump leads to. Refusing would turn
-   CMFM off whenever the overlay is on. Stacking with tools outside CMFM
-   cannot be avoided; between CMFM plugins it no longer happens.
+   AL off whenever the overlay is on. Stacking with tools outside AL
+   cannot be avoided; between AL plugins it no longer happens.
 3. **One inline hook per target** (MinHook is vendored). The hook enters a
    small per-chain entry stub:
-   - if `cmfm::graphics::internal()` is true, it goes to MinHook's
+   - if `al::graphics::internal()` is true, it goes to MinHook's
      trampoline (the original);
    - otherwise to `chain.layers.front().detour`.
 
@@ -232,14 +232,14 @@ Verification for the hook layer, in the fake game:
   - the inner Present reaches the original without events or detours;
   - detours see the right objects;
   - a second plugin's detour on the same method runs in order;
-  - `cmfm.dll` still imports only KERNEL32.
+  - `astera.dll` still imports only KERNEL32.
 
 `graphics_native_chains` executes this plan with four presents (Present and
 Present1), ResizeBuffers and eight-argument ResizeBuffers1, two ordered
 queue layers, device and command-list detours, and a pre-existing Signal
 hook in the stand-in's separate MinHook instance. It verifies summaries
 after installation and shutdown. Native DXGI's own queue signals can still
-reach the external patch inside an internal region, while CMFM layers do
+reach the external patch inside an internal region, while AL layers do
 not run twice.
 
 `graphics_installer` checks mixed floating-point / integer / eight-argument
@@ -254,7 +254,7 @@ SPL and Steam overlay in MHW stay unverified until a game run.
 For the DLSS project, not done here. The full checklist, hook by hook, is
 `handoff-dlss-migration-20261009.md`.
 
-- Claim the presentation role in `cmfm_plugin_init`, and register its
+- Claim the presentation role in `al_plugin_init`, and register its
   detours with `hook()` instead of MinHook. The detour bodies stay; the
   `next` pointer replaces the trampoline.
 - Wrap its calls into Streamline's proxies in
@@ -263,5 +263,5 @@ For the DLSS project, not done here. The full checklist, hook by hook, is
   comes from the game's own import call. It gives the device, the adapter
   (the factory is its parent) and the riid, on the game's thread, before
   the game uses the device.
-- Drop the "target bytes unchanged" refusal for methods CMFM hooks. The
+- Drop the "target bytes unchanged" refusal for methods AL hooks. The
   pacer-thread and creation-thread routing stay in its detours.

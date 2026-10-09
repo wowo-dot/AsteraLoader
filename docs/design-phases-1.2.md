@@ -13,20 +13,20 @@ the standalone DLSS mod's complete game-function hash.
 | Phase | Ships | Fires | Payload (`data`) |
 |---|---|---|---|
 | PRE_MAIN | 1.0 | game code unpacked, before its CRT starts | NULL |
-| WIN_MAIN | 1.2 | the CRT has finished; the game's WinMain is about to run | `cmfm_phase_win_main_t` |
-| DEVICE_CREATED | 1.2 | the game's own `D3D12CreateDevice` call returned a device, before the game uses it | `cmfm_phase_device_t` |
+| WIN_MAIN | 1.2 | the CRT has finished; the game's WinMain is about to run | `al_phase_win_main_t` |
+| DEVICE_CREATED | 1.2 | the game's own `D3D12CreateDevice` call returned a device, before the game uses it | `al_phase_device_t` |
 | SWAPCHAIN_CREATED | Stage 3 | (reserved) | |
 | FIRST_PRESENT | Stage 3 | (reserved) | |
 | GAME_READY | later | (reserved; no game-side signal known) | |
-| SHUTDOWN | 1.2 | the game's WinMain returned, before CRT teardown; objects local to WinMain may already be destroyed | `cmfm_phase_shutdown_t` |
+| SHUTDOWN | 1.2 | the game's WinMain returned, before CRT teardown; objects local to WinMain may already be destroyed | `al_phase_shutdown_t` |
 
 The swap-chain and present phases wait for the graphics hub (Stage 3). The
 sibling DLSS mod inline-hooks every DXGI swap-chain entry point and Present,
 compares the first 32 bytes of each hooked function, and turns itself off
 when another hook appears there. It also routes calls only for the native
-objects it pinned. Any CMFM hook on those functions today would disable it.
-The hub, where CMFM owns one hook per entry point and the DLSS mod becomes a
-CMFM plugin with callbacks, is the place for them. Source: the DLSS mod's
+objects it pinned. Any AL hook on those functions today would disable it.
+The hub, where AL owns one hook per entry point and the DLSS mod becomes an
+AL plugin with callbacks, is the place for them. Source: the DLSS mod's
 `src/reflex/presentation_probe.cpp` and `presentation.cpp`, read 2026-10-09.
 
 ## Guarantees
@@ -41,7 +41,7 @@ CMFM plugin with callbacks, is the place for them. Source: the DLSS mod's
   plugin that keeps a COM object beyond the call must AddRef it.
 - Payload structs start with `size`; fields are only added at the end.
 - A plugin's fault in `on_phase` disables that plugin, as for PRE_MAIN.
-- Under DirectX 11 (`cmfm.game` reports `graphics`), DEVICE_CREATED does not
+- Under DirectX 11 (`al.game` reports `graphics`), DEVICE_CREATED does not
   fire.
 
 ## How each phase is detected
@@ -51,7 +51,7 @@ plugins' PRE_MAIN calls, while the game's own code has not started.
 
 ### WIN_MAIN and SHUTDOWN: an execution observer at WinMain
 
-- The CRT wrapper CMFM's startup check verified jumps to
+- The CRT wrapper AL's startup check verified jumps to
   `__scrt_common_main_seh`. Inside it, the call to WinMain is the only
   `call rel32` that follows a `lea rcx, [image base]` within a few bytes
   (WinMain's first argument is the image base). SPL's published pattern for
@@ -66,10 +66,10 @@ plugins' PRE_MAIN calls, while the game's own code has not started.
   sets it and balances its suspension. Neither the CRT call nor WinMain's
   bytes change. This matters because SPL resolves the CRT call target later,
   during cookie initialization: an early call redirect would make SPL hook
-  CMFM's bridge instead of WinMain.
+  AL's bridge instead of WinMain.
 - On the owned WinMain breakpoint, the exception handler restores only the
   reserved debug slot and transfers the existing WinMain arguments/stack to
-  CMFM's interceptor. It performs no plugin work inside the exception handler.
+  AL's interceptor. It performs no plugin work inside the exception handler.
   The interceptor dispatches WIN_MAIN, calls the original entry (including
   SPL's hook if present), then dispatches SHUTDOWN with WinMain's return value.
   It preserves Win32 last error and returns the original value to the CRT.
@@ -81,7 +81,7 @@ plugins' PRE_MAIN calls, while the game's own code has not started.
 
 - The game delay-loads `d3d12.dll` and imports `D3D12CreateDevice` by
   ordinal 101 (dumpbin, 2026-10-09). DXGI is not imported at all.
-- CMFM exchanges that import slot with a forwarding stub, preserving the
+- AL exchanges that import slot with a forwarding stub, preserving the
   previous value. It verifies the game's call is `call [rip+disp]` through the
   slot, or `call rel32` to an intact `jmp [rip+disp]` import thunk. The stub
   saves the D3D12 arguments, reserves an execution breakpoint at the original
@@ -98,9 +98,9 @@ plugins' PRE_MAIN calls, while the game's own code has not started.
   last error is preserved across the observation and plugin callbacks.
 - The first call goes through the exe's delay-load thunk, which writes the
   resolved function into the slot. If that call produced no device (a
-  capability probe with a NULL out-pointer), CMFM puts its stub back for the
+  capability probe with a NULL out-pointer), AL puts its stub back for the
   next call. After DEVICE_CREATED, the slot holds the resolved function,
-  exactly as without CMFM.
+  exactly as without AL.
 - Failed calls and capability probes do not dispatch; observation is capped
   at sixteen attempts. A foreign import update is left intact and reported.
   No second inline patch is installed on a D3D12/DXGI export.
@@ -110,11 +110,11 @@ plugins' PRE_MAIN calls, while the game's own code has not started.
 The helper uses the documented suspended-thread
 [GetThreadContext](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getthreadcontext)
 and [SetThreadContext](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setthreadcontext)
-protocol; it only operates on threads that called CMFM inside this process.
+protocol; it only operates on threads that called AL inside this process.
 Occupied slots, global-enable, general-detect or single-step state are refused when they
 cannot be preserved safely. The handler claims only its recorded thread,
 address and debug-hit bit, and restores a slot only while it still matches
-CMFM's reservation. Other exceptions and conflicting state are left to their
+AL's reservation. Other exceptions and conflicting state are left to their
 owners. It is removed after device delivery, or at normal shutdown; the worker
 stops at shutdown and attempts to clear an outstanding owned observation.
 
@@ -127,7 +127,7 @@ plugin lock; the host still contains plugin faults as in PRE_MAIN.
 
 Nothing per frame. Observers run during startup only; the WinMain interceptor
 stays on the stack until it returns. The worker waits on an event without
-polling. CMFM logs each phase's dispatch time and each plugin's time per phase.
+polling. AL logs each phase's dispatch time and each plugin's time per phase.
 Measured device arming takes 43-87 us in the two timing runs; entry to
 forwarding, including diagnostics, is below 0.32 ms. The earlier larger
 startup gap did not reproduce; see `research/phase-timing.md` for the limits.
@@ -153,7 +153,7 @@ Everything else lives in
   A test export hook checks the original caller and unchanged complete game
   function before and after WARP creation, emulating DLSS's checks. A test
   static initializer resolves the unmodified CRT call and installs an inline
-  WinMain hook after CMFM arms, emulating SPL; CMFM's callback runs first.
+  WinMain hook after AL arms, emulating SPL; AL's callback runs first.
   Test callbacks deliberately alter last error, which the game still receives
   unchanged. These are compatibility stand-ins, not MHW/SPL/DLSS confirmation.
   A second integration case creates devices on a separate setup thread and
