@@ -7,7 +7,7 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
 
 1. **Name.** One name, CMFM, with two parts: CMFM Core (loader, plugin API,
    hook coordination) and CMFM Menu (settings, status pages, popups). Users
-   only ever install "CMFM".
+   only ever install "CMFM". Superseded by 11.
 2. **Menu technology.** ImGui for v1, themed to sit close to MHW's look.
    Later, reverse the game's own menu system so CMFM can sit very close to
    native: entries or pages inside the game's own UI. That work also unlocks
@@ -86,3 +86,15 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
       factory and swap-chain methods; a shared internal-call region replaces
       the mod's bypass counter.
     - Details: `design-d3d12-1.3.md`.
+11. **The loader becomes Astera Loader ("AL"); CMFM is its menu plugin**
+    (the user's call, after the plugin-needs survey). Replaces item 1.
+    - The loader is a product of its own and the stable ground everything
+      targets: launcher, phases, Stracker compatibility, cmfm.d3d12,
+      cmfm.hooks, crash handler. It should rarely change once 1.0 ships.
+      New game knowledge goes into separate plugins (the deferred MHW SDK).
+    - CMFM ("Configuration Menu For Mods") keeps its name for the in-game
+      menu, a bundled first-party plugin of the loader.
+    - The name is baked into the C ABI (exports, types, interface names,
+      file and folder names), so the rename happens before 1.0, as one
+      mechanical series with tests green after each step, plus one
+      coordinated update of the DLSS mod.

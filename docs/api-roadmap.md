@@ -79,7 +79,8 @@ In this order; the first four are small.
     own MinHook.
     Status 2026-10-09: API 1.4 "cmfm.hooks" designed and implemented on the
     core side and native installer, tested with real patches in the fake
-    game (design-game-hooks-1.4.md). MHW game-function hooks are unverified.
+    game (design-game-hooks-1.4.md). Confirmed in MHW on Main:Update
+    (hooks-mo2-1).
 11. **Graphics coordination** (the DLSS mod's main need,
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,
@@ -92,6 +93,12 @@ In this order; the first four are small.
 12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.
+    Site found in hooks-mo2-1: Main:Update (exe+0x1af2b60) runs once per
+    frame (9710 calls for 9708 presents), always on the game's main thread.
+    That is the thread that creates the D3D12 device, not the WinMain thread.
+    The "game exiting" event still needs its site: frames stopped 1.5 s
+    before WinMain returned, and a Stracker plugin crashed on freed memory
+    43 ms before it.
 
 ## CMFM Menu milestone
 

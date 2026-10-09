@@ -4,8 +4,14 @@ Status 2026-10-09: the plugin API, registry and native MinHook installer are
 implemented. Tested in the original fake game through the production
 launcher/core, with three plugin fixtures, late registration, concurrent
 callers and an existing external hook. All 41 tests pass and `cmfm.dll`
-imports only KERNEL32. Actual game-function hooks in MHW remain unverified.
-See `handoff-game-hook-installer-20261009.md`. Roadmap item 10.
+imports only KERNEL32. See `handoff-game-hook-installer-20261009.md`.
+Roadmap item 10.
+
+Confirmed in MHW in run hooks-mo2-1 (CMFM 8be5411): the diagnostic plugin
+`probes/site_probe.cpp` hooked Main:Update (exe+0x1af2b60) by address, with
+SharpPluginLoader's pattern checked 25 bytes in. The chain was active from
+arming to SHUTDOWN and ran 9710 times on the game's main thread. No other mod
+had patched the function. The game exited with code 0.
 
 ## Why
 
