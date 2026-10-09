@@ -12,6 +12,8 @@ Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
   install-mo2 RUN           back up the installed CMFM and example mods into
                             local/runs/RUN/installed-backup, install the staged
                             build, write RUN/manifest.json and RUN/logs-before.txt
+  baseline RUN              write RUN/manifest.json for a run without CMFM, started
+                            from MO2's plain game entry; installs nothing
   watch RUN [--launch N]    run tools/modwatch.py (read-only) into RUN or RUN/launch-N
   collect RUN [--launch N]  copy the new CMFM logs and the scan cache into RUN or
                             RUN/launch-N and print the lines that matter
@@ -46,6 +48,7 @@ TEMPLATE = {
     "cmfm_mod": "CMFM (dev)",
     "examples_mod": "CMFM hello plugin (test)",
     "launcher_title": "CMFM Launcher",
+    "game_title": "Monster Hunter: World",
 }
 
 
@@ -275,6 +278,44 @@ def install_mo2(args: argparse.Namespace) -> None:
     print(f"backup and manifest: {run_folder.relative_to(ROOT)}")
 
 
+def baseline(args: argparse.Namespace) -> None:
+    config = settings()
+    if game_running():
+        fail("the game is running; close it first")
+    run_folder = LOCAL / "runs" / args.run
+    if (run_folder / "manifest.json").exists():
+        fail(f"{run_folder} already has a manifest; pick a new run name")
+    title = config.get("game_title", TEMPLATE["game_title"])
+    profile = selected_profile(Path(config["mo2_ini"]))
+    profile_folder = Path(config["mo2_profiles"]) / profile
+    mods = enabled_mods(profile_folder)
+    cmfm_mods = [mod for mod in (config["cmfm_mod"], config["examples_mod"]) if mod in mods]
+    if cmfm_mods:
+        print(f"note: CMFM mods enabled in {profile}: {', '.join(cmfm_mods)}; the plain entry does not load "
+              "them, but their files are in the virtual folder")
+    forced = forced_libraries(profile_folder, title)
+    run_folder.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "run": args.run,
+        "kind": "baseline (no CMFM)",
+        "date": datetime.date.today().isoformat(),
+        "source_commit": commit_label(),
+        "exe_sha256": sha256(Path(config["game_exe"])),
+        "mo2_profile": profile,
+        "mo2_enabled_mods": mods,
+        "mo2_executable": title,
+        "force_load": forced is not None,
+        "force_loaded_libraries": forced or [],
+        "steam_overlay": "unconfirmed",
+        "sealed": False,
+    }
+    (run_folder / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+                                              encoding="utf-8")
+    print(f"baseline {args.run}: profile {profile}, {len(mods)} mods enabled, executable '{title}', "
+          f"force-load {manifest['force_load']}")
+    print(f"manifest: {(run_folder / 'manifest.json').relative_to(ROOT)}")
+
+
 def launch_folder(args: argparse.Namespace) -> Path:
     folder = LOCAL / "runs" / args.run
     if args.launch:
@@ -350,6 +391,9 @@ def main() -> None:
     install = commands.add_parser("install-mo2")
     install.add_argument("run")
     install.set_defaults(function=install_mo2)
+    plain = commands.add_parser("baseline")
+    plain.add_argument("run")
+    plain.set_defaults(function=baseline)
     for name, function in (("watch", watch), ("collect", collect)):
         command = commands.add_parser(name)
         command.add_argument("run")
