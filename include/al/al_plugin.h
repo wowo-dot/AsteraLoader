@@ -65,7 +65,7 @@ extern "C" {
 #define AL_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define AL_API_VERSION_MAJOR 1u
-#define AL_API_VERSION_MINOR 4u
+#define AL_API_VERSION_MINOR 5u
 #define AL_API_VERSION AL_MAKE_VERSION(AL_API_VERSION_MAJOR, AL_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -102,7 +102,12 @@ typedef uint32_t al_phase_t;
                                            save your own data now; main thread;
                                            al_phase_shutdown_t. Does not fire if the game
                                            ends the process another way. */
-#define AL_PHASE_COUNT 7u
+#define AL_PHASE_EXITING 7u          /* 1.5: the game started its own quit (Exit Game, or a
+                                           window close through WM_QUIT), before it tears
+                                           anything down; stop your own threads now. Usually
+                                           the WinMain thread; no payload (NULL). Does not
+                                           fire on Alt+F4, which ends the process at once. */
+#define AL_PHASE_COUNT 8u
 #define AL_PHASE_BIT(phase) (1u << (phase))
 
 typedef uint32_t al_log_level_t;
@@ -493,6 +498,76 @@ typedef struct al_hooks_t {
     /* The hook's state; AL_HOOK_FAILED for an unknown handle. */
     al_hook_state_t(AL_CALL* state)(al_plugin_t* self, uint32_t handle);
 } al_hooks_t;
+
+/* "al.frame" 1.0 (API 1.5): the game's frames and its game thread.
+ *
+ * Callbacks run on the game's frame thread (not the WinMain thread), once
+ * per frame, before (BEGIN) and after (END) the game's frame update. Game
+ * state is consistent there, so work that reads or changes game objects
+ * belongs here or in a posted task, not on a plugin's own thread.
+ *
+ * At BEGIN, posted tasks run first, in posting order across plugins; then
+ * BEGIN callbacks in load order. END callbacks run in load order. Callbacks
+ * and tasks run under AL's fault guard: a fault disables the plugin, the
+ * frame goes on. With nothing subscribed or queued, AL costs a few atomic
+ * reads per frame and allocates nothing.
+ *
+ * When AL sees the game leave its frame loop, it runs the tasks still queued
+ * on the game thread and the state becomes STOPPED. In rare cases (about 0.6%
+ * of exits) it only learns that at SHUTDOWN; tasks still queued then are
+ * dropped, and the plugin's log says how many.
+ *
+ * Only for game versions AL knows; elsewhere the state is UNAVAILABLE with
+ * the reason, post fails, and subscribe still succeeds. */
+#define AL_FRAME_INTERFACE "al.frame"
+#define AL_FRAME_VERSION AL_MAKE_VERSION(1, 0)
+
+typedef uint32_t al_frame_event_t;
+#define AL_FRAME_BEGIN 0u /* before the game's frame update */
+#define AL_FRAME_END 1u   /* after it */
+
+typedef struct al_frame_info_t {
+    uint32_t size; /* sizeof(al_frame_info_t) as AL was built */
+    uint32_t reserved;
+    uint64_t index; /* frames since the first one AL saw, from 0 */
+    int64_t qpc;    /* QueryPerformanceCounter when this event began */
+} al_frame_info_t;
+
+/* `frame` is valid during the call only. */
+typedef void(AL_CALL* al_frame_fn)(al_plugin_t* self, al_frame_event_t event, const al_frame_info_t* frame,
+                                   void* user);
+typedef void(AL_CALL* al_task_fn)(al_plugin_t* self, void* user);
+
+typedef uint32_t al_frame_state_t;
+#define AL_FRAME_WAITING 0u     /* no frame yet */
+#define AL_FRAME_RUNNING 1u
+#define AL_FRAME_STOPPED 2u     /* the game left its frame loop; no more frames */
+#define AL_FRAME_UNAVAILABLE 3u /* AL cannot follow this game's frames; see reason */
+
+typedef struct al_frame_status_t {
+    uint32_t size; /* the caller sets sizeof(al_frame_status_t) */
+    al_frame_state_t state;
+    uint64_t frames;      /* frames begun so far */
+    uint32_t game_thread; /* the frame thread's id; 0 before the first frame */
+    uint32_t reserved;
+    const char* reason; /* why UNAVAILABLE, else ""; valid until the process exits */
+} al_frame_status_t;
+
+typedef struct al_frame_t {
+    uint32_t size;
+    uint32_t version; /* AL_FRAME_VERSION */
+    /* Calls `callback` at every `event` from the next frame on. Returns a
+     * handle, or 0 with the reason in the plugin's log. Any thread, also
+     * inside a callback. */
+    uint32_t(AL_CALL* subscribe)(al_plugin_t* self, al_frame_event_t event, al_frame_fn callback, void* user);
+    al_result_t(AL_CALL* unsubscribe)(al_plugin_t* self, uint32_t handle);
+    /* Runs `task` once on the game thread at the next BEGIN. Any thread;
+     * from the game thread it runs next frame. AL_ERROR once frames have
+     * stopped or are unavailable. */
+    al_result_t(AL_CALL* post)(al_plugin_t* self, al_task_fn task, void* user);
+    /* Fills *status up to status->size. Any thread. */
+    void(AL_CALL* status)(al_plugin_t* self, al_frame_status_t* status);
+} al_frame_t;
 
 typedef const al_plugin_info_t*(AL_CALL* al_plugin_info_fn)(void);
 typedef al_result_t(AL_CALL* al_plugin_init_fn)(const al_api_t* api, const al_init_t* init);

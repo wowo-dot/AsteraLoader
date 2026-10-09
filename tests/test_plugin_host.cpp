@@ -129,6 +129,8 @@ int wmain(int argc, wchar_t** argv) {
     host.dispatch(AL_PHASE_GAME_READY, nullptr);
     host.dispatch(AL_PHASE_COUNT, nullptr);
     check(read_file(record) == "phased phase 0\nphased phase 5\n", "phase dispatch");
+    // EXITING goes out once, whichever path raises it first.
+    check(host.raise_exiting() && !host.raise_exiting(), "EXITING raised once");
 
     const auto alpha_log = read_file(logs / L"plugins" / L"alpha.log");
     check(alpha_log.find(" INFO fixture alpha started\r\n") != std::string::npos, "plugin log line");

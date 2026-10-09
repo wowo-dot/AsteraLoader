@@ -24,6 +24,15 @@ bool d3d12_event_cpp(al_d3d12_event_fn call, al_plugin_t* plugin, al_d3d12_event
     try { call(plugin, event, data, user); return true; }
     catch (...) { fault = kCppException; return false; }
 }
+bool frame_event_cpp(al_frame_fn call, al_plugin_t* plugin, al_frame_event_t event, const al_frame_info_t* frame,
+                     void* user, unsigned long& fault) noexcept {
+    try { call(plugin, event, frame, user); return true; }
+    catch (...) { fault = kCppException; return false; }
+}
+bool task_cpp(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& fault) noexcept {
+    try { call(plugin, user); return true; }
+    catch (...) { fault = kCppException; return false; }
+}
 }  // namespace
 
 int recoverable_fault(unsigned long code) noexcept {
@@ -62,6 +71,17 @@ bool guarded_phase(al_phase_fn call, al_plugin_t* plugin, al_phase_t phase, cons
 bool guarded_d3d12_event(al_d3d12_event_fn call, al_plugin_t* plugin, al_d3d12_event_t event,
                          const void* data, void* user, unsigned long& fault) noexcept {
     __try { return d3d12_event_cpp(call, plugin, event, data, user, fault); }
+    __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
+}
+
+bool guarded_frame_event(al_frame_fn call, al_plugin_t* plugin, al_frame_event_t event, const al_frame_info_t* frame,
+                         void* user, unsigned long& fault) noexcept {
+    __try { return frame_event_cpp(call, plugin, event, frame, user, fault); }
+    __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
+}
+
+bool guarded_task(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& fault) noexcept {
+    __try { return task_cpp(call, plugin, user, fault); }
     __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
 }
 }  // namespace al::plugins

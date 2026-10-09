@@ -14,6 +14,9 @@ class Hub;
 namespace al::game_hooks {
 class Registry;
 }
+namespace al::frame {
+class Clock;
+}
 
 namespace al::plugins {
 
@@ -79,6 +82,17 @@ public:
     // The "al.hooks" service, for the hook layer: hand it the installer
     // after PRE_MAIN with set_installer. Valid after load_all.
     ::al::game_hooks::Registry& game_hooks();
+
+    // The "al.frame" service, for the frame layer: begin_frame/end_frame
+    // around each game frame, last_frame when the game leaves its loop,
+    // set_unavailable if the layer cannot be installed. dispatch(SHUTDOWN)
+    // closes its task queue. Valid after load_all.
+    ::al::frame::Clock& frame_clock();
+
+    // Dispatches AL_PHASE_EXITING once: the first call does, later ones (from
+    // the backup path or the other thread) return at once. Returns true for
+    // the call that dispatched it. Any thread.
+    bool raise_exiting();
 
 private:
     void close_graphics();

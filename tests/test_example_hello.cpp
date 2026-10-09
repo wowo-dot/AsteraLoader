@@ -136,7 +136,7 @@ int wmain(int argc, wchar_t** argv) {
     log << file.rdbuf();
     const auto text = log.str();
     bool logged = true;
-    for (const auto part : {" INFO hello 0.4.0 initialised on thread ", "(Astera Loader API 1.4)",
+    for (const auto part : {" INFO hello 0.4.0 initialised on thread ", "(Astera Loader API 1.5)",
                             " INFO folder as the game sees it: ", " INFO folder resolved through a file handle: ",
                             " INFO this DLL: ", " INFO data folder: ",
                             " INFO game version unknown, exe SHA-256 unknown..., graphics ",

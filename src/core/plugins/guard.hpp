@@ -16,4 +16,7 @@ bool guarded_phase(al_phase_fn call, al_plugin_t* plugin, al_phase_t phase, cons
                    unsigned long& fault) noexcept;
 bool guarded_d3d12_event(al_d3d12_event_fn call, al_plugin_t* plugin, al_d3d12_event_t event,
                          const void* data, void* user, unsigned long& fault) noexcept;
+bool guarded_frame_event(al_frame_fn call, al_plugin_t* plugin, al_frame_event_t event, const al_frame_info_t* frame,
+                         void* user, unsigned long& fault) noexcept;
+bool guarded_task(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& fault) noexcept;
 }  // namespace al::plugins

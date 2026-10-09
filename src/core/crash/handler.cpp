@@ -134,6 +134,7 @@ const char* phase_name(int phase) noexcept {
     case AL_PHASE_SWAPCHAIN_CREATED: return "swapchain_created";
     case AL_PHASE_FIRST_PRESENT: return "first_present";
     case AL_PHASE_GAME_READY: return "game_ready";
+    case AL_PHASE_EXITING: return "exiting";
     case AL_PHASE_SHUTDOWN: return "shutdown";
     default: return "before PRE_MAIN";
     }
@@ -148,6 +149,7 @@ const char* phase_moment(int phase) noexcept {
     case AL_PHASE_SWAPCHAIN_CREATED: return "while the game set up its graphics";
     case AL_PHASE_FIRST_PRESENT:
     case AL_PHASE_GAME_READY: return "while the game was running";
+    case AL_PHASE_EXITING:
     case AL_PHASE_SHUTDOWN: return "while the game was exiting";
     default: return "early in start-up";
     }
@@ -372,7 +374,7 @@ void write(EXCEPTION_POINTERS* info) noexcept {
     save(g_report_path, text, CREATE_ALWAYS, GENERIC_WRITE);
 
     // The notice for the next launch; a crash while exiting gets none.
-    if (phase != AL_PHASE_SHUTDOWN) {
+    if (phase != AL_PHASE_SHUTDOWN && phase != AL_PHASE_EXITING) {
         auto& notice = g_notice;
         notice.reset();
         notice.add("The game crashed in your last session, ");

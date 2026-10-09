@@ -14,7 +14,7 @@
 #define AL_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-AL_ABI_CHECK(AL_API_VERSION == 0x00010004u);
+AL_ABI_CHECK(AL_API_VERSION == 0x00010005u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 AL_ABI_CHECK(sizeof(al_plugin_info_t) == 80);
@@ -65,7 +65,8 @@ AL_ABI_CHECK(AL_GRAPHICS_UNKNOWN == 0 && AL_GRAPHICS_DX11 == 1 && AL_GRAPHICS_DX
 
 AL_ABI_CHECK(AL_PHASE_PRE_MAIN == 0 && AL_PHASE_WIN_MAIN == 1 && AL_PHASE_DEVICE_CREATED == 2 &&
                AL_PHASE_SWAPCHAIN_CREATED == 3 && AL_PHASE_FIRST_PRESENT == 4 &&
-               AL_PHASE_GAME_READY == 5 && AL_PHASE_SHUTDOWN == 6 && AL_PHASE_COUNT == 7);
+               AL_PHASE_GAME_READY == 5 && AL_PHASE_SHUTDOWN == 6 && AL_PHASE_EXITING == 7 &&
+               AL_PHASE_COUNT == 8);
 
 /* 1.2 phase payloads. */
 AL_ABI_CHECK(sizeof(al_phase_win_main_t) == 32);
@@ -145,6 +146,24 @@ AL_ABI_CHECK(sizeof(al_hooks_t) == 32);
 AL_ABI_CHECK(offsetof(al_hooks_t, hook) == 8);
 AL_ABI_CHECK(offsetof(al_hooks_t, set_enabled) == 16);
 AL_ABI_CHECK(offsetof(al_hooks_t, state) == 24);
+
+/* 1.5: "al.frame". */
+AL_ABI_CHECK(AL_FRAME_VERSION == 0x00010000u);
+AL_ABI_CHECK(AL_FRAME_BEGIN == 0 && AL_FRAME_END == 1);
+AL_ABI_CHECK(AL_FRAME_WAITING == 0 && AL_FRAME_RUNNING == 1 && AL_FRAME_STOPPED == 2 && AL_FRAME_UNAVAILABLE == 3);
+AL_ABI_CHECK(sizeof(al_frame_info_t) == 24);
+AL_ABI_CHECK(offsetof(al_frame_info_t, index) == 8);
+AL_ABI_CHECK(offsetof(al_frame_info_t, qpc) == 16);
+AL_ABI_CHECK(sizeof(al_frame_status_t) == 32);
+AL_ABI_CHECK(offsetof(al_frame_status_t, state) == 4);
+AL_ABI_CHECK(offsetof(al_frame_status_t, frames) == 8);
+AL_ABI_CHECK(offsetof(al_frame_status_t, game_thread) == 16);
+AL_ABI_CHECK(offsetof(al_frame_status_t, reason) == 24);
+AL_ABI_CHECK(sizeof(al_frame_t) == 40);
+AL_ABI_CHECK(offsetof(al_frame_t, subscribe) == 8);
+AL_ABI_CHECK(offsetof(al_frame_t, unsubscribe) == 16);
+AL_ABI_CHECK(offsetof(al_frame_t, post) == 24);
+AL_ABI_CHECK(offsetof(al_frame_t, status) == 32);
 
 AL_ABI_CHECK(AL_LOG_DEBUG == 0 && AL_LOG_INFO == 1 && AL_LOG_WARNING == 2 && AL_LOG_ERROR == 3);
 

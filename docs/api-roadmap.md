@@ -102,6 +102,11 @@ In this order; the first four are small.
     The "game exiting" event still needs its site: frames stopped 1.5 s
     before WinMain returned, and a Stracker plugin crashed on freed memory
     43 ms before it.
+    Status 2026-10-09: API 1.5 designed (design-frame-1.5.md): "al.frame"
+    1.0 (BEGIN/END callbacks on the game thread, post() from any thread) and
+    the AL_PHASE_EXITING phase, from the exit site astera-mo2-1/2 found.
+    Core side implemented and unit-tested; the frame layer and exit site
+    wait for the hook layer (handoff-frame-layer-20261009.md).
 
 ## CMFM Menu milestone
 

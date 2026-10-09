@@ -5,6 +5,7 @@
 #include "common/pattern.hpp"
 #include "common/windows.hpp"
 #include "core/crash/handler.hpp"
+#include "core/frame/clock.hpp"
 #include "core/game_hooks/registry.hpp"
 #include "core/graphics/hub.hpp"
 #include "core/plugins/discovery.hpp"
@@ -143,6 +144,8 @@ struct HostState {
     GameService game;
     graphics::Hub hub;
     game_hooks::Registry hooks;
+    frame::Clock clock;
+    std::atomic<bool> exiting{false};  // EXITING was dispatched
     crash::Options crash;        // installed at WIN_MAIN
     std::wstring previous_crash;  // the last session's crash notice, if any
     std::mutex mutex;  // guards interfaces
@@ -373,6 +376,59 @@ al_hook_state_t AL_CALL hooks_state(al_plugin_t* self, std::uint32_t handle) noe
 
 const al_hooks_t kHooks{sizeof(al_hooks_t), AL_HOOKS_VERSION, hooks_hook, hooks_set_enabled, hooks_state};
 
+const char* frame_event_name(al_frame_event_t event) {
+    return event == AL_FRAME_BEGIN ? "begin" : event == AL_FRAME_END ? "end" : "an unknown event";
+}
+
+std::uint32_t AL_CALL frame_subscribe(al_plugin_t* self, al_frame_event_t event, al_frame_fn callback,
+                                      void* user) noexcept {
+    if (!self || !self->state) return 0;
+    try {
+        std::string problem;
+        const auto handle = self->state->clock.subscribe(graphics_client(*self), event, callback, user, problem);
+        note(*self, handle ? "INFO" : "WARN",
+             handle ? std::string("al.frame: subscribed to ") + frame_event_name(event) + " (handle " +
+                          std::to_string(handle) + ")"
+                    : "al.frame: cannot subscribe: " + problem);
+        return handle;
+    } catch (...) {
+        return 0;
+    }
+}
+
+al_result_t AL_CALL frame_unsubscribe(al_plugin_t* self, std::uint32_t handle) noexcept {
+    if (!self || !self->state) return AL_ERROR;
+    try {
+        const auto problem = self->state->clock.unsubscribe(graphics_client(*self), handle);
+        if (!problem.empty()) {
+            note(*self, "WARN", "al.frame: cannot unsubscribe handle " + std::to_string(handle) + ": " + problem);
+        }
+        return problem.empty() ? AL_OK : AL_ERROR;
+    } catch (...) {
+        return AL_ERROR;
+    }
+}
+
+al_result_t AL_CALL frame_post(al_plugin_t* self, al_task_fn task, void* user) noexcept {
+    if (!self || !self->state) return AL_ERROR;
+    try {
+        const auto problem = self->state->clock.post(graphics_client(*self), task, user);
+        // A refusal is logged; a successful post is not, as plugins may post every frame.
+        if (!problem.empty()) note(*self, "WARN", "al.frame: task not queued: " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
+    } catch (...) {
+        return AL_ERROR;
+    }
+}
+
+void AL_CALL frame_status(al_plugin_t* self, al_frame_status_t* status) noexcept {
+    if (!self || !self->state || !status) return;
+    self->state->clock.status(*status);
+}
+
+const al_frame_t kFrame{sizeof(al_frame_t), AL_FRAME_VERSION, frame_subscribe, frame_unsubscribe, frame_post,
+                        frame_status};
+
 const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::uint32_t version) noexcept {
     if (!self || !self->state || !name) return nullptr;
     try {
@@ -382,6 +438,7 @@ const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::
         if (wanted == AL_SCANNER_INTERFACE) return compatible(AL_SCANNER_VERSION, version) ? &kScanner : nullptr;
         if (wanted == AL_D3D12_INTERFACE) return compatible(AL_D3D12_VERSION, version) ? &kD3d12 : nullptr;
         if (wanted == AL_HOOKS_INTERFACE) return compatible(AL_HOOKS_VERSION, version) ? &kHooks : nullptr;
+        if (wanted == AL_FRAME_INTERFACE) return compatible(AL_FRAME_VERSION, version) ? &kFrame : nullptr;
         std::lock_guard lock(state.mutex);
         const auto found = state.interfaces.find(wanted);
         if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
@@ -674,6 +731,9 @@ void Host::dispatch(al_phase_t phase, const void* data) {
         }
     }
     if (phase == AL_PHASE_PRE_MAIN && state_) close_graphics();
+    // Plugins have had their SHUTDOWN; game-thread tasks still queued will
+    // never run, and their plugins are told.
+    if (phase == AL_PHASE_SHUTDOWN && state_) state_->clock.close();
 }
 
 // Ends al.d3d12 registration once PRE_MAIN has run.
@@ -700,6 +760,16 @@ std::vector<std::wstring> Host::notices() const {
 
 ::al::graphics::Hub& Host::graphics() {
     return state_->hub;
+}
+
+::al::frame::Clock& Host::frame_clock() {
+    return state_->clock;
+}
+
+bool Host::raise_exiting() {
+    if (!state_ || state_->exiting.exchange(true)) return false;
+    dispatch(AL_PHASE_EXITING, nullptr);
+    return true;
 }
 
 std::vector<PluginReport> Host::report() const {

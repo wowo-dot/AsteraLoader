@@ -81,6 +81,8 @@ add_library(al_plugins STATIC
     src/core/crash/handler.hpp
     src/core/crash/report.cpp
     src/core/crash/report.hpp
+    src/core/frame/clock.cpp
+    src/core/frame/clock.hpp
     src/core/game_hooks/registry.cpp
     src/core/game_hooks/registry.hpp
     src/core/graphics/hub.cpp
@@ -293,6 +295,12 @@ add_executable(al_game_hooks_tests tests/test_game_hooks.cpp)
 target_link_libraries(al_game_hooks_tests PRIVATE al_plugins)
 al_project_target(al_game_hooks_tests)
 add_test(NAME game_hooks COMMAND al_game_hooks_tests)
+
+# "al.frame" core side: order, threads, faults, the last frame, no allocation per frame.
+add_executable(al_frame_clock_tests tests/test_frame_clock.cpp)
+target_link_libraries(al_frame_clock_tests PRIVATE al_plugins)
+al_project_target(al_frame_clock_tests)
+add_test(NAME frame_clock COMMAND al_frame_clock_tests)
 
 add_executable(al_game_hook_installer_tests tests/test_game_hook_installer.cpp)
 target_link_libraries(al_game_hook_installer_tests PRIVATE al_startup al_minhook)
