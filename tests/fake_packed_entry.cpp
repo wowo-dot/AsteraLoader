@@ -5,7 +5,12 @@
 
 #include <cstdint>
 
+#ifdef CMFM_FAKE_PHASES
+extern "C" void WinMainCRTStartup();
+#define wWinMainCRTStartup WinMainCRTStartup
+#else
 extern "C" void wWinMainCRTStartup();
+#endif
 
 namespace {
 std::uint64_t g_cookie_before = 0;

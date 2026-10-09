@@ -1,4 +1,4 @@
-/* CMFM plugin API, version 1.1. C ABI, 64-bit Windows.
+/* CMFM plugin API, version 1.2. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\cmfm\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -36,6 +36,11 @@
  * as "cmfm.game" and "cmfm.scanner" below, or tables other plugins publish
  * with api->publish_interface. Interface versions follow the same rule: same
  * major, at least the requested minor.
+ *
+ * Phases (1.2): besides PRE_MAIN, CMFM now dispatches WIN_MAIN,
+ * DEVICE_CREATED and SHUTDOWN, each at most once and in that order, with a
+ * payload struct as `data` (see below). The other phase numbers are reserved
+ * and do not fire yet.
  */
 #ifndef CMFM_PLUGIN_H
 #define CMFM_PLUGIN_H
@@ -52,7 +57,7 @@ extern "C" {
 #define CMFM_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define CMFM_API_VERSION_MAJOR 1u
-#define CMFM_API_VERSION_MINOR 1u
+#define CMFM_API_VERSION_MINOR 2u
 #define CMFM_API_VERSION CMFM_MAKE_VERSION(CMFM_API_VERSION_MAJOR, CMFM_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -67,15 +72,25 @@ typedef uint32_t cmfm_result_t;
 #define CMFM_OK 0u
 #define CMFM_ERROR 1u /* the plugin could not start; set_status says why */
 
-/* Moments in the game's start-up a plugin can subscribe to. */
+/* Moments in the game's life a plugin can subscribe to. `data` is NULL for
+ * PRE_MAIN and points to the struct named below for the others; it is valid
+ * during the on_phase call only. */
 typedef uint32_t cmfm_phase_t;
-#define CMFM_PHASE_PRE_MAIN 0u          /* game code unpacked, before its CRT starts */
-#define CMFM_PHASE_WIN_MAIN 1u          /* the game's WinMain is about to run */
-#define CMFM_PHASE_DEVICE_CREATED 2u    /* the game's D3D12 device exists */
-#define CMFM_PHASE_SWAPCHAIN_CREATED 3u /* the game's swap chain exists */
-#define CMFM_PHASE_FIRST_PRESENT 4u     /* the first frame is about to be presented */
-#define CMFM_PHASE_GAME_READY 5u        /* title screen reached */
-#define CMFM_PHASE_COUNT 6u
+#define CMFM_PHASE_PRE_MAIN 0u          /* game code unpacked, before its CRT starts; main thread */
+#define CMFM_PHASE_WIN_MAIN 1u          /* 1.2: the CRT is ready and WinMain is about to run;
+                                           main thread; cmfm_phase_win_main_t */
+#define CMFM_PHASE_DEVICE_CREATED 2u    /* 1.2: the game's own D3D12CreateDevice call returned
+                                           a device, before the game uses it; the game's
+                                           render-setup thread; cmfm_phase_device_t. Not
+                                           under DirectX 11. */
+#define CMFM_PHASE_SWAPCHAIN_CREATED 3u /* reserved: does not fire yet */
+#define CMFM_PHASE_FIRST_PRESENT 4u     /* reserved: does not fire yet */
+#define CMFM_PHASE_GAME_READY 5u        /* reserved: does not fire yet */
+#define CMFM_PHASE_SHUTDOWN 6u          /* 1.2: WinMain returned, before CRT teardown;
+                                           save your own data now; main thread;
+                                           cmfm_phase_shutdown_t. Does not fire if the game
+                                           ends the process another way. */
+#define CMFM_PHASE_COUNT 7u
 #define CMFM_PHASE_BIT(phase) (1u << (phase))
 
 typedef uint32_t cmfm_log_level_t;
@@ -94,6 +109,32 @@ typedef uint32_t cmfm_status_t;
 typedef struct cmfm_plugin cmfm_plugin_t;
 
 typedef void(CMFM_CALL* cmfm_phase_fn)(cmfm_plugin_t* self, cmfm_phase_t phase, const void* data);
+
+/* 1.2 phase payloads. Check `size` before reading fields added later. */
+typedef struct cmfm_phase_win_main_t {
+    uint32_t size;
+    uint32_t reserved;
+    void* instance;           /* WinMain's HINSTANCE: the game exe's base */
+    const char* command_line; /* WinMain's command line, without the exe */
+    int32_t show_command;     /* WinMain's nCmdShow */
+    uint32_t reserved2;
+} cmfm_phase_win_main_t;
+
+typedef struct cmfm_phase_device_t {
+    uint32_t size;
+    uint32_t reserved;
+    void* device;      /* the device as the game receives it, as the interface the
+                          game asked for (riid); AddRef it to keep it */
+    const void* riid;  /* the game's requested IID (const GUID*) */
+    void* adapter;     /* the adapter the game passed (IUnknown*), or NULL */
+    uint32_t minimum_feature_level; /* D3D_FEATURE_LEVEL the game asked for */
+    uint32_t reserved2;
+} cmfm_phase_device_t;
+
+typedef struct cmfm_phase_shutdown_t {
+    uint32_t size;
+    int32_t exit_code; /* what WinMain returned */
+} cmfm_phase_shutdown_t;
 
 /* 1.1: a plugin this one needs. */
 typedef struct cmfm_dependency_t {

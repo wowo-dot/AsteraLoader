@@ -109,6 +109,9 @@ target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMF
 target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
 
 add_library(cmfm_startup STATIC
+    src/core/phases/imports.cpp
+    src/core/phases/sites.cpp
+    src/core/phases/runtime.cpp
     src/core/startup/entry_cache.cpp
     src/core/startup/entry_cache.hpp
     src/core/startup/entry_signature.cpp
@@ -352,6 +355,35 @@ add_executable(cmfm_protect_trace_tests tests/test_protect_trace.cpp)
 target_link_libraries(cmfm_protect_trace_tests PRIVATE cmfm_common)
 cmfm_project_target(cmfm_protect_trace_tests)
 add_test(NAME startup_protect_trace COMMAND cmfm_protect_trace_tests)
+
+add_executable(cmfm_phase_site_tests tests/test_phase_sites.cpp)
+target_link_libraries(cmfm_phase_site_tests PRIVATE cmfm_startup)
+cmfm_project_target(cmfm_phase_site_tests)
+add_test(NAME phase_sites COMMAND cmfm_phase_site_tests)
+
+add_executable(fake_phases_game WIN32 tests/fake_phases_game.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_phases_game PRIVATE cmfm_common d3d12 dxgi delayimp)
+target_compile_definitions(fake_phases_game PRIVATE CMFM_FAKE_PHASES)
+target_link_options(fake_phases_game PRIVATE /ENTRY:cmfm_test_packed_entry /DELAYLOAD:d3d12.dll)
+cmfm_project_target(fake_phases_game)
+set_target_properties(fake_phases_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>")
+add_library(cmfm_phase_probe SHARED tests/phase_probe.cpp)
+target_link_libraries(cmfm_phase_probe PRIVATE cmfm_api cmfm_common cmfm_minhook d3d12)
+cmfm_project_target(cmfm_phase_probe)
+set_target_properties(cmfm_phase_probe PROPERTIES OUTPUT_NAME phase_probe
+    RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+add_test(NAME remaining_phases
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:cmfm_phase_probe>"
+    "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases" -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
+set_tests_properties(remaining_phases PROPERTIES TIMEOUT 45)
+add_test(NAME remaining_phases_setup_thread
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:cmfm_phase_probe>"
+    "-DDEVICE_THREAD=1" "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_setup_thread"
+    -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
+set_tests_properties(remaining_phases_setup_thread PROPERTIES TIMEOUT 45)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.

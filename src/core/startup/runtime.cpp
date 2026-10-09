@@ -10,6 +10,7 @@
 #include "core/startup/entry_cache.hpp"
 #include "core/startup/protect_trace.hpp"
 #include "core/hooks/thread_snapshot.hpp"
+#include "core/phases/runtime.hpp"
 
 #include <MinHook.h>
 #include <intrin.h>
@@ -318,6 +319,7 @@ int __cdecl crt_entry() noexcept {
         g_runtime->host.dispatch(CMFM_PHASE_PRE_MAIN, nullptr);
         report_plugins();
         write(L"phase_pre_main_complete; startup wrapper restored");
+        phases::arm(g_runtime->host, g_runtime->log, visible_warning, g_runtime->entry_target);
         g_runtime->state.store(State::completed);
     } catch (...) {
         g_runtime->state.store(State::skipped);

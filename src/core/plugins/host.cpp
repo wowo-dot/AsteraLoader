@@ -492,7 +492,8 @@ void Host::dispatch(cmfm_phase_t phase, const void* data) {
         LARGE_INTEGER start{};
         QueryPerformanceCounter(&start);
         const bool returned = guarded_phase(plugin->manifest.on_phase, plugin.get(), phase, data, fault);
-        plugin->phase_us[phase] += microseconds_since(start);
+        const auto elapsed=microseconds_since(start);
+        { std::lock_guard lock(plugin->mutex); plugin->phase_us[phase] += elapsed; }
         if (!returned) {
             std::lock_guard lock(plugin->mutex);
             plugin->status = CMFM_STATUS_DISABLED;
@@ -513,9 +514,9 @@ std::vector<PluginReport> Host::report() const {
         line.folder_real = plugin->folder_real;
         line.load_us = plugin->load_us;
         line.init_us = plugin->init_us;
-        line.phase_us = plugin->phase_us;
         {
             std::lock_guard lock(plugin->mutex);
+            line.phase_us = plugin->phase_us;
             line.status = plugin->status;
             line.reason = plugin->reason;
         }

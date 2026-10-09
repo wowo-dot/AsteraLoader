@@ -14,7 +14,7 @@
 #define CMFM_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-CMFM_ABI_CHECK(CMFM_API_VERSION == 0x00010001u);
+CMFM_ABI_CHECK(CMFM_API_VERSION == 0x00010002u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 CMFM_ABI_CHECK(sizeof(cmfm_plugin_info_t) == 80);
@@ -65,7 +65,20 @@ CMFM_ABI_CHECK(CMFM_GRAPHICS_UNKNOWN == 0 && CMFM_GRAPHICS_DX11 == 1 && CMFM_GRA
 
 CMFM_ABI_CHECK(CMFM_PHASE_PRE_MAIN == 0 && CMFM_PHASE_WIN_MAIN == 1 && CMFM_PHASE_DEVICE_CREATED == 2 &&
                CMFM_PHASE_SWAPCHAIN_CREATED == 3 && CMFM_PHASE_FIRST_PRESENT == 4 &&
-               CMFM_PHASE_GAME_READY == 5 && CMFM_PHASE_COUNT == 6);
+               CMFM_PHASE_GAME_READY == 5 && CMFM_PHASE_SHUTDOWN == 6 && CMFM_PHASE_COUNT == 7);
+
+/* 1.2 phase payloads. */
+CMFM_ABI_CHECK(sizeof(cmfm_phase_win_main_t) == 32);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_win_main_t, instance) == 8);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_win_main_t, command_line) == 16);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_win_main_t, show_command) == 24);
+CMFM_ABI_CHECK(sizeof(cmfm_phase_device_t) == 40);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_device_t, device) == 8);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_device_t, riid) == 16);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_device_t, adapter) == 24);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_device_t, minimum_feature_level) == 32);
+CMFM_ABI_CHECK(sizeof(cmfm_phase_shutdown_t) == 8);
+CMFM_ABI_CHECK(offsetof(cmfm_phase_shutdown_t, exit_code) == 4);
 CMFM_ABI_CHECK(CMFM_STATUS_ACTIVE == 0 && CMFM_STATUS_DEGRADED == 1 && CMFM_STATUS_DISABLED == 2);
 CMFM_ABI_CHECK(CMFM_LOG_DEBUG == 0 && CMFM_LOG_INFO == 1 && CMFM_LOG_WARNING == 2 && CMFM_LOG_ERROR == 3);
 
