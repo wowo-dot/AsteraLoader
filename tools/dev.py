@@ -292,6 +292,8 @@ def watch(args: argparse.Namespace) -> None:
 
 def collect(args: argparse.Namespace) -> None:
     config = settings()
+    if game_running():
+        fail("the game is still running; its logs are not finished. Collect after it closes")
     cmfm = Path(config["mo2_mods"]) / config["cmfm_mod"] / "cmfm"
     folder = launch_folder(args)
     run_folder = LOCAL / "runs" / args.run
