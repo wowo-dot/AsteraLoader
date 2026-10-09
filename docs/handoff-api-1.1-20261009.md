@@ -46,15 +46,21 @@ its info is never read past 1.0's size (test: `legacy10`).
 - `examples/hello` 0.2.0 uses every service, including a scan of the version
   code, so a game run shows the scanner and, on a second launch, its cache.
 
-## Not yet tested in the game
+## Tested in the game
 
-The next run should check, in one MO2 launch and then a second:
-
-1. Core: `plugin name=hello version=0.2.0 status=active load_ms=... init_ms=...
-   pre_main_ms=...`, the same for stracker_compat.
-2. hello.log: game version 421810, exe SHA-256 c2ebbbd2c49f..., graphics
-   DX12, data folder `<CMFM mod>\cmfm\data\hello`, the version code found once,
-   "searched in N ms" on the first launch and "from the cache" on the second.
-3. stracker_compat.log: "loaded MonsterLoader.dll in N ms", the same for
-   QuestLoader, 2 loaded, version 421810.
-4. `<CMFM mod>\cmfm\cache\scan.c2ebbbd2....txt` with one line.
+- **api11-mo2-1** (d746f80, two launches): everything above worked, with two
+  defects. `init->data_folder` carried the `\\?\` long-path prefix, and
+  `cmfm.game` searched the whole image for the version, which cost 11-13 ms on
+  the PRE_MAIN thread.
+- Both were fixed in 8c12961. Data folders are now plain paths. `cmfm.game`
+  asks the scanner (code sections, cached per exe hash) first and keeps the
+  whole-image search as a fallback.
+- **api11-mo2-2** (759e686, tag v0.1.0-dev.7) confirmed both fixes:
+  - the data folder had no prefix;
+  - hello's `init_ms` dropped from 12.9-15.9 to 0.8 ms, with the version still
+    421810;
+  - the scan answered from the cache in 0.03 ms;
+  - stracker_compat loaded 2 of 2 plugins;
+  - the game exited with code 0.
+- Dependencies (`info->dependencies`) are tested outside the game only,
+  because no installed plugin declares one yet.

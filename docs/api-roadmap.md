@@ -28,8 +28,9 @@ game or system hooks, "user" for hooks and the launcher's injection code.
 
 ## API 1.1: services that need no hooks (Claude)
 
-Status 2026-10-09: implemented and tested outside the game (handoff-api-1.1-20261009.md);
-the first game run is pending.
+Status 2026-10-09: done. Implemented, tested outside the game and confirmed
+in the game in api11-mo2-2, tag v0.1.0-dev.7 (handoff-api-1.1-20261009.md).
+Dependencies are tested outside the game only.
 
 In this order; the first four are small.
 
