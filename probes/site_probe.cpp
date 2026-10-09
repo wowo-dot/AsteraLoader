@@ -25,7 +25,7 @@
 //
 // 0.4: astera-mo2-1 found the WinMain thread's message loop sets the flag
 // after WM_QUIT, and that Alt+F4 ends the process without SHUTDOWN. The
-// probe now writes data\site_probe\exit-report.txt from DllMain when the
+// probe now writes data\site_probe\exit-report.<pid>.txt from DllMain when the
 // process ends (the stack of the thread ending it), finds every call to the
 // function the message loop calls right before setting the flag, dumps it
 // and the frame thread's teardown, and times the gaps between frames.
@@ -569,12 +569,9 @@ extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* a
     QueryPerformanceFrequency(&frequency);
     g_qpf = frequency.QuadPart ? frequency.QuadPart : 1;
     if (init->size >= offsetof(al_init_t, data_folder) + sizeof(init->data_folder) && init->data_folder) {
-        const auto length = std::wcslen(init->data_folder);
-        constexpr wchar_t kName[] = L"\\exit-report.txt";
-        if (length + std::size(kName) <= std::size(g_exit_report)) {
-            std::memcpy(g_exit_report, init->data_folder, length * sizeof(wchar_t));
-            std::memcpy(g_exit_report + length, kName, sizeof(kName));
-        }
+        // One report per launch: exit-report.<pid>.txt.
+        std::swprintf(g_exit_report, std::size(g_exit_report), L"%ls\\exit-report.%lu.txt", init->data_folder,
+                      GetCurrentProcessId());
     }
     g_query_thread = reinterpret_cast<QueryThread>(
         reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
