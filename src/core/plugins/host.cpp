@@ -9,6 +9,7 @@
 #include "core/input/service.hpp"
 #include "core/game_hooks/registry.hpp"
 #include "core/graphics/hub.hpp"
+#include "core/plugins/abi_sizes.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
 #include "core/plugins/load_order.hpp"
@@ -348,7 +349,7 @@ std::uint32_t AL_CALL hooks_hook(al_plugin_t* self, const al_hook_t* hook) noexc
         auto& client = graphics_client(*self);
         std::string problem;
         const auto handle = self->state->hooks.hook(client, *hook, problem);
-        const auto name = hook->size >= sizeof(al_hook_t) && hook->name ? plugin_text(hook->name, 128)
+        const auto name = hook->size >= kHookSize10 && hook->name ? plugin_text(hook->name, 128)
                                                                             : std::string("a game function");
         if (handle) {
             const auto state = self->state->hooks.state(client, handle);
@@ -443,13 +444,13 @@ al_result_t input_result(al_plugin_t* self, const std::string& problem) {
     return problem.empty() ? AL_OK:AL_ERROR;
 }
 std::uint32_t AL_CALL input_add(al_plugin_t* self,const al_hotkey_t* key,al_hotkey_fn fn,void* user) noexcept {
-    if(!self || !self->state || !key || key->size<sizeof(*key) || key->reserved) return 0;
+    if(!self || !self->state || !key || key->size<kHotkeySize10 || key->reserved) return 0;
     try { std::string problem; const auto name=plugin_text(key->name,128);
         const auto handle=self->state->input.add(graphics_client(*self),key->key,key->modifiers,name.c_str(),fn,user,problem);
         input_result(self,problem); return handle; } catch (...) { return 0; }
 }
 std::uint32_t AL_CALL input_pad_add(al_plugin_t* self,const al_pad_hotkey_t* key,al_hotkey_fn fn,void* user) noexcept {
-    if(!self || !self->state || !key || key->size<sizeof(*key) || key->user_index>3) return 0;
+    if(!self || !self->state || !key || key->size<kPadHotkeySize10 || key->user_index>3) return 0;
     try { std::string problem; const auto name=plugin_text(key->name,128);
         const auto handle=self->state->input.add(graphics_client(*self),key->buttons,key->modifiers,name.c_str(),fn,user,problem,static_cast<int>(key->user_index));
         input_result(self,problem); return handle; } catch (...) { return 0; }
@@ -572,6 +573,14 @@ bool load(al_plugin_t& plugin, const Candidate& candidate, std::wstring_view exe
             reason = "its DLL name is reserved for the game, Windows or another loader";
             return false;
         }
+    }
+    // Service names starting "al." are AL's. A plugin may publish only names
+    // starting with its own name and a dot, so a plugin named "al" or
+    // "al.<x>" could publish a name a later AL adds.
+    const std::wstring_view name = candidate.name;
+    if (iequals(name, L"al") || (name.size() >= 3 && iequals(name.substr(0, 3), L"al."))) {
+        reason = "the name 'al' and names starting with 'al.' are reserved for Astera Loader's own services";
+        return false;
     }
     if (GetModuleHandleW(base_name.c_str())) {
         reason = "a DLL with that name is already loaded; refusing a module-name collision";

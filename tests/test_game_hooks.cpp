@@ -125,9 +125,11 @@ std::string bytes_of(const void* function, std::size_t count) {
 // Literals and the named signature strings below outlive each registry call.
 // A const std::string& here would convert literals to temporary strings and
 // return a dangling c_str() before the hook was registered.
+// The size is al.hooks 1.0's, as a plugin built for 1.0 passes it; it must
+// stay accepted when al_hook_t grows.
 al_hook_t hook_of(const char* name, std::string_view pattern, void* address, void* detour, void** next,
                     std::int32_t order = 0) {
-    return {sizeof(al_hook_t), order, name, pattern.data(), 0, 0, address, detour, next};
+    return {56, order, name, pattern.data(), 0, 0, address, detour, next};
 }
 
 int call_damage(StandInInstaller& installer, int a, int b) {
@@ -164,7 +166,7 @@ int main() {
     bad = hook_of("no next", damage_bytes, damage, reinterpret_cast<void*>(&detour_a), nullptr);
     check(!registry.hook(a.client, bad, problem) && problem == "no detour or no next", "no next refused");
     bad = hook_of("small", damage_bytes, damage, reinterpret_cast<void*>(&detour_a), &g_next_unused);
-    bad.size = sizeof(al_hook_t) - 8;
+    bad.size = 48;
     check(!registry.hook(a.client, bad, problem), "a struct smaller than 1.0's refused");
 
     // Before the hook layer: pending, next still null.

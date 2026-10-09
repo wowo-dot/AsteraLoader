@@ -65,6 +65,9 @@ int wmain(int argc, wchar_t** argv) {
         install(name, name);
     }
     install(L"alpha", L"mismatch");  // declares the name "alpha" in folder "mismatch"
+    install(L"alpha", L"al");        // AL's service namespace
+    install(L"alpha", L"al.tools");
+    install(L"alpha", L"dinput8");   // a proxy DLL name
     fs::create_directories(root / L"Bad Folder");
     fs::create_directories(root / L"empty");
     fs::create_directories(root / L"damaged");
@@ -110,7 +113,10 @@ int wmain(int argc, wchar_t** argv) {
     expect_refused(report, L"empty", "no empty.dll");
     expect_refused(report, L"damaged", "Windows could not load it");
     expect_refused(report, L"stray.dll", "own folder");
-    check(report.size() == 16, "every entry reported");
+    expect_refused(report, L"al", "reserved for Astera Loader's own services");
+    expect_refused(report, L"al.tools", "reserved for Astera Loader's own services");
+    expect_refused(report, L"dinput8", "reserved for the game, Windows or another loader");
+    check(report.size() == 19, "every entry reported");
 
     // Refused plugins were unloaded again; initialised ones stay loaded.
     for (const auto name : {L"cycle_x", L"newer_api", L"wrong_exe", L"no_exports", L"mismatch"}) {

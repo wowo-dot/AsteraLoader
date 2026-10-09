@@ -22,8 +22,12 @@ extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* a
     if(!input || input->size!=sizeof(*input) || input->version!=AL_INPUT_VERSION ||
         api->get_interface(self,AL_INPUT_INTERFACE,AL_MAKE_VERSION(2,0)) ||
         !api->get_interface(self,AL_FRAME_INTERFACE,AL_FRAME_VERSION)) return AL_ERROR;
-    const al_hotkey_t key{sizeof(key),VK_F7,AL_MOD_CTRL,0,"fixture"};
-    const al_pad_hotkey_t pad{sizeof(pad),0,AL_PAD_A,0,"fixture pad"};
+    // al.input 1.0's sizes, as a plugin built for 1.0 passes them; they must
+    // stay accepted when the structs grow.
+    const al_hotkey_t key{24,VK_F7,AL_MOD_CTRL,0,"fixture"};
+    const al_pad_hotkey_t pad{24,0,AL_PAD_A,0,"fixture pad"};
+    const al_hotkey_t small{16,VK_F8,0,0,"too small"};
+    if(input->add_hotkey(self,&small,hotkey,nullptr)) return AL_ERROR;
     if(!input->add_hotkey(self,&key,hotkey,nullptr) || !input->add_pad_hotkey(self,&pad,pad_hotkey,nullptr) ||
         input->subscribe_messages(self,0,message,nullptr)!=AL_OK || input->window(self)) return AL_ERROR;
     al_input_status_t status{};status.size=sizeof(status);input->status(self,&status);

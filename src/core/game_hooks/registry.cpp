@@ -1,6 +1,7 @@
 #include "core/game_hooks/registry.hpp"
 
 #include "common/memory.hpp"
+#include "core/plugins/abi_sizes.hpp"
 
 #include <windows.h>
 
@@ -98,8 +99,8 @@ bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const 
 
 std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string& problem) {
     problem.clear();
-    if (hook.size < sizeof(al_hook_t)) {
-        problem = "the hook struct is smaller than al_hook_t";
+    if (hook.size < plugins::kHookSize10) {
+        problem = "the hook struct is smaller than al.hooks 1.0's al_hook_t";
         return 0;
     }
     if (!hook.detour || !hook.next) {
