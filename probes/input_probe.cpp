@@ -1,26 +1,35 @@
 // input_probe: a throwaway diagnostic plugin, not shipped. It answers the
-// open questions in docs/design-input-1.6.md without patching any code:
+// open questions in docs/design-input-1.6.md.
 //
-// - it subclasses the game window (SetWindowLongPtr, as SharpPluginLoader
-//   does) and counts the input and close messages the game gets; close
-//   messages are logged the moment they arrive, since the process can end
-//   at once;
-// - F9 toggles keeping keyboard messages from the game, F10 mouse messages
-//   (raw input included). If the hunter still moves while they are kept
-//   away, the game reads that device through DirectInput instead;
-// - it lists the raw-input devices the game registered
-//   (GetRegisteredRawInputDevices);
-// - as a client of "al.frame" (API 1.5) it counts BEGIN/END, posts a task
-//   every 250 ms from a worker thread, and stops that thread at EXITING:
-//   the pattern plugins with threads should follow.
+// 0.1 (frame-input-1) showed the game reads keyboard and mouse through
+// DirectInput 8, not from its window's messages. 0.2 looks at DirectInput
+// itself and tries blocking there, the way input capture would:
+//
+// - it hooks the two methods DirectInput devices hand out input through,
+//   GetDeviceState and GetDeviceData, plus XInputGetState, and records
+//   which devices the game reads, how, how often and on which thread;
+// - F7 blocks the game's keyboard at DirectInput (no keys held, no key
+//   events), F8 its mouse, F6 XInput pads; press again to undo. The keys
+//   are read from the game window's messages, which DirectInput blocking
+//   does not touch, so they still work while blocked;
+// - it subclasses the game window (as SharpPluginLoader does) for those
+//   keys and counts input messages;
+// - as a client of "al.frame" it counts frames, posts a task every 250 ms
+//   from a worker thread, and stops that thread at EXITING.
+#define DIRECTINPUT_VERSION 0x0800
 #include "al/al_plugin.h"
 
 #include <windows.h>
+#include <dinput.h>
+#include <xinput.h>
+
+#include <MinHook.h>
 
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 namespace {
 const al_api_t* g_api = nullptr;
@@ -42,189 +51,247 @@ std::int64_t qpc() {
     return now.QuadPart;
 }
 
-double seconds_since(std::int64_t from) {
+std::int64_t g_start = 0;
+double seconds() {
     LARGE_INTEGER frequency{};
     QueryPerformanceFrequency(&frequency);
-    return frequency.QuadPart ? static_cast<double>(qpc() - from) / static_cast<double>(frequency.QuadPart) : 0;
+    return frequency.QuadPart ? static_cast<double>(qpc() - g_start) / static_cast<double>(frequency.QuadPart) : 0;
 }
 
-std::int64_t g_start = 0;
+// The GUIDs this needs, so the probe links no DirectInput library.
+constexpr GUID kDirectInput8W = {0xBF798031, 0x483A, 0x4DA2, {0xAA, 0x99, 0x5D, 0x64, 0xED, 0x36, 0x97, 0x00}};
+constexpr GUID kSysKeyboard = {0x6F1D2B61, 0xD5A0, 0x11CF, {0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}};
+constexpr GUID kSysMouse = {0x6F1D2B60, 0xD5A0, 0x11CF, {0xBF, 0xC7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00}};
+
+// What the toggles block.
+std::atomic<bool> g_block_keyboard{false};  // F7
+std::atomic<bool> g_block_mouse{false};     // F8
+std::atomic<bool> g_block_pads{false};      // F6
+
+// The DirectInput devices the game reads, found as it calls them.
+struct Device {
+    IDirectInputDevice8W* self = nullptr;
+    unsigned type = 0;  // DI8DEVTYPE_*
+    char name[96] = "?";
+    DWORD state_thread = 0, data_thread = 0;
+    std::uint64_t state_calls = 0, data_calls = 0, events = 0, blocked = 0;
+    DWORD state_size = 0;
+};
+std::mutex g_devices_mutex;
+Device g_devices[16];
+unsigned g_device_count = 0;
+
+const char* type_name(unsigned type) {
+    switch (type) {
+    case DI8DEVTYPE_KEYBOARD: return "keyboard";
+    case DI8DEVTYPE_MOUSE: return "mouse";
+    case DI8DEVTYPE_GAMEPAD: return "gamepad";
+    case DI8DEVTYPE_JOYSTICK: return "joystick";
+    default: return "other";
+    }
+}
+
+Device* device_of(IDirectInputDevice8W* self) {
+    std::lock_guard lock(g_devices_mutex);
+    for (unsigned k = 0; k < g_device_count; ++k) {
+        if (g_devices[k].self == self) return &g_devices[k];
+    }
+    if (g_device_count == 16) return nullptr;
+    auto& device = g_devices[g_device_count++];
+    device.self = self;
+    DIDEVICEINSTANCEW info{};
+    info.dwSize = sizeof(info);
+    if (SUCCEEDED(self->GetDeviceInfo(&info))) {
+        device.type = GET_DIDEVICE_TYPE(info.dwDevType);
+        WideCharToMultiByte(CP_UTF8, 0, info.tszProductName, -1, device.name, sizeof(device.name), nullptr, nullptr);
+    }
+    say(AL_LOG_INFO, "DirectInput device %p: %s \"%s\", first read on thread %lu at %.3f s", static_cast<void*>(self),
+        type_name(device.type), device.name, GetCurrentThreadId(), seconds());
+    return &device;
+}
+
+bool blocked(const Device& device) {
+    return (device.type == DI8DEVTYPE_KEYBOARD && g_block_keyboard.load(std::memory_order_relaxed)) ||
+           (device.type == DI8DEVTYPE_MOUSE && g_block_mouse.load(std::memory_order_relaxed));
+}
+
+using GetStateFn = HRESULT(STDMETHODCALLTYPE*)(IDirectInputDevice8W*, DWORD, LPVOID);
+using GetDataFn = HRESULT(STDMETHODCALLTYPE*)(IDirectInputDevice8W*, DWORD, LPDIDEVICEOBJECTDATA, LPDWORD, DWORD);
+using XInputStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+GetStateFn g_get_state = nullptr;
+GetDataFn g_get_data = nullptr;
+XInputStateFn g_xinput_state = nullptr;
+
+HRESULT STDMETHODCALLTYPE get_state(IDirectInputDevice8W* self, DWORD size, LPVOID data) {
+    const HRESULT result = g_get_state(self, size, data);
+    if (Device* device = device_of(self)) {
+        ++device->state_calls;
+        device->state_size = size;
+        if (!device->state_thread) device->state_thread = GetCurrentThreadId();
+        if (SUCCEEDED(result) && data && blocked(*device)) {
+            std::memset(data, 0, size);  // nothing held, no motion
+            ++device->blocked;
+        }
+    }
+    return result;
+}
+
+HRESULT STDMETHODCALLTYPE get_data(IDirectInputDevice8W* self, DWORD object_size, LPDIDEVICEOBJECTDATA events,
+                                   LPDWORD count, DWORD flags) {
+    const HRESULT result = g_get_data(self, object_size, events, count, flags);
+    if (Device* device = device_of(self)) {
+        ++device->data_calls;
+        if (!device->data_thread) device->data_thread = GetCurrentThreadId();
+        if (SUCCEEDED(result) && count && events) {
+            device->events += *count;
+            if (*count && blocked(*device)) {
+                *count = 0;  // the game gets no events
+                ++device->blocked;
+            }
+        }
+    }
+    return result;
+}
+
+std::atomic<std::uint64_t> g_xinput_calls[4]{}, g_xinput_connected[4]{}, g_xinput_blocked{0};
+std::atomic<DWORD> g_xinput_thread{0};
+
+DWORD WINAPI xinput_state(DWORD user, XINPUT_STATE* state) {
+    const DWORD result = g_xinput_state(user, state);
+    if (user < 4) {
+        g_xinput_calls[user].fetch_add(1, std::memory_order_relaxed);
+        if (result == ERROR_SUCCESS) g_xinput_connected[user].fetch_add(1, std::memory_order_relaxed);
+    }
+    DWORD expected = 0;
+    g_xinput_thread.compare_exchange_strong(expected, GetCurrentThreadId());
+    if (result == ERROR_SUCCESS && state && g_block_pads.load(std::memory_order_relaxed)) {
+        std::memset(&state->Gamepad, 0, sizeof(state->Gamepad));  // a neutral pad
+        g_xinput_blocked.fetch_add(1, std::memory_order_relaxed);
+    }
+    return result;
+}
+
+// Reads the device methods' addresses from throwaway devices of our own,
+// then hooks the methods. Runs on the game thread once DINPUT8 is loaded.
+bool g_hooked = false;
+void hook_input() {
+    g_hooked = true;
+    const auto dinput8 = GetModuleHandleW(L"dinput8.dll");
+    using Create = HRESULT(WINAPI*)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
+    const auto create = dinput8 ? reinterpret_cast<Create>(reinterpret_cast<void*>(GetProcAddress(dinput8, "DirectInput8Create"))) : nullptr;
+    IDirectInput8W* input = nullptr;
+    if (!create || FAILED(create(GetModuleHandleW(nullptr), DIRECTINPUT_VERSION, kDirectInput8W,
+                                 reinterpret_cast<void**>(&input), nullptr)) || !input) {
+        say(AL_LOG_WARNING, "DirectInput8Create failed; DirectInput not watched");
+        return;
+    }
+    void* methods[2][2] = {};  // [keyboard, mouse][GetDeviceState, GetDeviceData]
+    const GUID* kinds[2] = {&kSysKeyboard, &kSysMouse};
+    for (int k = 0; k < 2; ++k) {
+        IDirectInputDevice8W* device = nullptr;
+        if (SUCCEEDED(input->CreateDevice(*kinds[k], &device, nullptr)) && device) {
+            auto* const* table = *reinterpret_cast<void* const* const*>(device);
+            methods[k][0] = table[9];   // GetDeviceState
+            methods[k][1] = table[10];  // GetDeviceData
+            device->Release();
+        }
+    }
+    input->Release();
+    const bool shared = methods[0][0] == methods[1][0] && methods[0][1] == methods[1][1];
+    say(AL_LOG_INFO, "DirectInput methods: GetDeviceState %p, GetDeviceData %p (%s)", methods[0][0], methods[0][1],
+        shared ? "the mouse shares them" : "the mouse has its own");
+    if (!methods[0][0] || !methods[0][1] || !shared) {
+        say(AL_LOG_WARNING, "unexpected DirectInput layout; DirectInput not hooked");
+        return;
+    }
+    if (MH_Initialize() != MH_OK) {
+        say(AL_LOG_WARNING, "MinHook did not start; nothing hooked");
+        return;
+    }
+    bool ok = MH_CreateHook(methods[0][0], reinterpret_cast<void*>(&get_state), reinterpret_cast<void**>(&g_get_state)) == MH_OK &&
+              MH_CreateHook(methods[0][1], reinterpret_cast<void*>(&get_data), reinterpret_cast<void**>(&g_get_data)) == MH_OK;
+    const auto xinput = GetModuleHandleW(L"xinput9_1_0.dll");
+    void* xinput_target = xinput ? reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState")) : nullptr;
+    if (xinput_target && MH_CreateHook(xinput_target, reinterpret_cast<void*>(&xinput_state),
+                                       reinterpret_cast<void**>(&g_xinput_state)) != MH_OK) {
+        xinput_target = nullptr;
+    }
+    ok = ok && MH_EnableHook(MH_ALL_HOOKS) == MH_OK;
+    say(ok ? AL_LOG_INFO : AL_LOG_WARNING, "DirectInput %s; XInputGetState %s at %.3f s", ok ? "hooked" : "hook failed",
+        xinput_target ? "hooked" : "not found", seconds());
+    say(AL_LOG_INFO, "F7 blocks the keyboard at DirectInput, F8 the mouse, F6 XInput pads; press again to undo");
+}
 
 // User32, looked up once the window exists, so the probe imports only KERNEL32.
 using SetLongFn = LONG_PTR(WINAPI*)(HWND, int, LONG_PTR);
-using GetLongFn = LONG_PTR(WINAPI*)(HWND, int);
 using CallProcFn = LRESULT(WINAPI*)(WNDPROC, HWND, UINT, WPARAM, LPARAM);
-using DefProcFn = LRESULT(WINAPI*)(HWND, UINT, WPARAM, LPARAM);
-using RawDevicesFn = UINT(WINAPI*)(PRAWINPUTDEVICE, PUINT, UINT);
-using ThreadOfFn = DWORD(WINAPI*)(HWND, LPDWORD);
-using ClassNameFn = int(WINAPI*)(HWND, LPSTR, int);
 SetLongFn g_set_long = nullptr;
-GetLongFn g_get_long = nullptr;
 CallProcFn g_call_proc = nullptr;
-DefProcFn g_def_proc = nullptr;
-RawDevicesFn g_raw_devices = nullptr;
-ThreadOfFn g_thread_of = nullptr;
-ClassNameFn g_class_name = nullptr;
-
-HWND g_window = nullptr;
 WNDPROC g_game_proc = nullptr;
-DWORD g_main_thread = 0;
-bool g_keep_keys = false;   // F9
-bool g_keep_mouse = false;  // F10
-unsigned g_counts[0x400] = {};     // messages below WM_USER, window thread only
-unsigned g_kept_keys = 0, g_kept_mouse = 0;
+HWND g_window = nullptr;
+std::uint64_t g_key_messages = 0, g_mouse_messages = 0;
 
-bool keyboard_message(UINT message) {
-    return message == WM_KEYDOWN || message == WM_KEYUP || message == WM_CHAR || message == WM_DEADCHAR;
-}
-
-bool mouse_message(UINT message) {
-    return (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) || message == WM_INPUT;
-}
-
-const char* close_name(UINT message, WPARAM wparam) {
-    if (message == WM_SYSKEYDOWN && wparam == VK_F4) return "WM_SYSKEYDOWN F4";
-    if (message == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_CLOSE) return "WM_SYSCOMMAND SC_CLOSE";
-    if (message == WM_CLOSE) return "WM_CLOSE";
-    if (message == WM_DESTROY) return "WM_DESTROY";
-    if (message == WM_NCDESTROY) return "WM_NCDESTROY";
-    if (message == WM_QUERYENDSESSION) return "WM_QUERYENDSESSION";
-    if (message == WM_ENDSESSION) return "WM_ENDSESSION";
-    return nullptr;
+void toggle(std::atomic<bool>& flag, const char* what) {
+    const bool now = !flag.load();
+    flag.store(now);
+    say(AL_LOG_INFO, "%s at %.3f s: %s", what, seconds(), now ? "blocked" : "reaches the game again");
 }
 
 LRESULT CALLBACK probe_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
-    if (message < 0x400) ++g_counts[message];
-    if (const char* name = close_name(message, wparam)) {
-        say(AL_LOG_INFO, "close: %s at %.3f s on thread %lu (WinMain thread %lu)", name, seconds_since(g_start),
-            GetCurrentThreadId(), g_main_thread);
-    }
-    const bool first_press = message == WM_KEYDOWN && !(lparam & (1 << 30));
-    if (first_press && wparam == VK_F9) {
-        g_keep_keys = !g_keep_keys;
-        say(AL_LOG_INFO, "F9 at %.3f s: keyboard messages %s", seconds_since(g_start),
-            g_keep_keys ? "now kept from the game" : "reach the game again");
-        return 0;
-    }
-    if (first_press && wparam == VK_F10) {
-        g_keep_mouse = !g_keep_mouse;
-        say(AL_LOG_INFO, "F10 at %.3f s: mouse and raw-input messages %s", seconds_since(g_start),
-            g_keep_mouse ? "now kept from the game" : "reach the game again");
-        return 0;
-    }
-    if (g_keep_keys && keyboard_message(message) && wparam != VK_F9 && wparam != VK_F10) {
-        ++g_kept_keys;
-        return 0;
-    }
-    if (g_keep_mouse && mouse_message(message)) {
-        ++g_kept_mouse;
-        // WM_INPUT must still reach DefWindowProc so Windows frees its data.
-        return message == WM_INPUT ? g_def_proc(window, message, wparam, lparam) : 0;
+    if (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_CHAR) ++g_key_messages;
+    if (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ++g_mouse_messages;
+    if (message == WM_KEYDOWN && !(lparam & (1 << 30))) {
+        if (wparam == VK_F7) toggle(g_block_keyboard, "F7: the keyboard at DirectInput");
+        if (wparam == VK_F8) toggle(g_block_mouse, "F8: the mouse at DirectInput");
+        if (wparam == VK_F6) toggle(g_block_pads, "F6: XInput pads");
     }
     return g_call_proc(g_game_proc, window, message, wparam, lparam);
 }
 
-void where(const void* address, char* out, std::size_t size) {
-    HMODULE module = nullptr;
-    char name[MAX_PATH] = "?";
-    if (address && GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                      static_cast<LPCWSTR>(address), &module)) {
-        GetModuleFileNameA(module, name, MAX_PATH);
-    }
-    const char* file = std::strrchr(name, '\\');
-    std::snprintf(out, size, "%s+0x%llx", file ? file + 1 : name,
-                  static_cast<unsigned long long>(static_cast<const std::uint8_t*>(address) -
-                                                  reinterpret_cast<const std::uint8_t*>(module)));
-}
-
-void report_raw_input(const char* when) {
-    if (!g_raw_devices) return;
-    RAWINPUTDEVICE devices[16];
-    UINT count = 16;
-    const auto got = g_raw_devices(devices, &count, sizeof(RAWINPUTDEVICE));
-    if (got == static_cast<UINT>(-1)) {
-        say(AL_LOG_INFO, "raw input %s: query failed (%lu), %u registered", when, GetLastError(), count);
-        return;
-    }
-    say(AL_LOG_INFO, "raw input %s: %u device(s) registered", when, got);
-    for (UINT k = 0; k < got; ++k) {
-        say(AL_LOG_INFO, "  usage page 0x%x usage 0x%x flags 0x%lx target %p", devices[k].usUsagePage,
-            devices[k].usUsage, devices[k].dwFlags, static_cast<void*>(devices[k].hwndTarget));
-    }
-}
-
 void subclass(HWND window) {
-    if (g_window || !window) return;
     const auto user32 = GetModuleHandleW(L"user32.dll");
-    if (!user32) {
-        say(AL_LOG_WARNING, "user32 is not loaded; the window is not watched");
-        return;
-    }
+    if (g_window || !window || !user32) return;
     g_set_long = reinterpret_cast<SetLongFn>(reinterpret_cast<void*>(GetProcAddress(user32, "SetWindowLongPtrW")));
-    g_get_long = reinterpret_cast<GetLongFn>(reinterpret_cast<void*>(GetProcAddress(user32, "GetWindowLongPtrW")));
     g_call_proc = reinterpret_cast<CallProcFn>(reinterpret_cast<void*>(GetProcAddress(user32, "CallWindowProcW")));
-    g_def_proc = reinterpret_cast<DefProcFn>(reinterpret_cast<void*>(GetProcAddress(user32, "DefWindowProcW")));
-    g_raw_devices = reinterpret_cast<RawDevicesFn>(
-        reinterpret_cast<void*>(GetProcAddress(user32, "GetRegisteredRawInputDevices")));
-    g_thread_of = reinterpret_cast<ThreadOfFn>(reinterpret_cast<void*>(GetProcAddress(user32, "GetWindowThreadProcessId")));
-    g_class_name = reinterpret_cast<ClassNameFn>(reinterpret_cast<void*>(GetProcAddress(user32, "GetClassNameA")));
-    if (!g_set_long || !g_get_long || !g_call_proc || !g_def_proc) {
-        say(AL_LOG_WARNING, "user32 functions missing; the window is not watched");
-        return;
-    }
-    char class_name[128] = "?";
-    if (g_class_name) g_class_name(window, class_name, sizeof(class_name));
-    const DWORD window_thread = g_thread_of ? g_thread_of(window, nullptr) : 0;
-    const auto before = reinterpret_cast<const void*>(g_get_long(window, GWLP_WNDPROC));
-    char owner[MAX_PATH + 32];
-    where(before, owner, sizeof(owner));
+    if (!g_set_long || !g_call_proc) return;
     g_game_proc = reinterpret_cast<WNDPROC>(g_set_long(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&probe_proc)));
     g_window = window;
-    say(AL_LOG_INFO, "window %p class \"%s\" on thread %lu (WinMain thread %lu); its procedure was %s; watching it",
-        static_cast<void*>(window), class_name, window_thread, g_main_thread, owner);
-    say(AL_LOG_INFO, "F9 toggles keyboard messages, F10 mouse messages, kept from the game");
-    report_raw_input("at the swap chain");
+    say(AL_LOG_INFO, "watching window %p for F6/F7/F8", static_cast<void*>(window));
 }
 
-void report_messages(const char* when) {
-    struct Named {
-        UINT message;
-        const char* name;
-    };
-    static const Named names[] = {
-        {WM_KEYDOWN, "WM_KEYDOWN"},         {WM_KEYUP, "WM_KEYUP"},           {WM_CHAR, "WM_CHAR"},
-        {WM_SYSKEYDOWN, "WM_SYSKEYDOWN"},   {WM_SYSKEYUP, "WM_SYSKEYUP"},     {WM_INPUT, "WM_INPUT"},
-        {WM_MOUSEMOVE, "WM_MOUSEMOVE"},     {WM_LBUTTONDOWN, "WM_LBUTTONDOWN"}, {WM_RBUTTONDOWN, "WM_RBUTTONDOWN"},
-        {WM_MOUSEWHEEL, "WM_MOUSEWHEEL"},   {WM_SETCURSOR, "WM_SETCURSOR"},   {WM_ACTIVATE, "WM_ACTIVATE"},
-        {WM_ACTIVATEAPP, "WM_ACTIVATEAPP"}, {WM_SETFOCUS, "WM_SETFOCUS"},     {WM_KILLFOCUS, "WM_KILLFOCUS"},
-        {WM_INPUT_DEVICE_CHANGE, "WM_INPUT_DEVICE_CHANGE"}, {WM_IME_COMPOSITION, "WM_IME_COMPOSITION"},
-    };
-    unsigned total = 0;
-    for (unsigned count : g_counts) total += count;
-    say(AL_LOG_INFO, "messages %s: %u in all; kept from the game: %u keyboard, %u mouse", when, total, g_kept_keys,
-        g_kept_mouse);
-    for (const auto& entry : names) {
-        if (g_counts[entry.message]) say(AL_LOG_INFO, "  %s %u", entry.name, g_counts[entry.message]);
+void report(const char* when) {
+    say(AL_LOG_INFO, "report %s at %.3f s: %llu key and %llu mouse window messages", when, seconds(),
+        static_cast<unsigned long long>(g_key_messages), static_cast<unsigned long long>(g_mouse_messages));
+    {
+        std::lock_guard lock(g_devices_mutex);
+        for (unsigned k = 0; k < g_device_count; ++k) {
+            const auto& device = g_devices[k];
+            say(AL_LOG_INFO,
+                "  %s \"%s\": GetDeviceState %llu calls (size %lu, thread %lu), GetDeviceData %llu calls (thread %lu, "
+                "%llu events), blocked %llu times",
+                type_name(device.type), device.name, static_cast<unsigned long long>(device.state_calls), device.state_size,
+                device.state_thread, static_cast<unsigned long long>(device.data_calls), device.data_thread,
+                static_cast<unsigned long long>(device.events), static_cast<unsigned long long>(device.blocked));
+        }
     }
+    say(AL_LOG_INFO, "  XInputGetState on thread %lu: pad 0 %llu calls (%llu connected), pad 1 %llu, pad 2 %llu, pad 3 %llu; "
+        "blocked %llu", g_xinput_thread.load(), static_cast<unsigned long long>(g_xinput_calls[0].load()),
+        static_cast<unsigned long long>(g_xinput_connected[0].load()), static_cast<unsigned long long>(g_xinput_calls[1].load()),
+        static_cast<unsigned long long>(g_xinput_calls[2].load()), static_cast<unsigned long long>(g_xinput_calls[3].load()),
+        static_cast<unsigned long long>(g_xinput_blocked.load()));
 }
 
 // The al.frame client side.
-std::atomic<std::uint64_t> g_begins{0}, g_ends{0}, g_posted{0}, g_ran{0};
+std::atomic<std::uint64_t> g_begins{0}, g_posted{0}, g_ran{0};
 std::atomic<bool> g_stop{false};
 HANDLE g_worker = nullptr;
-DWORD g_begin_thread = 0;
+DWORD g_main_thread = 0;
 
-void AL_CALL on_frame(al_plugin_t*, al_frame_event_t event, const al_frame_info_t* frame, void*) {
-    if (event == AL_FRAME_BEGIN) {
-        if (!g_begins.fetch_add(1, std::memory_order_relaxed)) {
-            g_begin_thread = GetCurrentThreadId();
-            say(AL_LOG_INFO, "first frame: index %llu on thread %lu at %.3f s", static_cast<unsigned long long>(frame->index),
-                g_begin_thread, seconds_since(g_start));
-        }
-        if (frame->index == 2000) report_raw_input("at frame 2000");
-    } else {
-        g_ends.fetch_add(1, std::memory_order_relaxed);
-    }
+void AL_CALL on_frame(al_plugin_t*, al_frame_event_t, const al_frame_info_t* frame, void*) {
+    g_begins.fetch_add(1, std::memory_order_relaxed);
+    // DINPUT8 loads about 8 s in; check twice a second until it is there.
+    if (!g_hooked && frame->index % 30 == 0 && GetModuleHandleW(L"dinput8.dll")) hook_input();
+    if (frame->index == 3000) report("at frame 3000");
 }
 
 void AL_CALL counted(al_plugin_t*, void*) {
@@ -249,27 +316,23 @@ void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void* data) {
             subclass(static_cast<HWND>(swapchain->window));
         }
     } else if (phase == AL_PHASE_EXITING) {
-        // Stop our own thread while the game is intact: this is what keeps
-        // plugin threads from reading freed game memory during teardown.
+        // Stop blocking and stop our own thread while the game is intact.
+        g_block_keyboard = g_block_mouse = g_block_pads = false;
         g_stop = true;
         if (g_worker) WaitForSingleObject(g_worker, 2000);
-        say(AL_LOG_INFO, "EXITING on thread %lu at %.3f s (WinMain thread %lu, frame thread %lu); worker stopped",
-            GetCurrentThreadId(), seconds_since(g_start), g_main_thread, g_begin_thread);
-        report_messages("at EXITING");
-        report_raw_input("at EXITING");
+        say(AL_LOG_INFO, "EXITING on thread %lu at %.3f s; worker stopped", GetCurrentThreadId(), seconds());
+        report("at EXITING");
     } else if (phase == AL_PHASE_SHUTDOWN) {
-        report_messages("at SHUTDOWN");
         al_frame_status_t status{sizeof(status)};
         if (g_frame) g_frame->status(g_self, &status);
-        say(AL_LOG_INFO, "al.frame: state %u, %llu frames, game thread %lu; this plugin saw %llu BEGIN, %llu END; "
-            "posted %llu tasks, %llu ran", status.state, static_cast<unsigned long long>(status.frames), status.game_thread,
-            static_cast<unsigned long long>(g_begins.load()), static_cast<unsigned long long>(g_ends.load()),
+        say(AL_LOG_INFO, "al.frame: state %u, %llu frames; this plugin saw %llu BEGIN; posted %llu tasks, %llu ran",
+            status.state, static_cast<unsigned long long>(status.frames), static_cast<unsigned long long>(g_begins.load()),
             static_cast<unsigned long long>(g_posted.load()), static_cast<unsigned long long>(g_ran.load()));
     }
 }
 
 const al_plugin_info_t kInfo = {
-    sizeof(al_plugin_info_t), AL_API_VERSION, "input_probe", "Astera Loader input probe (diagnostic)", "0.1.0",
+    sizeof(al_plugin_info_t), AL_API_VERSION, "input_probe", "Astera Loader input probe (diagnostic)", "0.2.0",
     AL_PHASE_BIT(AL_PHASE_WIN_MAIN) | AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED) | AL_PHASE_BIT(AL_PHASE_EXITING) |
         AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
     0, nullptr, nullptr, nullptr, on_phase, nullptr,
@@ -285,10 +348,7 @@ extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* a
     g_self = init->self;
     g_start = qpc();
     g_frame = static_cast<const al_frame_t*>(api->get_interface(init->self, AL_FRAME_INTERFACE, AL_FRAME_VERSION));
-    if (g_frame) {
-        g_frame->subscribe(g_self, AL_FRAME_BEGIN, on_frame, nullptr);
-        g_frame->subscribe(g_self, AL_FRAME_END, on_frame, nullptr);
-    }
-    say(AL_LOG_INFO, "input_probe: al.frame %s", g_frame ? "yes" : "no");
+    if (g_frame) g_frame->subscribe(g_self, AL_FRAME_BEGIN, on_frame, nullptr);
+    say(AL_LOG_INFO, "input_probe 0.2: al.frame %s", g_frame ? "yes" : "no");
     return AL_OK;
 }
