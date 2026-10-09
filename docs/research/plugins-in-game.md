@@ -186,7 +186,8 @@ of CMFM, started from the plain "Monster Hunter: World" entry. Two launches.
   after the graphics device, and take 6.5-7 s, against 4.2-4.4 s at CMFM's
   PRE_MAIN.
 - The game's input, audio and last-module markers came 3.0-3.4 s later than
-  under CMFM, so CMFM reaches the title screen sooner even though its window
-  appears later.
+  under CMFM. The baseline crashed before the title screen, so the time to
+  title itself was not compared; up to these markers, CMFM is ahead even
+  though its window appears later.
 
 Run folder: `local/runs/stracker-baseline-1`.
