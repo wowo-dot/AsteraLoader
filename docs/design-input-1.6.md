@@ -61,8 +61,25 @@ implemented rules, tests and next run. Roadmap "path to v1" step 2.
 - **Blocking there works:** zeroing the keyboard's and the mouse's
   `GetDeviceState` data froze the hunter and the camera, and a neutral
   `XInputGetState` froze the pad; all recovered when unblocked.
-- The keyboard's and the mouse's device classes have separate method
-  implementations, so each needs its own hook.
+- ~~The keyboard's and the mouse's device classes have separate method
+  implementations, so each needs its own hook.~~ Corrected by
+  input-check-1: those methods were the Steam overlay's wrappers (see
+  below). The probe had hooked the overlay's functions.
+
+## Found in input-check-1: the Steam overlay wraps DirectInput
+
+- With the Steam overlay on, the device methods (`GetDeviceState`,
+  `GetDeviceData`) of a keyboard or mouse created in the game process
+  point into `gameoverlayrenderer64.dll`, not System32's `dinput8.dll`.
+  In input-probe-2 and -3 the keyboard's `GetDeviceState` sat 0x1850 bytes
+  below the overlay's D3D12 patch destination both times, wherever Windows
+  had loaded the overlay.
+- So the game calls the overlay's functions, which pass the reads on to
+  Windows. AL's native layer refuses methods outside System32, as
+  designed, and al.input reported UNAVAILABLE with a warning.
+- Still unknown: whether the overlay changes `dinput8.dll`'s own method
+  tables or hands out wrapper objects, and whether it also patches
+  `XInputGetState`. With the overlay off, the methods should be System32's.
 
 ## Open questions (one probe run)
 
@@ -186,11 +203,13 @@ registration/refusal information.
   order; a callback that returns non-zero keeps the message from the game.
   If another module subclasses the window later, AL stays in the chain
   behind it; AL never restores the old procedure while plugins are loaded.
-- **The input layer** (settled by input-probe-3): AL hooks the methods the
-  game reads its input through, once DINPUT8 and XInput are loaded:
-  DirectInput's `GetDeviceState` for the keyboard's and the mouse's device
-  classes (each has its own implementation; `GetDeviceData` too, though
-  the game does not use it), and `XInputGetState`. The method addresses
+- **The input layer** (settled by input-probe-3, but see input-check-1):
+  AL hooks the methods the game reads its input through, once DINPUT8 and
+  XInput are loaded: DirectInput's `GetDeviceState` for the keyboard's and
+  the mouse's devices (`GetDeviceData` too, though the game does not use
+  it), and `XInputGetState`. Only System32's own methods are hooked; with
+  the Steam overlay on, the game calls the overlay's wrappers instead,
+  and how to reach those reads is open. The method addresses
   come from throwaway devices of AL's own, as al.d3d12 does for DXGI.
 - **Snapshots, not polling:** each time the game reads a device, the layer
   keeps a copy of the real data (keyboard 256 bytes, mouse
