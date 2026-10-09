@@ -367,7 +367,8 @@ target_compile_definitions(fake_phases_game PRIVATE CMFM_FAKE_PHASES)
 target_link_options(fake_phases_game PRIVATE /ENTRY:cmfm_test_packed_entry /DELAYLOAD:d3d12.dll)
 cmfm_project_target(fake_phases_game)
 set_target_properties(fake_phases_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>")
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>")
 add_library(cmfm_phase_probe SHARED tests/phase_probe.cpp)
 target_link_libraries(cmfm_phase_probe PRIVATE cmfm_api cmfm_common cmfm_minhook d3d12)
 cmfm_project_target(cmfm_phase_probe)
@@ -392,7 +393,8 @@ target_link_libraries(fake_game PRIVATE cmfm_common shell32)
 cmfm_project_target(fake_game)
 set_target_properties(fake_game PROPERTIES
     OUTPUT_NAME MonsterHunterWorld
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>")
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>")
 
 add_executable(fake_packed_game WIN32 tests/fake_game.cpp tests/fake_packed_entry.cpp)
 target_link_libraries(fake_packed_game PRIVATE cmfm_common shell32)
@@ -403,7 +405,8 @@ set_source_files_properties(tests/fake_packed_entry.cpp PROPERTIES COMPILE_OPTIO
 target_link_options(fake_packed_game PRIVATE /ENTRY:cmfm_test_packed_entry)
 set_target_properties(fake_packed_game PROPERTIES
     OUTPUT_NAME MonsterHunterWorld
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>")
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>")
 add_test(NAME startup_phase
     COMMAND "${CMAKE_COMMAND}"
         "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
