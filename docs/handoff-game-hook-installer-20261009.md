@@ -35,6 +35,8 @@ The core still imports only `KERNEL32.dll`.
 The pure registry test's helper now accepts a string view, so literal
 patterns retain their static storage instead of pointing into a destroyed
 temporary `std::string`. This fixes unstable signature-refusal checks.
+The entry-cache test reserves a fresh scratch directory instead of reusing
+the contents of a directory named only by a recycled Windows PID.
 
 `game_hooks_native` runs the production launcher/core on an original fake
 game and three plugin DLLs. It checks:
