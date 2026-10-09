@@ -216,3 +216,45 @@ There was one launch each into the save, and both exited with code 0.
   one launch each.
 
 Run folders: `local/runs/stracker-baseline-2`, `local/runs/stracker-all-2`.
+
+## Runs phases-mo2-1 and exit-ab-1: the API 1.2 phases in the game (confirmed)
+
+Phase hooks from 93008ce (installed build 266f909, hello 0.3.0) on profile
+`cmfm-stracker` with the DLSS frame-generation mod, two launches, quitting
+through the game's Exit Game menu. Then exit-ab-1: one launch of the
+pre-phase build f51d09c, byte-identical to stracker-all-2's, quitting the
+same way.
+
+- Each new phase reached hello once per launch, with valid payloads:
+  - WIN_MAIN on the main thread, about 20 ms after PRE_MAIN returned and
+    the DLSS mod's `winmm.dll` loaded. `instance` is the game exe, the
+    command line is empty, show command 10.
+  - DEVICE_CREATED on the game's render thread, with the device, the
+    adapter the game passed, minimum feature level 12_0 and riid
+    `ID3D12Device1`. CMFM armed its return observer three times (two
+    calls without a device, then the real one) and delivered once.
+  - SHUTDOWN on the main thread with WinMain's return value 0.
+- Both temporary hooks logged their removal with the game's code
+  unchanged. Dispatch took 22-41 µs per phase.
+- The DLSS mod saw the same device pointer, called from game code, and its
+  own check reported the game's call with arguments and result unchanged.
+  Streamline, DLSS and DLSS-G loaded.
+- All 19 Stracker plugins loaded in every launch; every exit code was 0.
+- `more_auto_shoutouts.dll` (MoreAutoShoutout_v) crashes on its own thread
+  the moment WinMain returns: an access violation at the same code offset
+  and address in all three launches, with or without the phase hooks.
+  `auto_food_skill.dll` did once. The plugins keep reading game memory
+  while the game tears down; the game still exits with code 0. The DLSS
+  mod's crash log records it. Earlier runs were probably quit another way.
+- Cost: the phase hooks delay the game's first `D3D12CreateDevice` call by
+  about 0.7-0.8 s. From `dxgi.dll` to `D3D12Core.dll` (loaded inside that
+  first call) took 1060 and 1202 ms, against 262-398 ms in the three runs
+  without them. From `winmm.dll` (about WinMain) to `XINPUT9_1_0`: 4301 ms
+  warm, against 3535-3763 ms. The first launch was a cold start after a
+  reboot and slower overall. CMFM logs the first return-observer arm 4 ms
+  before `D3D12Core.dll` loads, so the time ends where the call is
+  forwarded. Whether it goes into arming on the first call is not yet
+  measured.
+
+Run folders: `local/runs/phases-mo2-1` (launches 1 and 2),
+`local/runs/exit-ab-1`.
