@@ -50,6 +50,19 @@ settles the open questions below first.
   from the exit site about 150 ms later.
 - F10 never toggled: it is a system key (`WM_SYSKEYDOWN`). A probe bug.
 
+## Found in input-probe-3 (input_probe 0.2.1)
+
+- The game reads two DirectInput devices, "Keyboard" (`GetDeviceState`,
+  256 bytes) and "Mouse" (`GetDeviceState`, 20 bytes: `DIMOUSESTATE2`),
+  once per frame each, and never the buffered `GetDeviceData`.
+- It calls `XInputGetState` for all four pad slots every frame.
+- All of it on the game's frame thread (the al.frame game thread).
+- **Blocking there works:** zeroing the keyboard's and the mouse's
+  `GetDeviceState` data froze the hunter and the camera, and a neutral
+  `XInputGetState` froze the pad; all recovered when unblocked.
+- The keyboard's and the mouse's device classes have separate method
+  implementations, so each needs its own hook.
+
 ## Open questions (one probe run)
 
 Questions 1 and 3 are answered above (DirectInput; raw input through
@@ -115,8 +128,10 @@ typedef struct al_input_t {
 } al_input_t;
 ```
 
-Pad hotkeys and a pad state query come in a later minor version, once
-question 4 is answered.
+input-probe-3 showed pads reach the game through `XInputGetState` (with a
+controller connected and Steam running), so a pad state query and pad
+button hotkeys can be part of 1.0; the API above gets them before it is
+built. Steam Input on/off is still to be checked.
 
 ## How it works (core side)
 
@@ -127,23 +142,30 @@ question 4 is answered.
   order; a callback that returns non-zero keeps the message from the game.
   If another module subclasses the window later, AL stays in the chain
   behind it; AL never restores the old procedure while plugins are loaded.
-- **Hotkeys** are checked on the game thread at al.frame's BEGIN: Win32 key
-  state for the keys some hotkey uses (a handful of calls per frame, none
-  when there are no hotkeys), edge-detected per frame, only while the game
-  window is in front.
-- **Capture** blocks at the source the probe identifies:
-  - window messages: keyboard, mouse and raw-input messages kept from the
-    game while captured;
-  - DirectInput: the game's keyboard and mouse devices report no keys and
-    no motion while captured (one hook per method, as al.d3d12 does for
-    DXGI);
-  - pads: XInput reports a neutral pad while captured; Steam Input per the
-    probe.
-  AL's own reads mark themselves internal, so they still see the real
-  state.
-- **Cost:** with no hotkeys, no message callbacks and no capture, the
-  window procedure adds one call and a branch per message, and frames add
-  nothing.
+- **The input layer** (settled by input-probe-3): AL hooks the methods the
+  game reads its input through, once DINPUT8 and XInput are loaded:
+  DirectInput's `GetDeviceState` for the keyboard's and the mouse's device
+  classes (each has its own implementation; `GetDeviceData` too, though
+  the game does not use it), and `XInputGetState`. The method addresses
+  come from throwaway devices of AL's own, as al.d3d12 does for DXGI.
+- **Snapshots, not polling:** each time the game reads a device, the layer
+  keeps a copy of the real data (keyboard 256 bytes, mouse
+  `DIMOUSESTATE2`, four pads) before capture changes it. The game reads
+  everything once per frame on its frame thread, inside Main:Update, so
+  the snapshots are fresh at al.frame's END. Hotkeys, `key_down` and pad
+  queries use them: no extra system calls, the same data the game sees,
+  and DirectInput's own focus rules (no data while the game is in the
+  background).
+- **Hotkeys** are edge-detected per frame from the snapshots and called at
+  al.frame END, on the game thread.
+- **Capture** changes what the game receives: zeroed keyboard and mouse
+  state from `GetDeviceState`, no events from `GetDeviceData`, and a
+  neutral pad from `XInputGetState`. Window messages are not involved: the
+  game does not read input from them (frame-input-1). Plugins still see
+  the real state through the snapshots and their message callbacks.
+- **Cost:** a flag check and one copy (256, 20 or 16 bytes) per game read,
+  six reads per frame; with no message callbacks the window procedure
+  adds one call and a branch per message.
 
 ## Tests
 
