@@ -97,6 +97,12 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
 
 ## 3. Graphics coordination (most important)
 
+> Note (CMFM, 2026-10-09): the mod's shipped code (0.13.11) does not
+> substitute objects. The game keeps DXGI's own swap chain and queue, and
+> the mod redirects their methods to Streamline's proxies. CMFM's answer
+> is "cmfm.d3d12": one hook per method with the mod's detours chained in it,
+> plus a shared internal-call region. See `design-d3d12-1.3.md`.
+
 The mod owns presentation when frame generation is on. Streamline replaces
 the game's swap chain with its proxy, paces Present, and needs tagged inputs
 every frame.

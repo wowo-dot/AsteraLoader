@@ -80,6 +80,9 @@ In this order; the first four are small.
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,
     device, queue and swap-chain access.
+    Status 2026-10-09: API 1.3 "cmfm.d3d12" designed and implemented on
+    the core side, tested outside the game (design-d3d12-1.3.md). The hook
+    layer (user) is next; nothing is hooked in the game yet.
 12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.

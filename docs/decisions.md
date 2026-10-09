@@ -74,3 +74,15 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
    - SPL force-loaded (spl-mo2-1);
    - all of the user's Stracker plugins, compared with Stracker's Loader
      (stracker-all-1 and -2, stracker-baseline-1 and -2).
+10. **Graphics coordination is shared detour chains, not object
+    substitution** (Claude's design after reading the DLSS mod's shipped
+    code; the user asked for graphics coordination).
+    - The mod keeps the game on DXGI's own objects and redirects their
+      methods to Streamline. A CMFM hook placed beside its own would turn
+      it off.
+    - So CMFM owns one hook per method, and plugins register detours with a
+      `next` pointer, in a declared order.
+    - CMFM's own event layer runs first; a single presentation role guards
+      factory and swap-chain methods; a shared internal-call region replaces
+      the mod's bypass counter.
+    - Details: `design-d3d12-1.3.md`.
