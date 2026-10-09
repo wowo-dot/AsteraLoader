@@ -1,23 +1,23 @@
-"""CMFM development helper: build, test, stage, install into MO2, collect runs.
+"""Astera Loader development helper: build, test, stage, install into MO2, collect runs.
 
 Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
 
   build                     configure (records the git commit) and build Release
   test                      run CTest
   check                     build, then test
-  stage                     build, then install the CMFM package and the examples into
+  stage                     build, then install the loader package and the examples into
                             local/stage/<version>-<commit>[-dirty] and
                             local/stage/examples-<commit>[-dirty]; print hashes and
                             check that the DLLs import only KERNEL32
   install-mo2 RUN [--stage COMMIT]
-                            back up the installed CMFM and example mods into
+                            back up the installed loader and example mods into
                             local/runs/RUN/installed-backup, install the staged
                             build (HEAD's, or an earlier COMMIT's), write
                             RUN/manifest.json and RUN/logs-before.txt
-  baseline RUN              write RUN/manifest.json for a run without CMFM, started
+  baseline RUN              write RUN/manifest.json for a run without the loader, started
                             from MO2's plain game entry; installs nothing
   watch RUN [--launch N]    run tools/modwatch.py (read-only) into RUN or RUN/launch-N
-  collect RUN [--launch N]  copy the new CMFM logs and the scan cache into RUN or
+  collect RUN [--launch N]  copy the new loader logs and the scan cache into RUN or
                             RUN/launch-N and print the lines that matter
 
 Machine-local paths (MO2, the game) live in local/dev.json, which is not
@@ -47,9 +47,9 @@ TEMPLATE = {
     "mo2_ini": "<MO2 folder>/ModOrganizer.ini",
     "mo2_mods": "<MO2 data folder>/mods",
     "mo2_profiles": "<MO2 data folder>/profiles",
-    "cmfm_mod": "CMFM (dev)",
-    "examples_mod": "CMFM hello plugin (test)",
-    "launcher_title": "CMFM Launcher",
+    "loader_mod": "Astera Loader (dev)",
+    "examples_mod": "Astera Loader examples (test)",
+    "launcher_title": "Astera Loader",
     "game_title": "Monster Hunter: World",
 }
 
@@ -87,7 +87,7 @@ def commit_label() -> str:
 
 
 def project_version() -> str:
-    found = re.search(r"project\(cmfm VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"))
+    found = re.search(r"project\(astera_loader VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"))
     return (found.group(1) if found else "0.0.0") + "-dev"
 
 
@@ -228,9 +228,9 @@ def install_mo2(args: argparse.Namespace) -> None:
     if (run_folder / "installed-backup").exists():
         fail(f"{run_folder} already has an installed-backup; pick a new run name")
     mods = Path(config["mo2_mods"])
-    targets = {mods / config["cmfm_mod"]: package, mods / config["examples_mod"]: examples}
+    targets = {mods / config["loader_mod"]: package, mods / config["examples_mod"]: examples}
 
-    # Back up what is installed now, except CMFM's own logs, cache and data.
+    # Back up what is installed now, except the loader's own logs, cache and data.
     for mod in targets:
         for path in files_under(mod, skip=("logs", "cache", "data")):
             backup = run_folder / "installed-backup" / mod.name / path.relative_to(mod)
@@ -246,7 +246,7 @@ def install_mo2(args: argparse.Namespace) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
             installed[f"{mod.name}/{path.relative_to(source).as_posix()}"] = sha256(target)
-        (mod / "meta.ini").write_text(f"[General]\r\nversion={project_version()}\r\ncomments=CMFM local dev build "
+        (mod / "meta.ini").write_text(f"[General]\r\nversion={project_version()}\r\ncomments=Astera Loader local dev build "
                                       f"{label}, installed by tools/dev.py for run {args.run}\r\n",
                                       encoding="utf-8", newline="")
         for extra in sorted(extras):
@@ -255,7 +255,7 @@ def install_mo2(args: argparse.Namespace) -> None:
     profile = selected_profile(Path(config["mo2_ini"]))
     profile_folder = Path(config["mo2_profiles"]) / profile
     forced = forced_libraries(profile_folder, config["launcher_title"])
-    logs = mods / config["cmfm_mod"] / "cmfm" / "logs"
+    logs = mods / config["loader_mod"] / "astera" / "logs"
     run_folder.mkdir(parents=True, exist_ok=True)
     (run_folder / "logs-before.txt").write_text(
         "\n".join(sorted(p.relative_to(logs).as_posix() for p in logs.rglob("*") if p.is_file())) + "\n"
@@ -264,7 +264,7 @@ def install_mo2(args: argparse.Namespace) -> None:
         "run": args.run,
         "date": datetime.date.today().isoformat(),
         "source_commit": label,
-        "cmfm_version": project_version(),
+        "loader_version": project_version(),
         "exe_sha256": sha256(Path(config["game_exe"])),
         "installed": installed,
         "mo2_profile": profile,
@@ -293,15 +293,15 @@ def baseline(args: argparse.Namespace) -> None:
     profile = selected_profile(Path(config["mo2_ini"]))
     profile_folder = Path(config["mo2_profiles"]) / profile
     mods = enabled_mods(profile_folder)
-    cmfm_mods = [mod for mod in (config["cmfm_mod"], config["examples_mod"]) if mod in mods]
-    if cmfm_mods:
-        print(f"note: CMFM mods enabled in {profile}: {', '.join(cmfm_mods)}; the plain entry does not load "
+    loader_mods = [mod for mod in (config["loader_mod"], config["examples_mod"]) if mod in mods]
+    if loader_mods:
+        print(f"note: loader mods enabled in {profile}: {', '.join(loader_mods)}; the plain entry does not load "
               "them, but their files are in the virtual folder")
     forced = forced_libraries(profile_folder, title)
     run_folder.mkdir(parents=True, exist_ok=True)
     manifest = {
         "run": args.run,
-        "kind": "baseline (no CMFM)",
+        "kind": "baseline (no Astera Loader)",
         "date": datetime.date.today().isoformat(),
         "source_commit": commit_label(),
         "exe_sha256": sha256(Path(config["game_exe"])),
@@ -339,7 +339,7 @@ def collect(args: argparse.Namespace) -> None:
     config = settings()
     if game_running():
         fail("the game is still running; its logs are not finished. Collect after it closes")
-    cmfm = Path(config["mo2_mods"]) / config["cmfm_mod"] / "cmfm"
+    loader = Path(config["mo2_mods"]) / config["loader_mod"] / "astera"
     folder = launch_folder(args)
     run_folder = LOCAL / "runs" / args.run
     # Logs are named by process id, and ids get reused, so a name seen before
@@ -360,11 +360,11 @@ def collect(args: argparse.Namespace) -> None:
         stamp = path.stat().st_mtime_ns
         return stamp > cutoff and (path.name, stamp) not in collected and path.name not in collected_names
 
-    target = folder / "cmfm-logs"
+    target = folder / "loader-logs"
     target.mkdir(exist_ok=True)
 
     # Every launch since install-mo2 or the last collect, oldest first.
-    new = {kind: sorted((p for p in (cmfm / "logs").glob(f"{kind}.*.log") if is_new(p)),
+    new = {kind: sorted((p for p in (loader / "logs").glob(f"{kind}.*.log") if is_new(p)),
                         key=lambda p: p.stat().st_mtime)
            for kind in ("core", "launcher")}
     for log in new["core"] + new["launcher"]:
@@ -373,13 +373,13 @@ def collect(args: argparse.Namespace) -> None:
     with open(collected_file, "a", encoding="utf-8") as record:
         record.writelines(f"{log.name} {log.stat().st_mtime_ns}\n" for log in new["core"] + new["launcher"])
     # Plugin logs keep one previous launch; copy it too when there were two.
-    for log in (cmfm / "logs" / "plugins").glob("*.log"):
+    for log in (loader / "logs" / "plugins").glob("*.log"):
         if not log.name.endswith(".previous.log") or len(new["core"]) > 1:
             shutil.copy2(log, target / log.name)
-    for cache in (cmfm / "cache").glob("scan.*.txt"):
+    for cache in (loader / "cache").glob("scan.*.txt"):
         shutil.copy2(cache, folder / "scan-cache.txt")
     # Crash reports, dumps and notices written since the install.
-    crashes = [p for p in (cmfm / "logs" / "crashes").glob("*") if p.is_file() and p.stat().st_mtime_ns > cutoff]
+    crashes = [p for p in (loader / "logs" / "crashes").glob("*") if p.is_file() and p.stat().st_mtime_ns > cutoff]
     for crash in crashes:
         (folder / "crashes").mkdir(exist_ok=True)
         shutil.copy2(crash, folder / "crashes" / crash.name)

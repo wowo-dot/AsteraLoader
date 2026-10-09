@@ -74,7 +74,7 @@ LOAD_REASONS = {
 # user-mode DLL loads inside D3D12CreateDevice, so its load time marks device
 # creation.
 REPORT_MODULES = [
-    "cmfm.dll",
+    "astera.dll",
     "usvfs_x64.dll",
     "steamclient64.dll",
     "gameoverlayrenderer64.dll",
