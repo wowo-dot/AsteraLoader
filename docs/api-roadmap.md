@@ -4,15 +4,49 @@ What the plugin API should offer beyond 1.0, in order. Agreed with the user on
 2026-10-09. Each step names who builds it: "Claude" for work that needs no
 game or system hooks, "user" for hooks and the launcher's injection code.
 
-## Where we are (API 1.0)
+## Where we are (2026-10-09)
 
-- `al_plugin_info` / `al_plugin_init`; the API table has `log` and
-  `set_status`; init gives the plugin folder as the game sees it and as
-  resolved through a file handle.
-- One phase, PRE_MAIN, confirmed in the game (pre-main-3, plugin-mo2-1).
-- Load order, refusals with reasons, per-plugin logs, fault containment.
-- Stracker's Loader compatibility as an AL plugin (stracker-mo2-1 to -3).
-- `examples/hello`, the smallest plugin, in C.
+The loader was called CMFM until 2026-10-09; CMFM is now its menu plugin
+(decisions.md item 11). Finishing AL v1 therefore does not include the
+menu: CMFM is a separate track, the first large plugin built on AL.
+
+| API | What | Confirmed in the game |
+| --- | --- | --- |
+| 1.0 | launcher, plugin loading, load order, refusals, per-plugin logs, fault containment, Stracker compatibility | pre-main-3, plugin-mo2-1, stracker-mo2-1 to -3 |
+| 1.1 | interfaces by name, game identity, timing, dependencies, data folders, plugin interfaces, cached scanner | api11-mo2-2 (v0.1.0-dev.7) |
+| 1.2 | phases WIN_MAIN, DEVICE_CREATED, SHUTDOWN | phases-mo2-1 (dev.9) |
+| 1.3 | "al.d3d12" shared graphics hooks; SWAPCHAIN_CREATED, FIRST_PRESENT | graphics-mo2-1 (dev.10), graphics-dlss-1 |
+| 1.4 | "al.hooks" shared game-function hooks | hooks-mo2-1 (dev.12), dlss-astera-1 (dev.14) |
+| — | crash handler | crash-mo2-1/2 (dev.11) |
+| — | rename to Astera Loader | astera-mo2-1 (dev.13), asteraloader-mo2-1 |
+| 1.5 | "al.frame" and AL_PHASE_EXITING | core side unit-tested; the frame layer and exit site come next (handoff-frame-layer-20261009.md) |
+
+The DLSS mod 0.15.0 runs on 1.3 and 1.4 with frame generation on.
+
+## The path to AL v1
+
+In order. From 1.5's frame layer on, Claude builds these end to end,
+hooks included (the user's call, 2026-10-09); the user runs the game.
+
+1. **1.5 in the game:** the frame layer and exit site, one run, then retire
+   `probes/site_probe`.
+2. **Input** (item 12 below): hotkeys and input capture. CMFM needs it to
+   open and to take the mouse and keyboard; the window procedure it hooks
+   also sees a window close (Alt+F4) before the game ends itself.
+3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
+   found by reversing.
+4. **Release:** freeze ABI 1.x, a plugin author guide, one archive, a
+   clean-machine install test.
+5. **The deferred test matrix** (decisions.md item 9): SPL force-loaded, Steam
+   launch options, a manual install outside MO2, overlay off, and a stability
+   pass (loading screens, cutscenes, alt-tab, resize, full screen) with frame
+   generation on. These are the user's runs.
+
+After v1, unless a plugin needs it sooner: **per-save plugin data** (item 9;
+no client yet). Separate tracks: **CMFM** (settings, status pages, popups,
+drawn through al.d3d12; publishes its own interface, so the core API does
+not grow for it) and **the MHW SDK** (names, structures and gameplay events
+on top of al.hooks).
 
 ## Principles
 
