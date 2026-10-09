@@ -124,6 +124,8 @@ target_link_libraries(al_minhook PRIVATE al_thread_snapshot)
 set(AL_STARTUP_SOURCES
     src/core/input/native.cpp
     src/core/input/native.hpp
+    src/core/input/sites.cpp
+    src/core/input/sites.hpp
     src/core/frame/layer.cpp
     src/core/frame/layer.hpp
     src/core/frame/sites.cpp
@@ -333,7 +335,9 @@ target_link_libraries(al_input_native_tests PRIVATE al_startup user32)
 al_project_target(al_input_native_tests)
 add_test(NAME input_native COMMAND al_input_native_tests)
 add_test(NAME input_native_refusal COMMAND al_input_native_tests refusal)
-set_tests_properties(input_service input_native input_native_refusal PROPERTIES TIMEOUT 30)
+add_test(NAME input_native_unavailable COMMAND al_input_native_tests unavailable)
+add_test(NAME input_native_late COMMAND al_input_native_tests late)
+set_tests_properties(input_service input_native input_native_refusal input_native_unavailable input_native_late PROPERTIES TIMEOUT 30)
 add_library(al_input_fixture SHARED tests/input_plugin.cpp)
 target_link_libraries(al_input_fixture PRIVATE al_api)
 al_project_target(al_input_fixture)

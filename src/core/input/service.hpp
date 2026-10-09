@@ -28,17 +28,22 @@ public:
     void* window() const noexcept { return window_.load(); }
     void focus(bool focused) noexcept;
     bool focused() const noexcept { return focused_.load(); }
+    bool running() const noexcept { return state_.load() == AL_INPUT_RUNNING; }
     void ready(std::uint32_t devices) noexcept;
+    // Running without some device: why, for status and the log.
+    void missing(std::string reason);
     void unavailable(std::string reason);
     void stop() noexcept;
     void status(al_input_status_t&) const;
     std::vector<std::string> summary() const;
-    // Called only for device reads by the frame thread, before neutralizing.
-    void keyboard(const std::uint8_t*, const std::array<std::uint8_t, 256>& map) noexcept;
-    void mouse(const std::uint8_t* buttons, unsigned count) noexcept;
+    // Called only on the frame thread with what the game read, before capture
+    // changes it: 256 virtual-key bits in 8 dwords; mouse buttons as bits 0..4.
+    void keyboard(const std::uint32_t* held) noexcept;
+    void mouse(std::uint32_t buttons) noexcept;
     void pad(std::uint32_t slot, const al_pad_state_t&) noexcept;
     void end_frame() noexcept;
-    void set_native(std::function<void(void*)> window, std::function<void(std::uint32_t)> begin);
+    void set_native(std::function<void(void*)> window, std::function<void(std::uint32_t)> begin,
+                    std::function<void()> end = {});
     void attach_window(void* hwnd);
     void begin_frame(std::uint32_t thread) noexcept;
     bool message(void* hwnd, std::uint32_t, std::uintptr_t, std::intptr_t) noexcept;
@@ -75,5 +80,6 @@ private:
     std::atomic<std::uint64_t> fired_{0}, consumed_{0};
     std::function<void(void*)> attach_;
     std::function<void(std::uint32_t)> begin_;
+    std::function<void()> end_;
 };
 } // namespace al::input

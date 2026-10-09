@@ -591,12 +591,13 @@ typedef struct al_frame_t {
 /* "al.input" 1.0 (API 1.6): hotkeys, key and pad state, the game window's
  * messages, and input capture for menus.
  *
- * MHW reads the keyboard and mouse through DirectInput and pads through
- * XInput, once per frame on its frame thread. AL keeps a copy of what each
- * of those reads returned, before capture changes it; hotkeys, key_down and
- * pad_state use those copies. AL never polls input itself, and writes no
- * input values or typed text to its logs. While the game window is not in
- * the foreground, queries return nothing held and hotkeys do not fire.
+ * MHW updates its keyboard, mouse and pad state once per frame on its frame
+ * thread (from DirectInput and XInput). AL hooks those game functions and
+ * keeps a copy of what each produced, before capture changes it; hotkeys,
+ * key_down and pad_state use those copies. AL never polls input itself,
+ * and writes no input values or typed text to its logs. While the game
+ * window is not in the foreground, queries return nothing held and hotkeys
+ * do not fire.
  *
  * Request the interface from al_plugin_init or PRE_MAIN, so AL watches for
  * the game window and installs its input layer.
@@ -609,10 +610,13 @@ typedef struct al_frame_t {
  *
  * Capture: while any plugin holds capture of a device, the game receives
  * that device as idle (nothing held, mouse still, pad neutral); plugins
- * still see the real state. Capture is counted per plugin: each capture call
- * is undone by one release, the latest first. Another plugin's capture
- * suppresses this plugin's hotkeys; its own do not. A disabled plugin, focus
- * loss and EXITING never leave the game captured. */
+ * still see the real state. Mouse capture includes the mouse buttons the
+ * game also keeps among its keys. Input still held when capture ends stays
+ * hidden from the game until released, so it never arrives as a new press.
+ * AL_INPUT_PAD covers XInput pads. Capture is counted per plugin: each
+ * capture call is undone by one release, the latest first. Another
+ * plugin's capture suppresses this plugin's hotkeys; its own do not. A
+ * disabled plugin, focus loss and EXITING never leave the game captured. */
 #define AL_INPUT_INTERFACE "al.input"
 #define AL_INPUT_VERSION AL_MAKE_VERSION(1, 0)
 #define AL_MOD_CTRL 1u

@@ -43,7 +43,7 @@ Service::~Service() = default;
 void Service::focus(bool focused) noexcept {
     if(focused_.exchange(focused) != focused) focus_epoch_.fetch_add(1);
 }
-void Service::set_native(std::function<void(void*)> window, std::function<void(std::uint32_t)> begin) { attach_=std::move(window); begin_=std::move(begin); }
+void Service::set_native(std::function<void(void*)> window, std::function<void(std::uint32_t)> begin, std::function<void()> end) { attach_=std::move(window); begin_=std::move(begin); end_=std::move(end); }
 void Service::attach_window(void* hwnd) { if(wanted() && attach_) attach_(hwnd); }
 void Service::begin_frame(std::uint32_t thread) noexcept { try { if(wanted() && state_!=AL_INPUT_STOPPED && begin_) begin_(thread); } catch (...) {} }
 void Service::publish() {
@@ -142,10 +142,10 @@ bool Service::key_down(std::uint32_t key) const noexcept {
     if(keyboard_epoch_.load()!=epoch) return false;
     return (keyboard_[key / 64].load(std::memory_order_relaxed) & (1ull << (key % 64))) != 0;
 }
-void Service::keyboard(const std::uint8_t* raw, const std::array<std::uint8_t, 256>& map) noexcept {
+void Service::keyboard(const std::uint32_t* held) noexcept {
     const auto epoch=focus_epoch_.load();
     std::array<std::uint64_t, 4> bits{};
-    for (unsigned scan = 0; scan < 256; ++scan) if ((raw[scan] & 0x80) && map[scan]) bits[map[scan] / 64] |= 1ull << (map[scan] % 64);
+    for (unsigned i = 0; i < 8; ++i) bits[i / 2] |= static_cast<std::uint64_t>(held[i]) << (32 * (i % 2));
     for (const auto pair : {std::array<unsigned,3>{VK_CONTROL,VK_LCONTROL,VK_RCONTROL},
                             std::array<unsigned,3>{VK_SHIFT,VK_LSHIFT,VK_RSHIFT}, std::array<unsigned,3>{VK_MENU,VK_LMENU,VK_RMENU}}) {
         if ((bits[pair[1]/64] & (1ull << (pair[1]%64))) || (bits[pair[2]/64] & (1ull << (pair[2]%64)))) bits[pair[0]/64] |= 1ull << (pair[0]%64);
@@ -153,10 +153,9 @@ void Service::keyboard(const std::uint8_t* raw, const std::array<std::uint8_t, 2
     for (unsigned i = 0; i < 4; ++i) keyboard_[i].store(bits[i], std::memory_order_relaxed);
     keyboard_epoch_.store(epoch);
 }
-void Service::mouse(const std::uint8_t* buttons, unsigned count) noexcept {
+void Service::mouse(std::uint32_t buttons) noexcept {
     const auto epoch=focus_epoch_.load();
-    std::uint32_t bits = 0; for (unsigned i = 0; i < (std::min)(count, 5u); ++i) if (buttons[i] & 0x80) bits |= 1u << i;
-    mouse_.store(bits, std::memory_order_relaxed);
+    mouse_.store(buttons & 0x1f, std::memory_order_relaxed);
     mouse_epoch_.store(epoch);
 }
 void Service::pad(std::uint32_t slot, const al_pad_state_t& data) noexcept {
@@ -191,6 +190,7 @@ bool Service::pad_state(std::uint32_t slot, al_pad_state_t& out) const noexcept 
     return true;
 }
 void Service::end_frame() noexcept {
+    try { if(wanted() && state_!=AL_INPUT_STOPPED && end_) end_(); } catch (...) {}
     const auto* list = list_.load(std::memory_order_acquire); if (!list) return;
     const auto epoch=focus_epoch_.load(); const auto new_focus=edge_epoch_!=epoch; edge_epoch_=epoch;
     const auto modifiers = (key_down(VK_CONTROL) ? AL_MOD_CTRL : 0) | (key_down(VK_SHIFT) ? AL_MOD_SHIFT : 0) | (key_down(VK_MENU) ? AL_MOD_ALT : 0);
@@ -218,6 +218,7 @@ bool Service::message(void* hwnd, std::uint32_t id, std::uintptr_t wp, std::intp
     return false;
 }
 void Service::ready(std::uint32_t devices) noexcept { devices_.fetch_or(devices); auto expected = AL_INPUT_WAITING; state_.compare_exchange_strong(expected, AL_INPUT_RUNNING); }
+void Service::missing(std::string reason) { std::lock_guard lock(mutex_); if (state_ == AL_INPUT_UNAVAILABLE || state_ == AL_INPUT_STOPPED) return; reason_ = std::move(reason); }
 void Service::unavailable(std::string reason) { std::lock_guard lock(mutex_); if (state_ == AL_INPUT_UNAVAILABLE || state_ == AL_INPUT_STOPPED) return; reason_ = std::move(reason); state_.store(AL_INPUT_UNAVAILABLE); }
 void Service::stop() noexcept { state_ = AL_INPUT_STOPPED; focused_ = false; }
 void Service::status(al_input_status_t& out) const {
@@ -228,6 +229,7 @@ std::vector<std::string> Service::summary() const {
     std::lock_guard lock(mutex_);
     std::vector<std::string> lines{"input_state=" + std::to_string(state_.load()) + " devices=" + std::to_string(devices_.load()) +
         " captured=" + std::to_string(capture_mask()) + " hotkeys_fired=" + std::to_string(fired_.load()) + " messages_consumed=" + std::to_string(consumed_.load())};
-    if (!reason_.empty()) lines.push_back("input_unavailable reason=" + reason_); return lines;
+    if (!reason_.empty()) lines.push_back((state_.load() == AL_INPUT_UNAVAILABLE ? "input_unavailable reason=" : "input_missing reason=") + reason_);
+    return lines;
 }
 } // namespace al::input

@@ -21,8 +21,7 @@ int wmain(int argc,wchar_t** argv) {
         al_d3d12_swapchain_t chain{};chain.size=sizeof(chain);chain.window=reinterpret_cast<void*>(1);host.dispatch(AL_PHASE_SWAPCHAIN_CREATED,&chain);
         check(attached && input.window()==chain.window,"window reaches input before plugin phase");
         input.ready(AL_INPUT_ALL);input.focus(true);input.end_frame();
-        std::array<std::uint8_t,256> map{},raw{};for(unsigned i=0;i<256;++i) map[i]=static_cast<std::uint8_t>(i);
-        raw[VK_F7]=raw[VK_LCONTROL]=0x80;input.keyboard(raw.data(),map);
+        std::array<std::uint32_t,8> held{};held[VK_F7/32]|=1u<<(VK_F7%32);held[VK_LCONTROL/32]|=1u<<(VK_LCONTROL%32);input.keyboard(held.data());
         al_pad_state_t pad{};pad.size=sizeof(pad);pad.connected=1;pad.buttons=AL_PAD_A;input.pad(0,pad);input.end_frame();
         const auto dll=GetModuleHandleW(L"input_fixture.dll");
         const auto validate=std::bit_cast<BOOL(*)(unsigned,unsigned,unsigned)>(GetProcAddress(dll,"al_test_input_validate"));

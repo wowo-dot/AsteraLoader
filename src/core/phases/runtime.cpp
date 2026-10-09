@@ -454,15 +454,18 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
         g=new State; g->host=&host; g->log=logger; g->warning=warning;
         g->input=new input::Native(host.input_service(),[](std::string_view text){log(widen(text));},
             [](std::string_view text){if(g->warning) g->warning(L"Astera Loader input is unavailable: "+widen(text));});
-        host.input_service().set_native([](void* window){g->input->attach_window(window);},[](std::uint32_t thread){g->input->begin_frame(thread);});
+        host.input_service().set_native([](void* window){g->input->attach_window(window);},[](std::uint32_t thread){g->input->begin_frame(thread);},
+            []{g->input->end_frame();});
         g->frame = new frame::Layer(host, [](std::string_view text) { log(widen(text)); },
             [](std::string_view text) { if (g->warning) g->warning(L"Astera Loader frames are unavailable: " + widen(text)); });
         const auto identity = host.game_identity();
         g->frame->prepare(frame::game_sites(identity, GetModuleHandleW(nullptr)),
             host.frame_requested() || (identity && identity->game_version));
+        g->input->prepare(host.game_hooks(), input::game_sites(identity, GetModuleHandleW(nullptr)));
         g->game_hooks = new game_hooks::NativeInstaller([](std::string_view text) { log(widen(text)); });
         host.game_hooks().set_installer(g->game_hooks);
         g->frame->installed();
+        g->input->installed();
         report_game_hooks();
         if (!host.graphics().chains().empty()) {
             g->graphics = new graphics::NativeInstaller(

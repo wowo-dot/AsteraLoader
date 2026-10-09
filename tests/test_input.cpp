@@ -26,6 +26,10 @@ struct Message { std::vector<unsigned>* order; unsigned index; bool consume; };
 std::uint32_t AL_CALL message(al_plugin_t*,void*,std::uint32_t,std::uintptr_t,std::intptr_t,void* p) {
     auto& item=*static_cast<Message*>(p); item.order->push_back(item.index); return item.consume;
 }
+// The game's key maps: 256 virtual-key bits in eight dwords.
+void keys(al::input::Service& s,const std::array<std::uint8_t,256>& raw) {
+    std::array<std::uint32_t,8> held{};for(unsigned k=0;k<256;++k) if(raw[k]&0x80) held[k/32]|=1u<<(k%32);s.keyboard(held.data());
+}
 std::uint32_t AL_CALL message_fault(al_plugin_t*,void*,std::uint32_t,std::uintptr_t,std::intptr_t,void*) { throw 1; }
 }
 int main() {
@@ -37,24 +41,24 @@ int main() {
         a.log=[&](auto level,auto){if(level=="WARN") ++conflicts;}; b.log=a.log;
         a.disable=[&](auto){a_stopped=true;++disabled;}; b.disable=[&](auto){b_stopped=true;++disabled;};
         s.ready(AL_INPUT_ALL); s.focus(true);
-        std::array<std::uint8_t,256> map{},raw{}; for(unsigned i=0;i<256;++i) map[i]=static_cast<std::uint8_t>(i);
+        std::array<std::uint8_t,256> raw{};
         std::string why; unsigned a_calls=0,b_calls=0,pad_calls=0;
         const auto ka=s.add(a,'M',AL_MOD_CTRL,"menu",key,&a_calls,why);
         const auto kb=s.add(b,'M',AL_MOD_CTRL,"other",key,&b_calls,why);
         check(ka && kb && conflicts==2,"duplicate combinations reported to both plugins");
         check(!s.add(a,256,0,"",key,nullptr,why) && !why.empty(),"invalid key refused");
         check(!s.remove(b,ka).empty(),"foreign hotkey handle refused");
-        raw['M']=0x80; s.keyboard(raw.data(),map); s.end_frame(); check(!a_calls,"required modifier");
-        raw[VK_LCONTROL]=0x80; s.keyboard(raw.data(),map); s.end_frame(); s.end_frame();
+        raw['M']=0x80; keys(s,raw); s.end_frame(); check(!a_calls,"required modifier");
+        raw[VK_LCONTROL]=0x80; keys(s,raw); s.end_frame(); s.end_frame();
         check(a_calls==1 && b_calls==1 && s.key_down(VK_CONTROL),"combination edge and generic modifiers");
         check(s.capture(a,AL_INPUT_KEYBOARD).empty() && s.capture(a,AL_INPUT_MOUSE).empty(),"nested capture");
         check(s.capture_mask()==3 && s.release(a).empty() && s.capture_mask()==1,"LIFO release keeps keyboard capture");
-        raw['M']=0; s.keyboard(raw.data(),map); s.end_frame(); raw['M']=0x80; s.keyboard(raw.data(),map); s.end_frame();
+        raw['M']=0; keys(s,raw); s.end_frame(); raw['M']=0x80; keys(s,raw); s.end_frame();
         check(a_calls==2 && b_calls==1,"own capture permits hotkey, another owner's suppresses it");
         check(s.release(a).empty() && !s.release(a).empty(),"balanced capture refuses over-release");
         s.focus(false); check(!s.key_down('M') && !s.capture_mask(),"background neutral");
         s.end_frame(); s.focus(true); check(!s.key_down('M'),"stale snapshot not reused on focus gain");
-        raw.fill(0); s.keyboard(raw.data(),map); s.end_frame(); raw['M']=raw[VK_LCONTROL]=0x80; s.keyboard(raw.data(),map); s.end_frame();
+        raw.fill(0); keys(s,raw); s.end_frame(); raw['M']=raw[VK_LCONTROL]=0x80; keys(s,raw); s.end_frame();
         check(a_calls==3 && b_calls==2,"fresh read restores hotkeys");
         const auto pk=s.add(a,AL_PAD_A|AL_PAD_B,0,"pad",key,&pad_calls,why,2); check(pk!=0,"pad hotkey registration");
         al_pad_state_t pad{}; pad.size=sizeof(pad); pad.connected=1; pad.packet=17; pad.buttons=AL_PAD_A;
@@ -72,9 +76,9 @@ int main() {
         s.messages(b,0,nullptr,nullptr); order.clear(); check(!s.message(nullptr,WM_CHAR,1,2) && order.size()==1,"unsubscribe");
         s.capture(b,AL_INPUT_ALL); s.messages(b,-1,message_fault,nullptr); order.clear();
         check(!s.message(nullptr,WM_CHAR,1,2) && disabled==1 && s.capture_mask()==0 && order.size()==1,"message fault disables and releases capture, forwards");
-        s.add(a,'Q',0,"bad",bad,nullptr,why); s.capture(a,AL_INPUT_ALL); raw['Q']=0x80; s.keyboard(raw.data(),map); s.end_frame();
+        s.add(a,'Q',0,"bad",bad,nullptr,why); s.capture(a,AL_INPUT_ALL); raw['Q']=0x80; keys(s,raw); s.end_frame();
         check(disabled==2 && s.capture_mask()==0,"C++ hotkey fault releases capture");
-        a_stopped=false; s.add(a,'R',0,"AV",access_fault,nullptr,why); raw['R']=0x80; s.keyboard(raw.data(),map); s.end_frame();
+        a_stopped=false; s.add(a,'R',0,"AV",access_fault,nullptr,why); raw['R']=0x80; keys(s,raw); s.end_frame();
         check(disabled==3 && a_stopped,"native hotkey fault isolated");
         // Every field in a concurrent pad query must belong to one publication.
         std::atomic<bool> done{false},coherent{true};
@@ -96,7 +100,7 @@ int main() {
             refused=false;fail_after=step;
             try{handle=f.add(c,'S',0,"",key,&calls,why);}catch(const std::bad_alloc&){refused=true;}fail_after=-1;
             // Force another publication after the refusal.
-            f.messages(c,0,nullptr,nullptr);raw.fill(0);raw['S']=0x80;f.keyboard(raw.data(),map);f.end_frame();
+            f.messages(c,0,nullptr,nullptr);raw.fill(0);raw['S']=0x80;keys(f,raw);f.end_frame();
             check(refused ? calls==0:handle && calls==1,"failed hotkey registration never becomes active later");
             fail_after=step;try{f.capture(c,AL_INPUT_ALL);}catch(const std::bad_alloc&){}fail_after=-1;
             // Retry must publish a usable owner if its first allocation failed.
