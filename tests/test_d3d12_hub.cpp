@@ -407,6 +407,28 @@ void installer_refuses() {
     check(status.state == CMFM_D3D12_UNAVAILABLE &&
               std::string(status.reason) == "cannot hook device methods: the target is already patched",
           "installer refusal reported");
+
+    // A factory family succeeded, then swap-chain installation failed.
+    // The creation layer already on the stack must not announce a working
+    // swap chain; future calls must not raise phases or callbacks either.
+    graphics::Hub later;
+    unsigned delivered = 0;
+    later.set_phase_dispatch([&](cmfm_phase_t, const void*) { ++delivered; });
+    later.subscribe(a.client, (1u << CMFM_D3D12_EVENT_COUNT) - 1, 0, on_event, const_cast<char*>("alpha"));
+    later.close(CMFM_PHASE_BIT(CMFM_PHASE_FIRST_PRESENT));
+    StandInInstaller second;
+    later.set_installer(&second);
+    later.device_created(&g_device);
+    second.refuse = "fixture swap-chain failure";
+    g_trace.clear();
+    later.swapchain_created(&g_swapchain, &g_queue);
+    auto present = later.begin_present(&g_swapchain, 0, 0);
+    later.end_present(present, S_OK);
+    auto resize = later.begin_resize(&g_swapchain, 2, 640, 480, 28, 0);
+    later.end_resize(resize, S_OK);
+    later.status(status);
+    check(status.state == CMFM_D3D12_UNAVAILABLE && status.frames == 0 && !present.raised && !resize.raised &&
+        delivered == 0 && g_trace.empty(), "failed swap-chain install raises no graphics phase or event");
 }
 
 void internal_regions() {

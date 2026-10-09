@@ -16,7 +16,8 @@ still installed; the new package is staged separately under `local/stage`.
   has chains, after PRE_MAIN; reports again after SHUTDOWN.
 - The hub reports after each install result. Failure restores the new
   family's previous `next` values; its entries forward to their originals.
-  A later-family failure bypasses previously installed CMFM chains too.
+  A later-family failure bypasses previously installed CMFM chains too,
+  and an unavailable hub suppresses creation, Present and resize events.
   Hook contexts, native modules and trampolines remain until process exit.
 
 No allocations, locking or diagnostics occur in the per-call selector.

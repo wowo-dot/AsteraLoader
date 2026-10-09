@@ -323,13 +323,14 @@ void Hub::describe(void* swapchain) {
 }
 
 void Hub::swapchain_created(void* swapchain, void* queue) {
-    if (!swapchain) return;
+    if (!swapchain || state_ == CMFM_D3D12_UNAVAILABLE) return;
     current_.swapchain = swapchain;
     current_.queue = queue;
     current_.device = device_;
     describe(swapchain);
     // Detours go in before anyone hears of the swap chain.
     install(CMFM_D3D12_SWAPCHAIN, swapchain);
+    if (state_ == CMFM_D3D12_UNAVAILABLE) return;
     if (!swapchain_phase_done_) {
         swapchain_phase_done_ = true;
         if (dispatch_phase_) dispatch_phase_(CMFM_PHASE_SWAPCHAIN_CREATED, &current_);
@@ -346,7 +347,7 @@ bool Hub::is_present_thread() {
 
 PresentCall Hub::begin_present(void* swapchain, std::uint32_t sync_interval, std::uint32_t flags) {
     PresentCall call;
-    if (!swapchain || swapchain != current_.swapchain || !is_present_thread()) return call;
+    if (state_ == CMFM_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain || !is_present_thread()) return call;
     const auto now = qpc();
     auto& data = call.data;
     data.size = sizeof(data);
@@ -376,7 +377,7 @@ void Hub::end_present(PresentCall& call, std::int32_t result) {
 ResizeCall Hub::begin_resize(void* swapchain, std::uint32_t buffer_count, std::uint32_t width, std::uint32_t height,
                              std::uint32_t format, std::uint32_t flags) {
     ResizeCall call;
-    if (!swapchain || swapchain != current_.swapchain) return call;
+    if (state_ == CMFM_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain) return call;
     call.data = {sizeof(call.data), 0, &current_, buffer_count, width, height, format, flags, 0};
     raise(CMFM_D3D12_PRE_RESIZE, &call.data);
     call.raised = true;
@@ -391,6 +392,7 @@ void Hub::end_resize(ResizeCall& call, std::int32_t result) {
 }
 
 void Hub::raise(cmfm_d3d12_event_t event, const void* data) {
+    if (state_ == CMFM_D3D12_UNAVAILABLE) return;
     for (auto* subscription : by_event_[event]) {
         auto& client = *subscription->client;
         if (client.stopped && client.stopped->load(std::memory_order_relaxed)) continue;
