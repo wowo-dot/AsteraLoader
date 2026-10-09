@@ -49,11 +49,11 @@ void config() {
 }
 
 void plugin_order() {
-    const auto files = cmfm::stracker::plugin_files({{L"Unbloat.dll"}, {L"!CRCBypass.dll"}, {L"auto_food_skill.dll"},
+    const auto files = cmfm::stracker::plugin_files({{L"Unbloat.dll"}, {L"!First.dll"}, {L"auto_food_skill.dll"},
                                                      {L"LuaEngine.dll"}, {L"folder.dll", true}, {L"notes.txt"},
                                                      {L"Upper.DLL"}, {L".dll"}, {L"x.dll.bak"}, {L"a..dll"},
                                                      {L"BetterDailyCatSkills.dll"}});
-    check(files == std::vector<std::wstring>{L"!CRCBypass.dll", L"a..dll", L"auto_food_skill.dll",
+    check(files == std::vector<std::wstring>{L"!First.dll", L"a..dll", L"auto_food_skill.dll",
                                              L"BetterDailyCatSkills.dll", L"LuaEngine.dll", L"Unbloat.dll"},
           "only *.dll files (exact case), case-insensitive order");
 }

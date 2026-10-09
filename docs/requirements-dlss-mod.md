@@ -75,7 +75,7 @@ Facts this builds on (all confirmed, exe sha c2ebbbd2…):
   cmfm_api*)`.
 - **MUST** load in a deterministic, declared order (priority plus before/after
   names), not the alphabetical order of a folder listing (Stracker plugins
-  rely on names like `!CRCBypass.dll`).
+  rely on names like `!First.dll`).
 - **MUST** give each plugin its own folder (`<plugins>\mhw_dlss\`) and pass
   its path in at init. Under MO2, GetModuleFileNameW reports the virtual game
   path while canonical() gives the real mod folder. That mismatch disabled

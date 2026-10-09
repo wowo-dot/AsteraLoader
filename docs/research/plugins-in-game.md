@@ -129,7 +129,7 @@ Profile `cmfm-stracker`: `cmfm` plus 15 plugin mods with 22 plugin DLLs.
 These are the user's everyday set from `Default`, including G8F Actor
 Routing 0.4, plus the handoff's test targets: LuaEngine, Better Input
 Detection, MoreAutoShoutout_v and Tic Rate Fix. Stracker's Loader and SPL
-are off, `!CRCBypass.dll` is excluded, and there is no force-load. Two
+are off, and there is no force-load. Two
 launches, the second into the save.
 
 - Both launches: 22 found, 22 loaded, 0 failed, exit code 0. Each plugin

@@ -36,7 +36,7 @@ struct DirectoryEntry {
 
 // The files Stracker loads from nativePC\plugins: regular files whose
 // extension is exactly ".dll" (Stracker compares case-sensitively), sorted
-// case-insensitively as NTFS lists them, so a name like "!CRCBypass.dll"
+// case-insensitively as NTFS lists them, so a name like "!First.dll"
 // still comes first.
 std::vector<std::wstring> plugin_files(std::vector<DirectoryEntry> entries);
 
