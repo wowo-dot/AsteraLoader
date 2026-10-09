@@ -11,6 +11,9 @@
 namespace cmfm::graphics {
 class Hub;
 }
+namespace cmfm::game_hooks {
+class Registry;
+}
 
 namespace cmfm::plugins {
 
@@ -72,6 +75,10 @@ public:
     // dispatch(PRE_MAIN) returns; dispatch(DEVICE_CREATED) hands it the device.
     // Valid after load_all.
     ::cmfm::graphics::Hub& graphics();
+
+    // The "cmfm.hooks" service, for the hook layer: hand it the installer
+    // after PRE_MAIN with set_installer. Valid after load_all.
+    ::cmfm::game_hooks::Registry& game_hooks();
 
 private:
     void close_graphics();

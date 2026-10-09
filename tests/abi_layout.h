@@ -14,7 +14,7 @@
 #define CMFM_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-CMFM_ABI_CHECK(CMFM_API_VERSION == 0x00010003u);
+CMFM_ABI_CHECK(CMFM_API_VERSION == 0x00010004u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 CMFM_ABI_CHECK(sizeof(cmfm_plugin_info_t) == 80);
@@ -129,6 +129,22 @@ CMFM_ABI_CHECK(offsetof(cmfm_d3d12_t, claim_presentation) == 24);
 CMFM_ABI_CHECK(offsetof(cmfm_d3d12_t, begin_internal) == 32);
 CMFM_ABI_CHECK(offsetof(cmfm_d3d12_t, end_internal) == 40);
 CMFM_ABI_CHECK(offsetof(cmfm_d3d12_t, status) == 48);
+
+/* 1.4: "cmfm.hooks". */
+CMFM_ABI_CHECK(CMFM_HOOKS_VERSION == 0x00010000u);
+CMFM_ABI_CHECK(CMFM_HOOK_PENDING == 0 && CMFM_HOOK_ACTIVE == 1 && CMFM_HOOK_DISABLED == 2 && CMFM_HOOK_FAILED == 3);
+CMFM_ABI_CHECK(sizeof(cmfm_hook_t) == 56);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, order) == 4);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, name) == 8);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, pattern) == 16);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, offset) == 24);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, address) == 32);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, detour) == 40);
+CMFM_ABI_CHECK(offsetof(cmfm_hook_t, next) == 48);
+CMFM_ABI_CHECK(sizeof(cmfm_hooks_t) == 32);
+CMFM_ABI_CHECK(offsetof(cmfm_hooks_t, hook) == 8);
+CMFM_ABI_CHECK(offsetof(cmfm_hooks_t, set_enabled) == 16);
+CMFM_ABI_CHECK(offsetof(cmfm_hooks_t, state) == 24);
 
 CMFM_ABI_CHECK(CMFM_LOG_DEBUG == 0 && CMFM_LOG_INFO == 1 && CMFM_LOG_WARNING == 2 && CMFM_LOG_ERROR == 3);
 

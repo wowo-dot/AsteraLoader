@@ -5,6 +5,7 @@
 #include "common/pattern.hpp"
 #include "common/windows.hpp"
 #include "core/crash/handler.hpp"
+#include "core/game_hooks/registry.hpp"
 #include "core/graphics/hub.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
@@ -134,11 +135,14 @@ std::wstring scan_cache_file(const HostOptions& options) {
 struct HostState {
     explicit HostState(const HostOptions& options)
         : scanner(GetModuleHandleW(nullptr), scan_cache_file(options)),
-          game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder, &scanner) {}
+          game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder, &scanner),
+          hooks(GetModuleHandleW(nullptr),
+                [this](const Pattern& pattern) { return scanner.find(pattern, CMFM_SCAN_CODE).matches; }) {}
 
     Scanner scanner;  // before game, which uses it
     GameService game;
     graphics::Hub hub;
+    game_hooks::Registry hooks;
     crash::Options crash;        // installed at WIN_MAIN
     std::wstring previous_crash;  // the last session's crash notice, if any
     std::mutex mutex;  // guards interfaces
@@ -326,6 +330,49 @@ const cmfm_d3d12_t kD3d12{sizeof(cmfm_d3d12_t),    CMFM_D3D12_VERSION,   d3d12_s
                           d3d12_hook,              d3d12_claim_presentation, d3d12_begin_internal,
                           d3d12_end_internal,      d3d12_status};
 
+std::uint32_t CMFM_CALL hooks_hook(cmfm_plugin_t* self, const cmfm_hook_t* hook) noexcept {
+    if (!self || !self->state || !hook) return 0;
+    try {
+        auto& client = graphics_client(*self);
+        std::string problem;
+        const auto handle = self->state->hooks.hook(client, *hook, problem);
+        const auto name = hook->size >= sizeof(cmfm_hook_t) && hook->name ? plugin_text(hook->name, 128)
+                                                                            : std::string("a game function");
+        if (handle) {
+            const auto state = self->state->hooks.state(client, handle);
+            note(*self, "INFO", "cmfm.hooks: hooked " + name + " (handle " + std::to_string(handle) + ", " +
+                                    (state == CMFM_HOOK_ACTIVE ? "active" : "active when PRE_MAIN ends") + ")");
+        } else {
+            note(*self, "WARN", "cmfm.hooks: cannot hook " + name + ": " + problem);
+        }
+        return handle;
+    } catch (...) {
+        return 0;
+    }
+}
+
+cmfm_result_t CMFM_CALL hooks_set_enabled(cmfm_plugin_t* self, std::uint32_t handle, std::uint32_t enabled) noexcept {
+    if (!self || !self->state) return CMFM_ERROR;
+    try {
+        const auto problem = self->state->hooks.set_enabled(graphics_client(*self), handle, enabled != 0);
+        if (!problem.empty()) note(*self, "WARN", "cmfm.hooks: cannot switch handle " + std::to_string(handle) + ": " + problem);
+        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+    } catch (...) {
+        return CMFM_ERROR;
+    }
+}
+
+cmfm_hook_state_t CMFM_CALL hooks_state(cmfm_plugin_t* self, std::uint32_t handle) noexcept {
+    if (!self || !self->state) return CMFM_HOOK_FAILED;
+    try {
+        return self->state->hooks.state(graphics_client(*self), handle);
+    } catch (...) {
+        return CMFM_HOOK_FAILED;
+    }
+}
+
+const cmfm_hooks_t kHooks{sizeof(cmfm_hooks_t), CMFM_HOOKS_VERSION, hooks_hook, hooks_set_enabled, hooks_state};
+
 const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version) noexcept {
     if (!self || !self->state || !name) return nullptr;
     try {
@@ -334,6 +381,7 @@ const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, s
         if (wanted == CMFM_GAME_INTERFACE) return compatible(CMFM_GAME_VERSION, version) ? state.game.table() : nullptr;
         if (wanted == CMFM_SCANNER_INTERFACE) return compatible(CMFM_SCANNER_VERSION, version) ? &kScanner : nullptr;
         if (wanted == CMFM_D3D12_INTERFACE) return compatible(CMFM_D3D12_VERSION, version) ? &kD3d12 : nullptr;
+        if (wanted == CMFM_HOOKS_INTERFACE) return compatible(CMFM_HOOKS_VERSION, version) ? &kHooks : nullptr;
         std::lock_guard lock(state.mutex);
         const auto found = state.interfaces.find(wanted);
         if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
@@ -644,6 +692,10 @@ void Host::close_graphics() {
 std::vector<std::wstring> Host::notices() const {
     if (!state_ || state_->previous_crash.empty()) return {};
     return {state_->previous_crash};
+}
+
+::cmfm::game_hooks::Registry& Host::game_hooks() {
+    return state_->hooks;
 }
 
 ::cmfm::graphics::Hub& Host::graphics() {

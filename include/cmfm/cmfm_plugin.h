@@ -1,4 +1,4 @@
-/* CMFM plugin API, version 1.3. C ABI, 64-bit Windows.
+/* CMFM plugin API, version 1.4. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\cmfm\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -46,6 +46,9 @@
  * Direct3D 12 (1.3): the "cmfm.d3d12" service shares the game's DXGI and
  * D3D12 calls between plugins: events, and detours chained on one hook per
  * method.
+ *
+ * Game functions (1.4): the "cmfm.hooks" service does the same for
+ * functions in the game's own code.
  */
 #ifndef CMFM_PLUGIN_H
 #define CMFM_PLUGIN_H
@@ -62,7 +65,7 @@ extern "C" {
 #define CMFM_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define CMFM_API_VERSION_MAJOR 1u
-#define CMFM_API_VERSION_MINOR 3u
+#define CMFM_API_VERSION_MINOR 4u
 #define CMFM_API_VERSION CMFM_MAKE_VERSION(CMFM_API_VERSION_MAJOR, CMFM_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -431,6 +434,65 @@ typedef struct cmfm_d3d12_t {
      * until the process exits. */
     void(CMFM_CALL* status)(cmfm_plugin_t* self, cmfm_d3d12_status_t* status);
 } cmfm_d3d12_t;
+
+/* "cmfm.hooks" 1.0 (API 1.4): game functions, shared.
+ *
+ * CMFM puts one hook on each game function plugins ask for and calls their
+ * detours in order, so plugins need no hooking library of their own and two
+ * plugins on one function no longer fight. A detour has the function's own
+ * signature and continues with *next, as with MinHook.
+ *
+ * Targets are functions in the game exe's code, checked by their bytes
+ * before CMFM touches them: either `pattern` is searched in the game's code
+ * and must match exactly once (target = match + offset), or `address` is
+ * given and `pattern` must match at address - offset.
+ *
+ * Hooks may be registered at any time from cmfm_plugin_init on. Those made
+ * before PRE_MAIN ends take effect when it ends, before the game's own code
+ * starts; later ones take effect at once. *next is written before the
+ * detour can be called; it stays NULL while the hook is pending or failed.
+ * A detour can join or leave a running chain safely: CMFM relinks the
+ * chain, it never patches the function twice.
+ *
+ * Order: lower `order` runs first, further from the original; ties run in
+ * load order. Detours run directly in the chain, like any hook: CMFM cannot
+ * catch their faults. A plugin stays loaded, so a detour may still be
+ * running on another thread just after it is disabled. */
+#define CMFM_HOOKS_INTERFACE "cmfm.hooks"
+#define CMFM_HOOKS_VERSION CMFM_MAKE_VERSION(1, 0)
+
+typedef struct cmfm_hook_t {
+    uint32_t size;       /* sizeof(cmfm_hook_t) */
+    int32_t order;       /* lower runs first; ties in load order */
+    const char* name;    /* for logs and reports, e.g. "Quest:EnterQuest"; may be NULL */
+    const char* pattern; /* the function's bytes in cmfm.scanner's syntax, at least 5 */
+    int32_t offset;      /* target = where the pattern matches + offset */
+    uint32_t reserved;
+    void* address;       /* the target, or NULL to search for pattern */
+    void* detour;        /* the plugin's function, with the target's exact signature */
+    void** next;         /* where CMFM stores the function to continue with */
+} cmfm_hook_t;
+
+typedef uint32_t cmfm_hook_state_t;
+#define CMFM_HOOK_PENDING 0u  /* registered before PRE_MAIN ended; not active yet */
+#define CMFM_HOOK_ACTIVE 1u
+#define CMFM_HOOK_DISABLED 2u /* switched off with set_enabled; *next still valid */
+#define CMFM_HOOK_FAILED 3u   /* will never be called; the plugin's log says why */
+
+typedef struct cmfm_hooks_t {
+    uint32_t size;
+    uint32_t version; /* CMFM_HOOKS_VERSION */
+    /* Registers one detour and returns its handle, or 0 with the reason in
+     * the plugin's log: a pattern that does not match exactly once, a target
+     * outside the game's code, bytes that differ, no detour or next, or the
+     * same plugin hooking the same function twice. */
+    uint32_t(CMFM_CALL* hook)(cmfm_plugin_t* self, const cmfm_hook_t* hook);
+    /* Takes the detour out of its chain, or puts it back in its place.
+     * Calls already inside it finish normally. */
+    cmfm_result_t(CMFM_CALL* set_enabled)(cmfm_plugin_t* self, uint32_t handle, uint32_t enabled);
+    /* The hook's state; CMFM_HOOK_FAILED for an unknown handle. */
+    cmfm_hook_state_t(CMFM_CALL* state)(cmfm_plugin_t* self, uint32_t handle);
+} cmfm_hooks_t;
 
 typedef const cmfm_plugin_info_t*(CMFM_CALL* cmfm_plugin_info_fn)(void);
 typedef cmfm_result_t(CMFM_CALL* cmfm_plugin_init_fn)(const cmfm_api_t* api, const cmfm_init_t* init);

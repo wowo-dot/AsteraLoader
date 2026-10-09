@@ -66,9 +66,9 @@ void manifests() {
     info.size = sizeof(info);
 
     info.api_version = CMFM_MAKE_VERSION(2, 0);
-    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.3. Update CMFM."), "newer major");
-    info.api_version = CMFM_MAKE_VERSION(1, 4);
-    check(contains(refusal(&info), "needs CMFM API 1.4"), "newer minor refused");
+    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.4. Update CMFM."), "newer major");
+    info.api_version = CMFM_MAKE_VERSION(1, 5);
+    check(contains(refusal(&info), "needs CMFM API 1.5"), "newer minor refused");
     info.api_version = CMFM_MAKE_VERSION(0, 9);
     check(contains(refusal(&info), "no longer supports"), "older major refused");
     info.api_version = CMFM_API_VERSION;

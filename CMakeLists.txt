@@ -81,6 +81,8 @@ add_library(cmfm_plugins STATIC
     src/core/crash/handler.hpp
     src/core/crash/report.cpp
     src/core/crash/report.hpp
+    src/core/game_hooks/registry.cpp
+    src/core/game_hooks/registry.hpp
     src/core/graphics/hub.cpp
     src/core/graphics/hub.hpp
     src/core/graphics/layers.cpp
@@ -268,6 +270,11 @@ add_dependencies(cmfm_crash_tests cmfm_crash_fixture)
 add_test(NAME crash_handler
     COMMAND cmfm_crash_tests "$<TARGET_FILE:cmfm_crash_fixture>" "${CMAKE_BINARY_DIR}/crash_handler")
 set_tests_properties(crash_handler PROPERTIES TIMEOUT 180)
+
+add_executable(cmfm_game_hooks_tests tests/test_game_hooks.cpp)
+target_link_libraries(cmfm_game_hooks_tests PRIVATE cmfm_plugins)
+cmfm_project_target(cmfm_game_hooks_tests)
+add_test(NAME game_hooks COMMAND cmfm_game_hooks_tests)
 
 add_executable(cmfm_services_tests tests/test_services.cpp)
 target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
