@@ -290,11 +290,11 @@ A detour that passes a call into code which itself calls DXGI or D3D12
 
 ### al.input: hotkeys, key state and menus
 
-MHW reads the keyboard and mouse through DirectInput and pads through
-XInput, once per frame on its frame thread. AL keeps a copy of what each of
-those reads returned, and everything below works from those copies: a
-plugin sees what the game saw, and nothing held while the game window is in
-the background. AL never polls input itself, and logs no keys or text.
+MHW updates its keyboard, mouse and pad state once per frame on its frame
+thread. AL hooks those game functions and keeps a copy of what each
+produced, and everything below works from those copies: a plugin sees what
+the game saw, and nothing held while the game window is in the background.
+AL never polls input itself, and logs no keys or text.
 
 - **Hotkeys:** `add_hotkey` takes a key (a Windows `VK_` code, mouse
   buttons included) and `AL_MOD_*` modifiers; `add_pad_hotkey` takes
@@ -307,14 +307,17 @@ the background. AL never polls input itself, and logs no keys or text.
   non-zero keeps the message from the game. That is how a menu's UI gets
   mouse moves, clicks and typed characters (`WM_CHAR`). Keeping keyboard
   messages from the game does not stop the hunter: the game reads its
-  controls through DirectInput. That is what capture is for.
+  controls elsewhere. That is what capture is for.
 - **Capture:** `capture(self, AL_INPUT_KEYBOARD | AL_INPUT_MOUSE)` makes
   the game see those devices idle while plugins keep the real state;
   `release` undoes the latest capture. A menu captures when it opens and
   releases when it closes. Capture fails until `status` shows the device in
   `devices`. Another plugin's capture suppresses your hotkeys, your own
   does not. AL never leaves the game captured: a plugin that faults or is
-  disabled, the game losing focus, and EXITING all end capture.
+  disabled, the game losing focus, and EXITING all end capture. Keys and
+  buttons still held when capture ends stay hidden from the game until
+  released, so closing a menu with Esc does not also reach the game.
+  `AL_INPUT_PAD` covers XInput pads.
 
 Request `al.input` from `al_plugin_init` or PRE_MAIN, so AL installs its
 input layer and watches for the game window.

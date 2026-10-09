@@ -1,9 +1,11 @@
 # Design: input, hotkeys and input capture (API 1.6)
 
-Status 2026-10-10: API, input service and native hook layer implemented.
-The probe research below supplied the input sites; validation of the new
-layer in MHW remains pending. See `handoff-input-20261010.md` for the
-implemented rules, tests and next run. Roadmap "path to v1" step 2.
+Status 2026-10-10: API and input service implemented. The input layer now
+captures at the game's own input functions through al.hooks ("Capture at
+the game's own input sites" below), after the first layer, on DirectInput
+and XInput, met the Steam overlay in input-check-1. Tested outside the
+game; validation in MHW pending. `handoff-input-20261010.md` has the
+service rules. Roadmap "path to v1" step 2.
 
 ## Who needs it
 
@@ -83,7 +85,9 @@ implemented rules, tests and next run. Roadmap "path to v1" step 2.
   designed, and al.input reported UNAVAILABLE with a warning.
 - Still unknown: whether the overlay changes `dinput8.dll`'s own method
   tables or hands out wrapper objects, and whether it also patches
-  `XInputGetState`. With the overlay off, the methods should be System32's.
+  `XInputGetState`. Turning the overlay off would not settle it under MO2:
+  overlay-off-1 showed `gameoverlayrenderer64.dll` loading whatever the
+  Steam setting. The game-side layer below makes the question moot.
 
 ## Found by static analysis: the game's own input sites
 
@@ -128,15 +132,39 @@ game imports DirectInput and XInput delay-loaded (`DINPUT8`
   The game supports non-XInput pads too.
 - All of these run on the frame thread inside Main:Update (input-probe-3).
 
-### Proposal: capture at the game's own input sites
+More from the same database, read through the IDA MCP (2026-10-10):
 
-Hook the game's functions through al.hooks instead of DirectInput's and
+- **The mouse buttons are in the keyboard's maps too.** `Keyboard:WriteInput`
+  ORs `GetAsyncKeyState(vk) & 0x8001` for the five keys in the table at
+  `exe+0x3511fc8` (VK 1, 2, 4, 5, 6) into the held map. Bindings can read
+  clicks from there as well as from the mouse state.
+- **The mouse update `exe+0x22e89a0`** passes `mouse+0x38` as `out`: it
+  moves the buttons to "previous" (`+0x5C`), zeroes the deltas and buttons,
+  calls the read only while `hData+0x29ad` and `mouse+0xB2` are set, then
+  computes pressed, released and changed (`+0x60` to `+0x68`) and repeat
+  timers. On frames it skips the read, the game has no buttons.
+- **The keyboard update** edge-detects from its own previous map, so a key
+  that capture hid and that is still held when capture ends would arrive
+  as a fresh press (Esc closing a menu would then open the game's). It
+  clears every map itself when `exe+0x22e58e0` says so.
+- **The pad slot function `exe+0x22a59d0`** calls `0x22a1280` only after a
+  successful `XInputGetState` and while `manager+0xBB4` is set; a missing
+  pad never reaches it. `0x22a1280` keeps the previous buttons at
+  `slot+0x160` and derives digital bits from the triggers above the
+  slot's threshold byte (`slot+0x19`) and from the sticks.
+
+### Capture at the game's own input sites (implemented)
+
+AL hooks the game's functions through al.hooks instead of DirectInput's and
 XInput's: they are reached the same way with the Steam overlay on or off,
 or anything else wrapping DirectInput (ReShade, SPL), and they are checked
-by their bytes like the frame layer's sites.
+by their bytes like the frame layer's sites. `src/core/input/sites.cpp`
+gives them for the verified 421810 exe only; any other exe gets
+UNAVAILABLE with the reason.
 
 Patterns: the shortest unique ones from `sigscan.py make` on the decoded
-image (d78611...), each from the function's first byte:
+image (d78611...), each from the function's first byte; `sigscan.py audit`
+finds each exactly once:
 
 - keyboard update `0x22e74f0`: `48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20 33 FF 48 8D B1 38 01 00 00`
 - mouse read `0x22e9270`: `40 55 53 56 57 41 56 48 8B EC 48 81 EC 80 00 00 00`
@@ -144,23 +172,38 @@ image (d78611...), each from the function's first byte:
 
 | Device | Site | Snapshot (after the original) | Capture |
 |---|---|---|---|
-| keyboard | update `0x22e74f0` | the held map: 256 bits by virtual key, mouse buttons included | clear held, pressed, released, changed and repeat after the original |
-| mouse | read `0x22e9270` | buttons (`out+32`), deltas | clear deltas and buttons in `out` after the original; leave the cursor position |
-| pad | `0x22a1280` | the `XINPUT_STATE` for the slot's user index | pass a copy with `Gamepad` zeroed, packet number kept |
+| keyboard | update `0x22e74f0` | the held map: 256 bits by virtual key | after the original, clear the captured keys in all six maps |
+| mouse | read `0x22e9270` | buttons (`out+32`, bits 0 to 4) | after the original, zero the deltas and buttons in `out`; the cursor position stays |
+| pad | `0x22a1280` | the `XINPUT_STATE` for the slot's user index (`slot+0x14`) | pass a copy with `Gamepad` zeroed, packet number kept |
 
+- **Devices own their keys.** Keyboard capture clears every key but the
+  five mouse buttons; mouse capture clears those five in the keyboard's
+  maps as well as in the mouse state.
+- **Held through the release, hidden until let go.** Keys, mouse buttons,
+  pad buttons and triggers (past the slot's own threshold) that capture
+  hid stay hidden from the game until they are released; then they work
+  as usual. Sticks come back at once. The game sees no late release edge
+  either, since it never saw the press.
+- **Unread devices are idle.** At the end of each frame, a mouse the game
+  did not read reports no buttons, and a pad slot that was not processed
+  reports disconnected.
+- Order -500, as the frame layer: outermost, so other detours on these
+  functions see the real input and capture covers whatever they leave.
+- Only calls on the frame thread while input is RUNNING take part; other
+  calls, and every call after EXITING or a failure, pass straight on.
+- The hooks are registered at the end of PRE_MAIN if a plugin asked for
+  al.input by then, otherwise at the first frame after one does. Nothing
+  is hooked when no plugin uses input.
+- A refused site (another module patched it first, so its bytes differ)
+  leaves the other devices working: `status.devices` lacks that device,
+  `status.reason` and a warning say why. All three refused: UNAVAILABLE.
 - No site is SPL's: SPL hooks `Keyboard:WriteInput` (below our keyboard
-  site) and the mouse update above our mouse site. Another module that
-  patched one of these first makes al.hooks refuse it by its bytes, and
-  al.input reports which path is unavailable.
-- Snapshots are already in virtual keys, so the scan-code mapping in
-  `native.cpp` goes away. `key_down` reads the copied held map.
-- Clearing the keyboard maps after the original leaves the game nothing
-  pressed or released while captured; the next frame's "previous" is
-  empty, so release edges do not fire late.
-- Open: DirectInput pads (`0x22a0880`) for v1 or later; whether the
+  site) and the mouse update above our mouse site.
+- Open: DirectInput pads (`0x22a0880`) are not captured; whether the
   cursor position should also freeze while the mouse is captured; Steam
-  Input (does the game read pads another way with it on?); exe versions
-  other than 421810 get UNAVAILABLE with the reason.
+  Input (does the game read pads another way with it on?); whether Better
+  Input Detection, which patches the game's input code, touches these
+  sites (the run will show a refusal if it does).
 - The window subclass stays as it is.
 
 ## Open questions (one probe run)
@@ -285,50 +328,40 @@ registration/refusal information.
   order; a callback that returns non-zero keeps the message from the game.
   If another module subclasses the window later, AL stays in the chain
   behind it; AL never restores the old procedure while plugins are loaded.
-- **The input layer** (settled by input-probe-3, but see input-check-1):
-  AL hooks the methods the game reads its input through, once DINPUT8 and
-  XInput are loaded: DirectInput's `GetDeviceState` for the keyboard's and
-  the mouse's devices (`GetDeviceData` too, though the game does not use
-  it), and `XInputGetState`. Only System32's own methods are hooked; with
-  the Steam overlay on, the game calls the overlay's wrappers instead,
-  and how to reach those reads is open. The method addresses
-  come from throwaway devices of AL's own, as al.d3d12 does for DXGI.
-- **Snapshots, not polling:** each time the game reads a device, the layer
-  keeps a copy of the real data (keyboard 256 bytes, mouse
-  `DIMOUSESTATE2`, four pads) before capture changes it. The game reads
-  everything once per frame on its frame thread, inside Main:Update, so
-  the snapshots are fresh at al.frame's END. Hotkeys, `key_down` and pad
+- **The input layer:** al.hooks detours on the game's keyboard update,
+  mouse read and XInput pad processing ("Capture at the game's own input
+  sites" above). The first layer hooked DirectInput's `GetDeviceState` and
+  `XInputGetState` in System32 and was refused under the Steam overlay
+  (input-check-1).
+- **Snapshots, not polling:** after each of those functions runs, the
+  layer keeps a copy of what it produced (the 256-bit held map, the mouse
+  buttons, each pad's `XINPUT_STATE`) before capture changes it. The game
+  runs them once per frame on its frame thread, inside Main:Update, so the
+  snapshots are fresh at al.frame's END. Hotkeys, `key_down` and pad
   queries use them: no extra system calls, the same data the game sees,
-  and DirectInput's own focus rules (no data while the game is in the
+  and the game's own focus rules (nothing held while it is in the
   background).
 - **Hotkeys** are edge-detected per frame from the snapshots and called at
   al.frame END, on the game thread.
-- **Capture** changes what the game receives: zeroed keyboard and mouse
-  state from `GetDeviceState`, no events from `GetDeviceData`, and a
-  neutral pad from `XInputGetState`. Window messages are not involved: the
-  game does not read input from them (frame-input-1). Plugins still see
-  the real state through the snapshots and their message callbacks.
-- **Cost:** fixed-size snapshot publication, virtual-key mapping and a
-  capture check per game read. No per-frame allocation or global input
-  polling. A local stand-in measurement of six native hook reads plus the
-  empty END pass was about 0.2 microseconds per frame, including stand-in
-  originals and MinHook; it does not measure Windows device-driver or MHW
-  timing. The window layer forwards to the previous procedure when no
-  callback consumes a message.
+- **Capture** changes what the game keeps: its key maps, mouse deltas and
+  buttons, and the pad state it is handed. Window messages are not
+  involved: the game does not read input from them (frame-input-1).
+  Plugins still see the real state through the snapshots and their
+  message callbacks.
+- **Cost:** a capture check and fixed-size snapshot publication per game
+  call; no per-frame allocation or global input polling. Six stand-in
+  calls plus both end-of-frame passes took about 0.15 microseconds per
+  frame locally, without patching; this is not an MHW measurement. The
+  window layer forwards to the previous procedure when no callback
+  consumes a message.
 
 `src/core/input/service.*` owns hotkeys, capture, messages and atomic
-snapshots. `src/core/input/native.*` resolves System32 device methods from
-throwaway keyboard/mouse objects after the game's DLLs load. It hooks each
-distinct target once, including aliases/forwarded XInput exports; nested
-calls do not overwrite the original snapshot with captured neutral data.
-Only reads on AL's frame thread participate; other-thread reads, return
-codes, failed-read buffers and last error are preserved. Standard keyboard
-and mouse state formats are supported. Buffered DirectInput capture returns
-no events; hotkey snapshots use the measured GetDeviceState path.
+snapshots. `src/core/input/sites.*` gives the verified game sites and
+layouts; `src/core/input/native.*` registers the three hooks with al.hooks,
+runs the detours and subclasses the window. Return values pass through.
 
-The native layer is pinned until exit. It never globally enables/unhooks
-other tools' hooks. Partial or later installation failures leave its
-existing hooks forwarding and publish an UNAVAILABLE reason and warning.
+The native layer is pinned until exit. A refused site leaves the other
+devices running and says why; all three refused makes input UNAVAILABLE.
 Window handles must belong to this process and be top-level windows;
 destruction messages always reach the previous procedure, even if a plugin
 tries to consume them. AL remains behind a later SPL-style subclass.
@@ -338,12 +371,15 @@ tries to consume them. AL remains behind a later SPL-style subclass.
 - `input_service`: combination edges, modifiers, pad hotkeys and coherent
   concurrent queries, conflicts, nested capture, callback order/consumption,
   faults, focus, allocation refusals and the empty frame path.
-- `input_native`: a real test window with a later subclass, native MinHook
-  entries on fake keyboard/mouse reads and nested/aliased XInput stand-ins;
-  capture on/off, real pre-capture snapshots, failed/disconnected reads,
-  thread isolation, last error, destruction and steady-read allocations.
-- `input_native_refusal`: a later installation failure makes an already
-  active layer forward again and reports its reason visibly.
+- `input_native`: stand-ins with the game's argument layouts and edge
+  logic, reached through the real al.hooks registry with a stand-in
+  installer; a real test window with a later subclass. Per-device capture
+  (mouse buttons in the key maps included), real pre-capture snapshots,
+  held input hidden until released, unread devices idle, thread and focus
+  isolation, pass-through after EXITING, steady-frame allocations.
+- `input_native_refusal`, `_unavailable`, `_late`: one refused site leaves
+  the others working with a reason; unverified sites hook nothing and say
+  why; a plugin asking after PRE_MAIN gets the hooks at the next frame.
 - `input_host`: a DLL client of the public C table, version checks, input
   alone requesting graphics/window observation, frame/message callbacks,
   bounded queries and EXITING. C/C++ tests pin the ABI layouts.

@@ -31,8 +31,9 @@ hooks included (the user's call, 2026-10-09); the user runs the game.
 1. **1.5 in the game:** the frame layer and exit site, one run, then retire
    `probes/site_probe`.
 2. **Input** (item 12 below): hotkeys and input capture. CMFM needs it to
-   open and to take the mouse and keyboard. The game reads both through
-   DirectInput (frame-input-1), so capture blocks there.
+   open and to take the mouse and keyboard. Capture works at the game's own
+   keyboard, mouse and pad functions (design-input-1.6.md), which the
+   Steam overlay does not wrap.
 3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
    found by reversing.
 4. **Release:** freeze ABI 1.x (reviewed for 1.5: `abi-freeze-review.md`),
@@ -131,7 +132,9 @@ In this order; the first four are small.
     game with the DLSS mod off (graphics-mo2-1, tag v0.1.0-dev.10;
     design-d3d12-1.3.md). The DLSS mod 0.14.0 runs on it with frame
     generation on (graphics-dlss-1): its first real client.
-12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
+12. **Input:** hotkeys and input capture. Status 2026-10-10: API 1.6
+    "al.input" implemented, capturing at the game's own input functions
+    through al.hooks; tested outside the game, the in-game run is next.
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.
     Site found in hooks-mo2-1: Main:Update (exe+0x1af2b60) runs once per
