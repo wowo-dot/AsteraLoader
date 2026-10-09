@@ -216,6 +216,16 @@ set_target_properties(al_site_probe PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/site_probe")
 install(FILES "$<TARGET_FILE:al_site_probe>" DESTINATION AsteraLoader/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
 
+# Another throwaway diagnostic: which input the game reads, and what Alt+F4
+# sends (design-input-1.6.md); also an al.frame client.
+add_library(al_input_probe SHARED probes/input_probe.cpp)
+target_link_libraries(al_input_probe PRIVATE al_api)
+al_project_target(al_input_probe)
+set_target_properties(al_input_probe PROPERTIES
+    OUTPUT_NAME input_probe
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/input_probe")
+install(FILES "$<TARGET_FILE:al_input_probe>" DESTINATION AsteraLoader/plugins/input_probe COMPONENT examples EXCLUDE_FROM_ALL)
+
 include(CTest)
 if(BUILD_TESTING)
 
