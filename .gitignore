@@ -3,6 +3,7 @@
 /out/
 /.vs/
 *.user
+/.claude/settings.local.json
 
 # Private or generated material: runs, profiles, exports, dumps, captures
 /local/
