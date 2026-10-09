@@ -19,7 +19,8 @@ menu: CMFM is a separate track, the first large plugin built on AL.
 | 1.4 | "al.hooks" shared game-function hooks | hooks-mo2-1 (dev.12), dlss-astera-1 (dev.14) |
 | — | crash handler | crash-mo2-1/2 (dev.11) |
 | — | rename to Astera Loader | astera-mo2-1 (dev.13), asteraloader-mo2-1 |
-| 1.5 | "al.frame" and AL_PHASE_EXITING | core side unit-tested; the frame layer and exit site come next (handoff-frame-layer-20261009.md) |
+| 1.5 | "al.frame" and AL_PHASE_EXITING | frame-input-1 (dev.15) |
+| 1.6 | "al.input": hotkeys, key and pad state, window messages, capture | input-check-3 (dev.16) |
 
 The DLSS mod 0.15.0 runs on 1.3 and 1.4 with frame generation on.
 
@@ -28,12 +29,10 @@ The DLSS mod 0.15.0 runs on 1.3 and 1.4 with frame generation on.
 In order. From 1.5's frame layer on, Claude builds these end to end,
 hooks included (the user's call, 2026-10-09); the user runs the game.
 
-1. **1.5 in the game:** the frame layer and exit site, one run, then retire
-   `probes/site_probe`.
-2. **Input** (item 12 below): hotkeys and input capture. CMFM needs it to
-   open and to take the mouse and keyboard. Capture works at the game's own
-   keyboard, mouse and pad functions (design-input-1.6.md), which the
-   Steam overlay does not wrap.
+1. ~~**1.5 in the game**~~: done (frame-input-1, dev.15).
+2. ~~**Input**~~ (item 12 below): done (input-check-3, dev.16). Capture
+   works at the game's own keyboard, mouse and pad functions
+   (design-input-1.6.md), which the Steam overlay does not wrap.
 3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
    found by reversing.
 4. **Release:** freeze ABI 1.x (reviewed for 1.5: `abi-freeze-review.md`),
@@ -133,8 +132,10 @@ In this order; the first four are small.
     design-d3d12-1.3.md). The DLSS mod 0.14.0 runs on it with frame
     generation on (graphics-dlss-1): its first real client.
 12. **Input:** hotkeys and input capture. Status 2026-10-10: API 1.6
-    "al.input" implemented, capturing at the game's own input functions
-    through al.hooks; tested outside the game, the in-game run is next.
+    "al.input" captures at the game's own input functions through
+    al.hooks; confirmed in MHW with the Steam overlay on (input-check-3,
+    tag v0.1.0-dev.16). XInput pads only; DirectInput pads and Steam
+    Input on/off are unverified.
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.
     Site found in hooks-mo2-1: Main:Update (exe+0x1af2b60) runs once per

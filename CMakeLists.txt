@@ -212,18 +212,10 @@ set_target_properties(al_hello PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/hello")
 install(FILES "$<TARGET_FILE:al_hello>" DESTINATION AsteraLoader/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
 
-# probes/site_probe.cpp found the frame and exit sites for API 1.5; the frame
-# layer replaced it, and it is no longer built.
-
-# A throwaway diagnostic: which input the game reads (design-input-1.6.md).
-# Built but not staged: its own hooks on DirectInput and XInput would sit
-# beside al.input's. Retired once al.input is tested in game.
-add_library(al_input_probe SHARED probes/input_probe.cpp)
-target_link_libraries(al_input_probe PRIVATE al_api al_minhook)
-al_project_target(al_input_probe)
-set_target_properties(al_input_probe PROPERTIES
-    OUTPUT_NAME input_probe
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/input_probe")
+# probes/site_probe.cpp found the frame and exit sites for API 1.5, and
+# probes/input_probe.cpp the input the game reads for API 1.6. al.frame and
+# al.input replaced them (tested in game: frame-input-1, input-check-3), and
+# they are no longer built.
 
 # A test plugin for al.input in game, staged with the examples for test runs
 # only: hotkeys toggle capture, as a menu would; it logs counts only.

@@ -55,8 +55,9 @@ LICENSE
 4. **A plugin author package:** `include/al/al_plugin.h`,
    `examples/hello`, `docs/plugin-guide.md` and `LICENSE`, as a second
    archive or a folder in the repository's release.
-5. **Retire the probes** from the default build: `site_probe` now (the
-   frame layer replaced it), `input_probe` once `al.input` is tested.
+5. ~~**Retire the probes** from the default build~~: done. `site_probe`
+   and `input_probe` are no longer built (al.frame and al.input replaced
+   them); `input_check` stays a test-only example.
 6. **The ABI-freeze fixes** in `abi-freeze-review.md`.
 7. **Unsigned binaries.** A launcher that starts a game suspended and loads
    a DLL into it is the kind of thing antivirus heuristics look at, and

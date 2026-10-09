@@ -3,9 +3,9 @@
 Status 2026-10-10: API and input service implemented. The input layer now
 captures at the game's own input functions through al.hooks ("Capture at
 the game's own input sites" below), after the first layer, on DirectInput
-and XInput, met the Steam overlay in input-check-1. Tested outside the
-game; validation in MHW pending. `handoff-input-20261010.md` has the
-service rules. Roadmap "path to v1" step 2.
+and XInput, met the Steam overlay in input-check-1. Confirmed in MHW with
+the overlay on: input-check-3, tag v0.1.0-dev.16. `handoff-input-20261010.md`
+has the service rules. Roadmap "path to v1" step 2.
 
 ## Who needs it
 

@@ -373,7 +373,10 @@ def collect(args: argparse.Namespace) -> None:
     with open(collected_file, "a", encoding="utf-8") as record:
         record.writelines(f"{log.name} {log.stat().st_mtime_ns}\n" for log in new["core"] + new["launcher"])
     # Plugin logs keep one previous launch; copy it too when there were two.
+    # A plugin that did not load this time leaves an older log: skip those.
     for log in (loader / "logs" / "plugins").glob("*.log"):
+        if log.stat().st_mtime_ns <= cutoff:
+            continue
         if not log.name.endswith(".previous.log") or len(new["core"]) > 1:
             shutil.copy2(log, target / log.name)
     for cache in (loader / "cache").glob("scan.*.txt"):
