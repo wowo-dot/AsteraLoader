@@ -31,8 +31,8 @@ hooks included (the user's call, 2026-10-09); the user runs the game.
 1. **1.5 in the game:** the frame layer and exit site, one run, then retire
    `probes/site_probe`.
 2. **Input** (item 12 below): hotkeys and input capture. CMFM needs it to
-   open and to take the mouse and keyboard; the window procedure it hooks
-   also sees a window close (Alt+F4) before the game ends itself.
+   open and to take the mouse and keyboard. The game reads both through
+   DirectInput (frame-input-1), so capture blocks there.
 3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
    found by reversing.
 4. **Release:** freeze ABI 1.x, a plugin author guide, one archive, a

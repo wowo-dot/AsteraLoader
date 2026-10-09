@@ -24,7 +24,7 @@
 // names the two function pointers the loop calls.
 //
 // 0.4: astera-mo2-1 found the WinMain thread's message loop sets the flag
-// after WM_QUIT, and that Alt+F4 ends the process without SHUTDOWN. The
+// after WM_QUIT, and that a process ended from outside gets no SHUTDOWN. The
 // probe now writes data\site_probe\exit-report.<pid>.txt from DllMain when the
 // process ends (the stack of the thread ending it), finds every call to the
 // function the message loop calls right before setting the flag, dumps it

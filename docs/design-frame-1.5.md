@@ -30,8 +30,10 @@ hooks-mo2-1/2 and astera-mo2-1/2 (their `result.json` files).
   is called from exactly two places: once by the frame thread before its loop,
   and once by the WinMain thread at quit.
 - Exit Game (and any close that goes through WM_QUIT) takes that path.
-  Alt+F4 does not: the process is terminated with no notice to any DLL and no
-  teardown, so plugin threads cannot crash on freed memory then.
+  Alt+F4 does nothing in MHW (the user, 2026-10-09). A process ended from
+  outside (Task Manager) gets no notice to any DLL and no teardown, so
+  plugin threads cannot crash on freed memory then. (Two earlier run notes
+  read such an ending as Alt+F4; corrected.)
 - The DLSS mod hooks Main:Update at order -1000 so its Reflex simulation
   markers wrap other per-frame work.
 
@@ -49,8 +51,8 @@ hooks-mo2-1/2 and astera-mo2-1/2 (their `result.json` files).
 - What plugins do here: stop and join their own threads, stop touching game
   memory from other threads, flush their own files. Do not post game-thread
   tasks and expect them to run (see "Tasks at the end").
-- It does not fire on Alt+F4 or a crash. Plugins save their settings when
-  they change, not at exit.
+- It does not fire when the process is ended from outside or by a crash.
+  Plugins save their settings when they change, not at exit.
 - SHUTDOWN stays as it is: WinMain returned.
 
 ### "al.frame" 1.0

@@ -3,8 +3,8 @@
 //
 // - it subclasses the game window (SetWindowLongPtr, as SharpPluginLoader
 //   does) and counts the input and close messages the game gets; close
-//   messages are logged the moment they arrive, since Alt+F4 ends the
-//   process at once;
+//   messages are logged the moment they arrive, since the process can end
+//   at once;
 // - F9 toggles keeping keyboard messages from the game, F10 mouse messages
 //   (raw input included). If the hunter still moves while they are kept
 //   away, the game reads that device through DirectInput instead;

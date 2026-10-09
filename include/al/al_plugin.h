@@ -106,7 +106,8 @@ typedef uint32_t al_phase_t;
                                            window close through WM_QUIT), before it tears
                                            anything down; stop your own threads now. Usually
                                            the WinMain thread; no payload (NULL). Does not
-                                           fire on Alt+F4, which ends the process at once. */
+                                           fire when the process is ended from outside
+                                           (Task Manager) or by a crash. */
 #define AL_PHASE_COUNT 8u
 #define AL_PHASE_BIT(phase) (1u << (phase))
 

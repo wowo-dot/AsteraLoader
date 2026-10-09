@@ -11,9 +11,6 @@ settles the open questions below first.
   while the menu is open.
 - **Plugins with hotkeys:** FextyMod, LuaEngine, SPL keybinds (plugin
   survey #8). Today each polls on its own thread or reads game memory.
-- **AL itself:** seeing the window close (Alt+F4) before the game ends the
-  process, to raise EXITING there too (astera-mo2-2: Alt+F4 terminates the
-  process with no notice to any DLL).
 
 ## What the game uses (known so far)
 
@@ -48,8 +45,7 @@ settles the open questions below first.
   game's own input objects), not at the game window.
 - **The game window still gets what ImGui needs:** mouse moves (9922),
   clicks, `WM_CHAR` (43) and `WM_SETCURSOR`. Its procedure is in the exe and
-  runs on the WinMain thread, so subclassing it serves CMFM's widgets and
-  close detection.
+  runs on the WinMain thread, so subclassing it serves CMFM's widgets.
 - **Exit Game:** `WM_CLOSE`, then the window is destroyed, then EXITING
   from the exit site about 150 ms later.
 - F10 never toggled: it is a system key (`WM_SYSKEYDOWN`). A probe bug.
@@ -57,14 +53,13 @@ settles the open questions below first.
 ## Open questions (one probe run)
 
 Questions 1 and 3 are answered above (DirectInput; raw input through
-DirectInput's own window). Question 5 too: on Alt+F4 the window procedure
-gets no close message at all before the process ends (frame-input-1
-launch 2), so the game detects Alt+F4 itself, through its DirectInput
-keyboard, and ends the process during that frame. The window procedure
-cannot warn plugins; the frame layer could only by checking the keys at
-BEGIN, and with no teardown there is nothing to protect. Left out of v1:
-Alt+F4 ends the game at once, and plugins save settings when they change.
-Still open: 2 (devices and methods) and 4 (pads).
+DirectInput's own window). Question 5 too, by the user: **Alt+F4 does
+nothing in MHW.** In frame-input-1 launch 2 (and earlier in astera-mo2-2)
+the user pressed it, saw no reaction, and ended the process from outside;
+the probe logged no `WM_SYSKEYDOWN F4` before that. So there is no Alt+F4
+path to warn plugins about. A process ended from outside or by a crash
+gets no notice, and plugins save settings when they change. Still open: 2
+(devices and methods) and 4 (pads).
 
 1. Where `sMhKeyboard`'s maps come from: DirectInput's keyboard device
    (`GetDeviceState` / `GetDeviceData`), window messages, or Win32 key
@@ -76,8 +71,7 @@ Still open: 2 (devices and methods) and 4 (pads).
    mouse, in menus and in play.
 4. How pads reach `sMhSteamController`: Steam Input only, or XInput as
    well; what happens with Steam Input off.
-5. What Alt+F4 does: which message the window procedure gets (WM_SYSKEYDOWN
-   F4, WM_SYSCOMMAND SC_CLOSE, WM_CLOSE) and what ends the process.
+5. What Alt+F4 does (answered: nothing).
 
 ## The API: "al.input" 1.0 (draft)
 
@@ -131,8 +125,7 @@ question 4 is answered.
 - **Window messages:** AL subclasses the game window, as SPL does
   (`SetWindowLongPtr`), at the first swap chain. Message callbacks run in
   order; a callback that returns non-zero keeps the message from the game.
-  Close messages (the open question 5) raise EXITING before they reach the
-  game. If another module subclasses the window later, AL stays in the chain
+  If another module subclasses the window later, AL stays in the chain
   behind it; AL never restores the old procedure while plugins are loaded.
 - **Hotkeys** are checked on the game thread at al.frame's BEGIN: Win32 key
   state for the keys some hotkey uses (a handful of calls per frame, none
