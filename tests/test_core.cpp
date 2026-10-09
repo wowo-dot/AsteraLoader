@@ -37,18 +37,18 @@ int wmain(int argc, wchar_t** argv) {
     const auto module = LoadLibraryW(dll.c_str());
     if (!module) return 2;
     using Bootstrap = DWORD(WINAPI*)(void*);
-    const auto function = GetProcAddress(module, cmfm::kBootstrapExport);
+    const auto function = GetProcAddress(module, al::kBootstrapExport);
     if (!function) { FreeLibrary(module); return 3; }
     const auto bootstrap = std::bit_cast<Bootstrap>(function);
-    cmfm::StartupRequest request;
+    al::StartupRequest request;
     bool passed = bootstrap(nullptr) == ERROR_REVISION_MISMATCH;
     request.size = 0;
     passed = passed && bootstrap(&request) == ERROR_REVISION_MISMATCH;
     request.size = sizeof(request);
     request.abi = 999;
     passed = passed && bootstrap(&request) == ERROR_REVISION_MISMATCH;
-    request.abi = cmfm::kStartupAbi;
-    passed = passed && bootstrap(&request) == cmfm::kStartupOk;
+    request.abi = al::kStartupAbi;
+    passed = passed && bootstrap(&request) == al::kStartupOk;
     passed = passed && bootstrap(&request) == ERROR_ALREADY_INITIALIZED;
     // The exe hash thread holds its own reference, so this does not unmap
     // the DLL under it.
@@ -57,9 +57,9 @@ int wmain(int argc, wchar_t** argv) {
     std::cout << "Core ABI and duplicate-start checks passed\n";
 
     // The hash is logged after the bootstrap returned, from the core's thread.
-    const auto log_path = cmfm::join_path(cmfm::join_path(cmfm::directory_of(dll), L"logs"),
+    const auto log_path = al::join_path(al::join_path(al::directory_of(dll), L"logs"),
                                           L"core." + std::to_wstring(GetCurrentProcessId()) + L".log");
-    const auto expected = "exe_sha256=" + cmfm::to_utf8(cmfm::sha256_file(cmfm::module_path()));
+    const auto expected = "exe_sha256=" + al::to_utf8(al::sha256_file(al::module_path()));
     if (!eventually([&] { return read_file(log_path).find(expected) != std::string::npos; })) {
         std::cout << "Core did not log this exe's SHA-256:\n" << read_file(log_path);
         return 5;

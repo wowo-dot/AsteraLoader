@@ -3,7 +3,7 @@
 #include <array>
 #include <cstring>
 
-namespace cmfm::startup {
+namespace al::startup {
 namespace {
 constexpr std::array<std::uint8_t, 18> kWrapper{
     0x48,0x83,0xec,0x28,0xe8,0,0,0,0,0x48,0x83,0xc4,0x28,0xe9,0,0,0,0};
@@ -106,4 +106,4 @@ std::optional<CrtEntry> find_crt_entry(std::span<const std::uint8_t> image,
     reason = found ? "verified unique CRT startup wrapper" : "no verified unpacked CRT startup wrapper";
     return found;
 }
-}  // namespace cmfm::startup
+}  // namespace al::startup

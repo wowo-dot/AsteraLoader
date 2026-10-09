@@ -1,7 +1,7 @@
 // A stand-in for a Stracker plugin, built the way they are: it includes
-// Stracker's header (CMFM's copy, loader_abi.h) and imports loader.dll. It
+// Stracker's header (AL's copy, loader_abi.h) and imports loader.dll. It
 // logs from DllMain like many real plugins and records its load order in the
-// file named by CMFM_TEST_STRACKER_RECORD.
+// file named by AL_TEST_STRACKER_RECORD.
 #include "loader_abi.h"
 
 #include <windows.h>
@@ -11,7 +11,7 @@
 namespace {
 void record(const std::string& line) {
     char path[1024]{};
-    if (!GetEnvironmentVariableA("CMFM_TEST_STRACKER_RECORD", path, sizeof(path))) return;
+    if (!GetEnvironmentVariableA("AL_TEST_STRACKER_RECORD", path, sizeof(path))) return;
     const HANDLE file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
                                     FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return;

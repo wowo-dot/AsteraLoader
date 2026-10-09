@@ -2,14 +2,14 @@
 
 // MHW's build string ("421810"), found the way Stracker's Loader finds it:
 // a code pattern whose instruction 0x18 bytes earlier loads a pointer to the
-// string. Used by CMFM's game-identity service and by the Stracker shim.
+// string. Used by AL's game-identity service and by the Stracker shim.
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-namespace cmfm {
+namespace al {
 
 inline constexpr char kVersionPattern[] =
     "01001... 10001101 01001100 ..100100 00110000 01001... 10001101 01000010 11110101";
@@ -40,4 +40,4 @@ GameVersion find_game_version(const void* image);
 // `match` is the pattern's offset from the image base.
 GameVersion read_game_version_at(const void* image, std::size_t match);
 
-}  // namespace cmfm
+}  // namespace al

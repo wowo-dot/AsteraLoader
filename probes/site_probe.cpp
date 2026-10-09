@@ -1,7 +1,7 @@
 // site_probe: a throwaway diagnostic plugin, not shipped. It finds the
 // game's per-frame function by SharpPluginLoader's "Main:Update" record
 // (MIT, Fexty12573/SharpPluginLoader 2.0.0, AddressRecords.json), hooks it
-// through cmfm.hooks, and reports at SHUTDOWN what the core needs for its
+// through al.hooks, and reports at SHUTDOWN what the core needs for its
 // frame tick and "game exiting" event: the thread the frame function runs
 // on, the call stack down to WinMain with each function's extent and first
 // bytes, how many frames ran, and how long before WinMain returned the last
@@ -15,7 +15,7 @@
 // - the end of each frame, not just its start;
 // - the code of that thread's start routine and of Main:Update, as hex, to
 //   find the loop's exit condition offline.
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 
 #include <windows.h>
 
@@ -26,10 +26,10 @@
 #include <cstring>
 
 namespace {
-const cmfm_api_t* g_api = nullptr;
-cmfm_plugin_t* g_self = nullptr;
-const cmfm_scanner_t* g_scanner = nullptr;
-const cmfm_hooks_t* g_hooks = nullptr;
+const al_api_t* g_api = nullptr;
+al_plugin_t* g_self = nullptr;
+const al_scanner_t* g_scanner = nullptr;
+const al_hooks_t* g_hooks = nullptr;
 std::uint32_t g_handle = 0;
 const std::uint8_t* g_image = nullptr;
 bool g_known_exe = false;  // the exe the RVA checks were taken from
@@ -69,7 +69,7 @@ constexpr unsigned kExits = 512;
 Exit g_exits[kExits];
 std::atomic<unsigned> g_exit_count{0};
 
-void say(cmfm_log_level_t level, const char* format, ...) {
+void say(al_log_level_t level, const char* format, ...) {
     char text[2048];
     va_list args;
     va_start(args, format);
@@ -122,7 +122,7 @@ void describe(const char* label, const void* address) {
     if (!in_exe(address)) {
         char text[MAX_PATH + 32];
         where(address, text, sizeof(text));
-        say(CMFM_LOG_INFO, "%s %p outside the exe (%s)", label, address, text);
+        say(AL_LOG_INFO, "%s %p outside the exe (%s)", label, address, text);
         return;
     }
     DWORD64 image = 0;
@@ -131,11 +131,11 @@ void describe(const char* label, const void* address) {
     const std::uint8_t* start = entry ? g_image + entry->BeginAddress : nullptr;
     for (int k = 0; start && k < 24; ++k) std::snprintf(bytes + 3 * k, 4, "%02X ", start[k]);
     if (entry) {
-        say(CMFM_LOG_INFO, "%s rva=0x%llx function=0x%lx-0x%lx (+0x%llx) first_bytes=%s", label,
+        say(AL_LOG_INFO, "%s rva=0x%llx function=0x%lx-0x%lx (+0x%llx) first_bytes=%s", label,
             static_cast<unsigned long long>(rva(address)), entry->BeginAddress, entry->EndAddress,
             static_cast<unsigned long long>(rva(address) - entry->BeginAddress), bytes);
     } else {
-        say(CMFM_LOG_INFO, "%s rva=0x%llx (no unwind entry: a leaf or not a function start)", label,
+        say(AL_LOG_INFO, "%s rva=0x%llx (no unwind entry: a leaf or not a function start)", label,
             static_cast<unsigned long long>(rva(address)));
     }
 }
@@ -161,12 +161,12 @@ const RUNTIME_FUNCTION* primary_entry(const RUNTIME_FUNCTION* entry) {
 // Hex lines of exe code [begin, end), 32 bytes each, at most 0x600 bytes.
 void dump(const char* label, std::uint32_t begin, std::uint32_t end) {
     end = (std::min)(end, begin + 0x600u);
-    say(CMFM_LOG_INFO, "%s code exe+0x%x-0x%x", label, begin, end);
+    say(AL_LOG_INFO, "%s code exe+0x%x-0x%x", label, begin, end);
     for (std::uint32_t at = begin; at < end; at += 32) {
         char hex[3 * 32 + 1] = {};
         const auto count = (std::min)(32u, end - at);
         for (std::uint32_t k = 0; k < count; ++k) std::snprintf(hex + 3 * k, 4, "%02X ", g_image[at + k]);
-        say(CMFM_LOG_INFO, "code %x: %s", at, hex);
+        say(AL_LOG_INFO, "code %x: %s", at, hex);
     }
 }
 
@@ -179,7 +179,7 @@ void dump_function(const char* label, const void* address) {
     const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(address), &image, nullptr);
     if (!entry) return describe(label, address);
     const auto* primary = primary_entry(entry);
-    say(CMFM_LOG_INFO, "%s at exe+0x%llx: fragment 0x%lx-0x%lx, primary 0x%lx-0x%lx", label,
+    say(AL_LOG_INFO, "%s at exe+0x%llx: fragment 0x%lx-0x%lx, primary 0x%lx-0x%lx", label,
         static_cast<unsigned long long>(rva(address)), entry->BeginAddress, entry->EndAddress,
         primary->BeginAddress, primary->EndAddress);
     for (const auto* part : {primary, entry}) {
@@ -229,44 +229,44 @@ void report_exits(std::int64_t shutdown) {
         if (++listed > 80) continue;
         char start[MAX_PATH + 32];
         where(slot.start, start, sizeof(start));
-        say(CMFM_LOG_INFO, "thread exit %+.1f ms from SHUTDOWN: thread %lu start %s%s", -ms_between(at, shutdown),
+        say(AL_LOG_INFO, "thread exit %+.1f ms from SHUTDOWN: thread %lu start %s%s", -ms_between(at, shutdown),
             slot.thread, start, slot.thread == g_update_thread ? "  <- the frame thread" : "");
     }
-    say(CMFM_LOG_INFO, "thread exits: %u in total, %u in the window (%u listed)", total, listed,
+    say(AL_LOG_INFO, "thread exits: %u in total, %u in the window (%u listed)", total, listed,
         listed > 80 ? 80u : listed);
     if (frame_thread_exit) {
-        say(CMFM_LOG_INFO, "frame thread %lu ended %.1f ms after its last frame ended, %.1f ms before SHUTDOWN",
+        say(AL_LOG_INFO, "frame thread %lu ended %.1f ms after its last frame ended, %.1f ms before SHUTDOWN",
             g_update_thread, ms_between(g_last_end_qpc.load(), frame_thread_exit), ms_between(frame_thread_exit, shutdown));
     } else {
-        say(CMFM_LOG_INFO, "frame thread %lu had not ended by SHUTDOWN", g_update_thread);
+        say(AL_LOG_INFO, "frame thread %lu had not ended by SHUTDOWN", g_update_thread);
     }
 }
 
 void find_and_hook() {
     void* matches[4] = {};
-    const auto count = g_scanner->find(g_self, kUpdatePattern, CMFM_SCAN_CODE, matches, 4);
-    say(CMFM_LOG_INFO, "Main:Update pattern: %u match(es)", count);
+    const auto count = g_scanner->find(g_self, kUpdatePattern, AL_SCAN_CODE, matches, 4);
+    say(AL_LOG_INFO, "Main:Update pattern: %u match(es)", count);
     if (count != 1) return;
     g_update = static_cast<std::uint8_t*>(matches[0]) + kUpdateOffset;
     describe("Main:Update", g_update);
     if (!g_hooks) {
-        say(CMFM_LOG_WARNING, "cmfm.hooks is unavailable; Main:Update not hooked");
+        say(AL_LOG_WARNING, "al.hooks is unavailable; Main:Update not hooked");
         return;
     }
     // Address mode: the pattern must match at address - offset, 25 bytes in.
-    const cmfm_hook_t hook{sizeof(cmfm_hook_t), 0, "Main:Update (site_probe)", kUpdatePattern, kUpdateOffset, 0,
+    const al_hook_t hook{sizeof(al_hook_t), 0, "Main:Update (site_probe)", kUpdatePattern, kUpdateOffset, 0,
                            g_update, reinterpret_cast<void*>(&probe_update), &g_next};
     g_handle = g_hooks->hook(g_self, &hook);
 }
 
 void report() {
-    say(CMFM_LOG_INFO, "main thread %lu; Main:Update thread %lu; calls %llu; calls on other threads %llu",
+    say(AL_LOG_INFO, "main thread %lu; Main:Update thread %lu; calls %llu; calls on other threads %llu",
         g_main_thread, g_update_thread, static_cast<unsigned long long>(g_calls.load()),
         static_cast<unsigned long long>(g_other_threads.load()));
-    if (g_hooks && g_handle) say(CMFM_LOG_INFO, "hook state %u", g_hooks->state(g_self, g_handle));
+    if (g_hooks && g_handle) say(AL_LOG_INFO, "hook state %u", g_hooks->state(g_self, g_handle));
     const auto now = qpc();
     if (g_calls.load()) {
-        say(CMFM_LOG_INFO, "frames ran for %.1f s; the last one started %.1f ms and ended %.1f ms before SHUTDOWN",
+        say(AL_LOG_INFO, "frames ran for %.1f s; the last one started %.1f ms and ended %.1f ms before SHUTDOWN",
             ms_between(g_first_qpc.load(), g_last_qpc.load()) / 1000.0, ms_between(g_last_qpc.load(), now),
             ms_between(g_last_end_qpc.load(), now));
     }
@@ -282,20 +282,20 @@ void report() {
     dump_function("Main:Update", g_update);
 }
 
-void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
-    if (phase == CMFM_PHASE_PRE_MAIN) {
+void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void*) {
+    if (phase == AL_PHASE_PRE_MAIN) {
         find_and_hook();
         if (g_known_exe) describe("LuaEngine MapClockLocal", g_image + kLuaClockRva);
-    } else if (phase == CMFM_PHASE_WIN_MAIN) {
+    } else if (phase == AL_PHASE_WIN_MAIN) {
         g_main_thread = GetCurrentThreadId();
-    } else if (phase == CMFM_PHASE_SHUTDOWN) {
+    } else if (phase == AL_PHASE_SHUTDOWN) {
         report();
     }
 }
 
-const cmfm_plugin_info_t kInfo = {
-    sizeof(cmfm_plugin_info_t), CMFM_API_VERSION, "site_probe", "CMFM site probe (diagnostic)", "0.2.0",
-    CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_WIN_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN),
+const al_plugin_info_t kInfo = {
+    sizeof(al_plugin_info_t), AL_API_VERSION, "site_probe", "Astera Loader site probe (diagnostic)", "0.2.0",
+    AL_PHASE_BIT(AL_PHASE_PRE_MAIN) | AL_PHASE_BIT(AL_PHASE_WIN_MAIN) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
     0, nullptr, nullptr, nullptr, on_phase, nullptr,
 };
 }  // namespace
@@ -311,22 +311,22 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
     return TRUE;
 }
 
-extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
+extern "C" AL_PLUGIN_EXPORT const al_plugin_info_t* AL_CALL al_plugin_info(void) {
     return &kInfo;
 }
 
-extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api, const cmfm_init_t* init) {
+extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* api, const al_init_t* init) {
     g_api = api;
     g_self = init->self;
     g_image = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
     g_query_thread = reinterpret_cast<QueryThread>(
         reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
-    g_scanner = static_cast<const cmfm_scanner_t*>(
-        api->get_interface(init->self, CMFM_SCANNER_INTERFACE, CMFM_SCANNER_VERSION));
-    g_hooks = static_cast<const cmfm_hooks_t*>(api->get_interface(init->self, CMFM_HOOKS_INTERFACE, CMFM_HOOKS_VERSION));
-    const auto* game = static_cast<const cmfm_game_t*>(api->get_interface(init->self, CMFM_GAME_INTERFACE, CMFM_GAME_VERSION));
+    g_scanner = static_cast<const al_scanner_t*>(
+        api->get_interface(init->self, AL_SCANNER_INTERFACE, AL_SCANNER_VERSION));
+    g_hooks = static_cast<const al_hooks_t*>(api->get_interface(init->self, AL_HOOKS_INTERFACE, AL_HOOKS_VERSION));
+    const auto* game = static_cast<const al_game_t*>(api->get_interface(init->self, AL_GAME_INTERFACE, AL_GAME_VERSION));
     g_known_exe = game && game->exe_sha256 && std::strcmp(game->exe_sha256, kExe) == 0;
-    say(CMFM_LOG_INFO, "site_probe: exe %s, scanner %s, hooks %s", g_known_exe ? "known (421810)" : "unknown",
+    say(AL_LOG_INFO, "site_probe: exe %s, scanner %s, hooks %s", g_known_exe ? "known (421810)" : "unknown",
         g_scanner ? "yes" : "no", g_hooks ? "yes" : "no");
-    return g_scanner ? CMFM_OK : CMFM_ERROR;
+    return g_scanner ? AL_OK : AL_ERROR;
 }

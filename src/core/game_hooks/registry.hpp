@@ -1,11 +1,11 @@
 #pragma once
 
-// "cmfm.hooks" (API 1.4), core side: checks each target by its bytes, keeps
+// "al.hooks" (API 1.4), core side: checks each target by its bytes, keeps
 // one chain per game function in call order, and relinks the chain when a
 // detour joins, leaves or comes back. Patching the function is the hook
 // layer's job (Installer); nothing here changes game code.
 
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 #include "common/pattern.hpp"
 #include "core/graphics/hub.hpp"  // Client
 
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::game_hooks {
+namespace al::game_hooks {
 
 using Client = graphics::Client;
 
@@ -45,10 +45,10 @@ public:
     Registry& operator=(const Registry&) = delete;
 
     // Registers one detour; its handle, or 0 with the reason in `problem`.
-    std::uint32_t hook(Client& client, const cmfm_hook_t& hook, std::string& problem);
+    std::uint32_t hook(Client& client, const al_hook_t& hook, std::string& problem);
     // "" or why not.
     std::string set_enabled(const Client& client, std::uint32_t handle, bool enabled);
-    cmfm_hook_state_t state(const Client& client, std::uint32_t handle) const;
+    al_hook_state_t state(const Client& client, std::uint32_t handle) const;
 
     // The hook layer is ready (after PRE_MAIN): installs every pending chain;
     // later registrations install at once.
@@ -74,4 +74,4 @@ private:
     std::uint32_t next_handle_ = 1;
 };
 
-}  // namespace cmfm::game_hooks
+}  // namespace al::game_hooks

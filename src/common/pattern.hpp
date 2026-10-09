@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace cmfm {
+namespace al {
 
 struct Pattern {
     std::vector<std::uint8_t> bytes;
@@ -37,4 +37,4 @@ std::string pattern_key(const Pattern& pattern);
 void find_all(std::span<const std::uint8_t> data, const Pattern& pattern, std::size_t base,
               std::vector<std::size_t>& found, std::size_t limit);
 
-}  // namespace cmfm
+}  // namespace al

@@ -8,7 +8,7 @@
 int wmain(int argc, wchar_t** argv) {
     if (argc != 2) return 1;
     namespace fs = std::filesystem;
-    using namespace cmfm::startup;
+    using namespace al::startup;
     // Windows reuses PIDs; an earlier invocation's cache is intentionally
     // retained for diagnostics. Reserve a fresh directory for this test.
     const auto root = fs::path(argv[1]);

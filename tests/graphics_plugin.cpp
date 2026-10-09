@@ -1,5 +1,5 @@
 #include "graphics_fixture.hpp"
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -9,8 +9,8 @@
 #include <iterator>
 
 namespace {
-const cmfm_d3d12_t* graphics{};
-cmfm_plugin_t* self{};
+const al_d3d12_t* graphics{};
+al_plugin_t* self{};
 GraphicsRecord record{};
 void* queue_next{};
 void STDMETHODCALLTYPE execute(ID3D12CommandQueue* queue, UINT count, ID3D12CommandList* const* lists) {
@@ -21,23 +21,23 @@ void STDMETHODCALLTYPE execute(ID3D12CommandQueue* queue, UINT count, ID3D12Comm
 #endif
     std::bit_cast<decltype(&execute)>(queue_next)(queue, count, lists);
 }
-void CMFM_CALL event(cmfm_plugin_t*, cmfm_d3d12_event_t kind, const void* data, void*) {
+void AL_CALL event(al_plugin_t*, al_d3d12_event_t kind, const void* data, void*) {
     unsigned token = Invalid;
     void* chain{};
     std::uintptr_t a = 0, b = 0;
     switch (kind) {
-    case CMFM_D3D12_SWAPCHAIN_CREATED: {
-        const auto& p = *static_cast<const cmfm_d3d12_swapchain_t*>(data);
+    case AL_D3D12_SWAPCHAIN_CREATED: {
+        const auto& p = *static_cast<const al_d3d12_swapchain_t*>(data);
         token = ProbeCreated; chain = p.swapchain; a = p.width; b = p.height; break;
     }
-    case CMFM_D3D12_PRE_PRESENT: case CMFM_D3D12_POST_PRESENT: {
-        const auto& p = *static_cast<const cmfm_d3d12_present_t*>(data);
-        token = kind == CMFM_D3D12_PRE_PRESENT ? ProbePre : ProbePost; chain = p.swapchain->swapchain;
+    case AL_D3D12_PRE_PRESENT: case AL_D3D12_POST_PRESENT: {
+        const auto& p = *static_cast<const al_d3d12_present_t*>(data);
+        token = kind == AL_D3D12_PRE_PRESENT ? ProbePre : ProbePost; chain = p.swapchain->swapchain;
         a = p.sync_interval; b = p.flags; break;
     }
-    case CMFM_D3D12_PRE_RESIZE: case CMFM_D3D12_POST_RESIZE: {
-        const auto& p = *static_cast<const cmfm_d3d12_resize_t*>(data);
-        token = kind == CMFM_D3D12_PRE_RESIZE ? ProbePreResize : ProbePostResize; chain = p.swapchain->swapchain;
+    case AL_D3D12_PRE_RESIZE: case AL_D3D12_POST_RESIZE: {
+        const auto& p = *static_cast<const al_d3d12_resize_t*>(data);
+        token = kind == AL_D3D12_PRE_RESIZE ? ProbePreResize : ProbePostResize; chain = p.swapchain->swapchain;
         a = p.width; b = p.height; break;
     }
     default: break;
@@ -54,7 +54,7 @@ HRESULT STDMETHODCALLTYPE present(IDXGISwapChain* chain, UINT sync, UINT flags) 
     record(PresentDetour, chain, sync, flags);
     if (!present_next) return E_FAIL;
     // Model Streamline reaching the same native object again. Nesting must
-    // bypass every CMFM layer and balance back to zero after the region.
+    // bypass every AL layer and balance back to zero after the region.
     graphics->begin_internal(self); graphics->begin_internal(self);
     const auto result = chain->Present(sync, flags);
     graphics->end_internal(self); graphics->end_internal(self);
@@ -113,14 +113,14 @@ bool prepatch() {
         MH_EnableHook(target) == MH_OK;
 }
 #endif
-void CMFM_CALL phase(cmfm_plugin_t*, cmfm_phase_t id, const void* data) {
+void AL_CALL phase(al_plugin_t*, al_phase_t id, const void* data) {
 #ifdef GRAPHICS_OWNER
-    if (id == CMFM_PHASE_PRE_MAIN && !prepatch()) record(Invalid, nullptr, 0, 0);
-    if (id == CMFM_PHASE_SWAPCHAIN_CREATED) record(SwapchainPhase, static_cast<const cmfm_d3d12_swapchain_t*>(data)->swapchain, 0, 0);
-    if (id == CMFM_PHASE_FIRST_PRESENT) record(FirstPresentPhase, static_cast<const cmfm_d3d12_present_t*>(data)->swapchain->swapchain, 0, 0);
-    if (id == CMFM_PHASE_SHUTDOWN) {
-        cmfm_d3d12_status_t status{}; status.size = sizeof(status); graphics->status(self, &status);
-        record(status.state == CMFM_D3D12_RUNNING && status.frames == 4 ? ShutdownPhase : Invalid, nullptr, 0, 0);
+    if (id == AL_PHASE_PRE_MAIN && !prepatch()) record(Invalid, nullptr, 0, 0);
+    if (id == AL_PHASE_SWAPCHAIN_CREATED) record(SwapchainPhase, static_cast<const al_d3d12_swapchain_t*>(data)->swapchain, 0, 0);
+    if (id == AL_PHASE_FIRST_PRESENT) record(FirstPresentPhase, static_cast<const al_d3d12_present_t*>(data)->swapchain->swapchain, 0, 0);
+    if (id == AL_PHASE_SHUTDOWN) {
+        al_d3d12_status_t status{}; status.size = sizeof(status); graphics->status(self, &status);
+        record(status.state == AL_D3D12_RUNNING && status.frames == 4 ? ShutdownPhase : Invalid, nullptr, 0, 0);
     }
 #else
     (void)id; (void)data;
@@ -129,37 +129,37 @@ void CMFM_CALL phase(cmfm_plugin_t*, cmfm_phase_t id, const void* data) {
 #ifdef GRAPHICS_OWNER
 constexpr const char* name = "graphics_owner";
 constexpr int order = 10;
-constexpr std::uint32_t phases = CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_SWAPCHAIN_CREATED) |
-    CMFM_PHASE_BIT(CMFM_PHASE_FIRST_PRESENT) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN);
+constexpr std::uint32_t phases = AL_PHASE_BIT(AL_PHASE_PRE_MAIN) | AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED) |
+    AL_PHASE_BIT(AL_PHASE_FIRST_PRESENT) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN);
 #else
 constexpr const char* name = "graphics_probe";
 constexpr int order = -10;
 constexpr std::uint32_t phases = 0;
 #endif
-const cmfm_plugin_info_t info{sizeof(info), CMFM_API_VERSION, name, name, "0.0.1", phases, order,
+const al_plugin_info_t info{sizeof(info), AL_API_VERSION, name, name, "0.0.1", phases, order,
     nullptr, nullptr, nullptr, phase, nullptr};
 }
-extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info() { return &info; }
-extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api, const cmfm_init_t* init) {
+extern "C" AL_PLUGIN_EXPORT const al_plugin_info_t* AL_CALL al_plugin_info() { return &info; }
+extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* api, const al_init_t* init) {
     self = init->self;
-    record = std::bit_cast<GraphicsRecord>(GetProcAddress(GetModuleHandleW(nullptr), "cmfm_test_graphics_record"));
-    graphics = static_cast<const cmfm_d3d12_t*>(api->get_interface(self, CMFM_D3D12_INTERFACE, CMFM_D3D12_VERSION));
-    if (!record || !graphics || graphics->subscribe(self, (1u << CMFM_D3D12_EVENT_COUNT) - 1, order, event, nullptr) != CMFM_OK) return CMFM_ERROR;
-    const cmfm_d3d12_hook_t queue{CMFM_D3D12_QUEUE_EXECUTE_COMMAND_LISTS, order,
+    record = std::bit_cast<GraphicsRecord>(GetProcAddress(GetModuleHandleW(nullptr), "al_test_graphics_record"));
+    graphics = static_cast<const al_d3d12_t*>(api->get_interface(self, AL_D3D12_INTERFACE, AL_D3D12_VERSION));
+    if (!record || !graphics || graphics->subscribe(self, (1u << AL_D3D12_EVENT_COUNT) - 1, order, event, nullptr) != AL_OK) return AL_ERROR;
+    const al_d3d12_hook_t queue{AL_D3D12_QUEUE_EXECUTE_COMMAND_LISTS, order,
         std::bit_cast<void*>(&execute), &queue_next};
-    if (graphics->hook(self, &queue, 1) != CMFM_OK) return CMFM_ERROR;
+    if (graphics->hook(self, &queue, 1) != AL_OK) return AL_ERROR;
 #ifdef GRAPHICS_OWNER
-    if (graphics->claim_presentation(self) != CMFM_OK) return CMFM_ERROR;
+    if (graphics->claim_presentation(self) != AL_OK) return AL_ERROR;
 #define HOOK(method, fn, next) {method, order, std::bit_cast<void*>(&fn), &next}
-    const cmfm_d3d12_hook_t hooks[]{
-        HOOK(CMFM_D3D12_SWAPCHAIN_PRESENT, present, present_next), HOOK(CMFM_D3D12_SWAPCHAIN_PRESENT1, present1, present1_next),
-        HOOK(CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS, resize, resize_next), HOOK(CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS1, resize1, resize1_next),
-        HOOK(CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND, create, factory_next),
-        HOOK(CMFM_D3D12_METHOD(CMFM_D3D12_COMMAND_LIST, 9), close_list, list_next),
-        HOOK(CMFM_D3D12_METHOD(CMFM_D3D12_DEVICE, 7), node_count, device_next),
-        HOOK(CMFM_D3D12_QUEUE_SIGNAL, signal, signal_next)};
+    const al_d3d12_hook_t hooks[]{
+        HOOK(AL_D3D12_SWAPCHAIN_PRESENT, present, present_next), HOOK(AL_D3D12_SWAPCHAIN_PRESENT1, present1, present1_next),
+        HOOK(AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS, resize, resize_next), HOOK(AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS1, resize1, resize1_next),
+        HOOK(AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND, create, factory_next),
+        HOOK(AL_D3D12_METHOD(AL_D3D12_COMMAND_LIST, 9), close_list, list_next),
+        HOOK(AL_D3D12_METHOD(AL_D3D12_DEVICE, 7), node_count, device_next),
+        HOOK(AL_D3D12_QUEUE_SIGNAL, signal, signal_next)};
 #undef HOOK
-    if (graphics->hook(self, hooks, static_cast<std::uint32_t>(std::size(hooks))) != CMFM_OK) return CMFM_ERROR;
+    if (graphics->hook(self, hooks, static_cast<std::uint32_t>(std::size(hooks))) != AL_OK) return AL_ERROR;
 #endif
-    return CMFM_OK;
+    return AL_OK;
 }

@@ -26,7 +26,7 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::startup {
+namespace al::startup {
 namespace {
 Handle g_hash_done;
 SRWLOCK g_hash_lock = SRWLOCK_INIT;
@@ -180,7 +180,7 @@ DWORD WINAPI show_warning(void* parameter) noexcept {
     if (user32) {
         using MessageBox = int(WINAPI*)(HWND, LPCWSTR, LPCWSTR, UINT);
         const auto function = GetProcAddress(user32, "MessageBoxW");
-        if (function) std::bit_cast<MessageBox>(function)(nullptr, message->c_str(), L"CMFM", 0x30u);
+        if (function) std::bit_cast<MessageBox>(function)(nullptr, message->c_str(), L"Astera Loader", 0x30u);
         FreeLibrary(user32);
     }
     delete message;
@@ -191,7 +191,7 @@ void visible_warning(std::wstring_view message) noexcept {
     try {
         if (g_runtime->warned.exchange(true)) return;
         auto copy = std::make_unique<std::wstring>(message);
-        copy->append(L"\nSee cmfm\\logs for details. The game continues.");
+        copy->append(L"\nSee astera\\logs for details. The game continues.");
         Handle thread(CreateThread(nullptr, 0, show_warning, copy.get(), 0, nullptr));
         if (thread) copy.release();
     } catch (...) { /* The logged status remains available for the future menu. */ }
@@ -265,17 +265,17 @@ bool restore_startup_hooks() noexcept {
 void report_plugins() {
     unsigned refused = 0;
     for (const auto& plugin : g_runtime->host.report()) {
-        const auto status = plugin.status == CMFM_STATUS_ACTIVE ? L"active" :
-                            plugin.status == CMFM_STATUS_DEGRADED ? L"degraded" : L"disabled";
+        const auto status = plugin.status == AL_STATUS_ACTIVE ? L"active" :
+                            plugin.status == AL_STATUS_DEGRADED ? L"degraded" : L"disabled";
         const auto ms = [](std::uint64_t us) {
             return std::to_wstring(us / 1000) + L"." + std::to_wstring(us / 100 % 10);
         };
         write(L"plugin name=" + plugin.name + L" version=" + widen(plugin.version.empty() ? "unreported" : plugin.version) +
               L" status=" + status + L" load_ms=" + ms(plugin.load_us) + L" init_ms=" + ms(plugin.init_us) +
-              L" pre_main_ms=" + ms(plugin.phase_us[CMFM_PHASE_PRE_MAIN]) + L" reason=" + widen(plugin.reason));
-        if (plugin.status != CMFM_STATUS_ACTIVE) ++refused;
+              L" pre_main_ms=" + ms(plugin.phase_us[AL_PHASE_PRE_MAIN]) + L" reason=" + widen(plugin.reason));
+        if (plugin.status != AL_STATUS_ACTIVE) ++refused;
     }
-    if (refused) visible_warning(L"CMFM reports " + std::to_wstring(refused) + L" plugin(s) with warnings or disabled features.");
+    if (refused) visible_warning(L"Astera Loader reports " + std::to_wstring(refused) + L" plugin(s) with warnings or disabled features.");
 }
 
 int __cdecl crt_entry() noexcept {
@@ -312,13 +312,13 @@ int __cdecl crt_entry() noexcept {
                     : L"startup_crt_cache_write=unavailable; next launch will scan");
             } catch (...) { write(L"startup_crt_cache_write=unavailable; next launch will scan"); }
         }
-        const auto root = join_path(directory_of(module_path()), L"cmfm\\plugins");
+        const auto root = join_path(directory_of(module_path()), L"astera\\plugins");
         write(L"plugin_discovery_root=" + redact_profile(root, environment(L"USERPROFILE")));
         g_runtime->host.load_all({root, g_runtime->logs_folder, hash});
         report_plugins();
-        g_runtime->host.dispatch(CMFM_PHASE_PRE_MAIN, nullptr);
+        g_runtime->host.dispatch(AL_PHASE_PRE_MAIN, nullptr);
         report_plugins();
-        // A crash in the previous session (CMFM's crash handler), told once.
+        // A crash in the previous session (AL's crash handler), told once.
         for (const auto& notice : g_runtime->host.notices()) {
             write(L"previous_session_crash: " + redact_profile(notice, environment(L"USERPROFILE")));
             visible_warning(notice);
@@ -329,7 +329,7 @@ int __cdecl crt_entry() noexcept {
     } catch (...) {
         g_runtime->state.store(State::skipped);
         write(L"phase_pre_main_failed: unexpected plugin-host error; game continues");
-        visible_warning(L"CMFM could not complete its PRE_MAIN plugin phase.");
+        visible_warning(L"Astera Loader could not complete its PRE_MAIN plugin phase.");
     }
     // If restoration failed, use MinHook's retained original trampoline.
     return !restored ? g_runtime->entry_original() :
@@ -576,7 +576,7 @@ DWORD WINAPI deadline(void*) noexcept {
             disable_observer();
             disable_entry();
             write(L"phase_pre_main_skipped: no verified post-unpack startup transition within 15 seconds");
-            visible_warning(L"CMFM did not find a verified post-unpack startup point. Plugins were skipped.");
+            visible_warning(L"Astera Loader did not find a verified post-unpack startup point. Plugins were skipped.");
         }
     }
     g_runtime->trace.stop();
@@ -651,12 +651,12 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
               L" bind_size=" + hex(runtime->image.bind.size));
         if (!runtime->image.size || !runtime->image.text.size || !runtime->resolved) {
             write(L"phase_pre_main_skipped: executable metadata or event unavailable");
-            visible_warning(L"CMFM could not verify this executable's startup layout.");
+            visible_warning(L"Astera Loader could not verify this executable's startup layout.");
             return;
         }
         if (MH_Initialize() != MH_OK) {
             write(L"phase_pre_main_skipped: MinHook initialization failed");
-            visible_warning(L"CMFM could not initialize its startup hook.");
+            visible_warning(L"Astera Loader could not initialize its startup hook.");
             return;
         }
         write(L"bootstrap_stage=minhook_initialized");
@@ -675,14 +675,14 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             const auto candidate = find_entry(reason);
             if (candidate && candidate->entry == runtime->image.entry && install_entry(*candidate)) return;
             write(L"phase_pre_main_skipped: " + widen(reason));
-            visible_warning(L"CMFM could not verify this executable's CRT entry point.");
+            visible_warning(L"Astera Loader could not verify this executable's CRT entry point.");
             return;
         }
         const auto kernel32 = GetModuleHandleW(L"kernel32.dll");
         runtime->protect_target = std::bit_cast<void*>(GetProcAddress(kernel32, "VirtualProtect"));
         if (!runtime->protect_target || !clean_system_export(runtime->protect_target)) {
             write(L"phase_pre_main_skipped: VirtualProtect is unavailable or already hooked");
-            visible_warning(L"CMFM could not install its startup observer without a hook conflict.");
+            visible_warning(L"Astera Loader could not install its startup observer without a hook conflict.");
             return;
         }
         write(L"bootstrap_stage=observer_target_verified target=" + hex(reinterpret_cast<std::uintptr_t>(runtime->protect_target)) +
@@ -699,7 +699,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
         }
         if (result != MH_OK) {
             write(L"phase_pre_main_skipped: " + widen(MH_StatusToString(result)));
-            visible_warning(L"CMFM could not install its post-unpack observer.");
+            visible_warning(L"Astera Loader could not install its post-unpack observer.");
             return;
         }
         runtime->observer_enabled.store(true);
@@ -711,7 +711,7 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             runtime->state.store(State::skipped);
             disable_observer();
             write(L"phase_pre_main_skipped: observer deadline thread unavailable");
-            visible_warning(L"CMFM could not start its startup observer deadline.");
+            visible_warning(L"Astera Loader could not start its startup observer deadline.");
         }
         write(L"bootstrap_stage=observer_deadline_ready");
     } catch (...) {
@@ -719,9 +719,9 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             g_runtime->state.store(State::skipped);
             disable_observer();
             disable_entry();
-            visible_warning(L"CMFM could not prepare its startup observer. Plugins were skipped.");
+            visible_warning(L"Astera Loader could not prepare its startup observer. Plugins were skipped.");
         }
         try { log(L"phase_pre_main_skipped: startup observer preparation failed"); } catch (...) {}
     }
 }
-}  // namespace cmfm::startup
+}  // namespace al::startup

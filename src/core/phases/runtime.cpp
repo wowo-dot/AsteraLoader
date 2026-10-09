@@ -15,7 +15,7 @@
 #include <mutex>
 #include <vector>
 
-namespace cmfm::phases {
+namespace al::phases {
 namespace {
 using WinMain = int (WINAPI*)(HINSTANCE, HINSTANCE, char*, int);
 struct Image {
@@ -85,7 +85,7 @@ std::wstring widen(std::string_view text) {
 void report_game_hooks() { for (const auto& line : g->host->game_hooks().summary()) log(widen(line)); }
 void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {
     try { log(L"phase_" + std::wstring(phase) + L"_skipped: " + std::wstring(reason));
-        if (g->warning) g->warning(L"CMFM phase " + std::wstring(phase) + L" is unavailable: " + std::wstring(reason));
+        if (g->warning) g->warning(L"Astera Loader phase " + std::wstring(phase) + L" is unavailable: " + std::wstring(reason));
     } catch (...) {}
 }
 std::uint64_t ticks() { LARGE_INTEGER n{}; QueryPerformanceCounter(&n); return n.QuadPart; }
@@ -118,21 +118,21 @@ void observer_timing(const Pending& request) noexcept {
             L" worker_precreated=1");
     } catch (...) { /* Optional diagnostics never affect forwarding. */ }
 }
-void dispatch(cmfm_phase_t phase, std::wstring_view name, const void* data) noexcept {
+void dispatch(al_phase_t phase, std::wstring_view name, const void* data) noexcept {
     try {
         std::lock_guard serial(g->dispatch_mutex);
         const auto begin = ticks();
         log(L"phase_" + std::wstring(name) + L"_enter thread_id=" + std::to_wstring(GetCurrentThreadId()));
         g->host->dispatch(phase, data);
-        if (phase == CMFM_PHASE_SHUTDOWN && g->graphics) g->graphics->report(g->host->graphics());
-        if (phase == CMFM_PHASE_SHUTDOWN) report_game_hooks();
+        if (phase == AL_PHASE_SHUTDOWN && g->graphics) g->graphics->report(g->host->graphics());
+        if (phase == AL_PHASE_SHUTDOWN) report_game_hooks();
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency);
         if (frequency.QuadPart) log(L"phase_" + std::wstring(name) + L"_complete elapsed_us=" +
             std::to_wstring((ticks()-begin)*1000000/frequency.QuadPart));
         for (const auto& plugin : g->host->report()) {
             log(L"plugin_phase name=" + plugin.name + L" phase=" + std::wstring(name) + L" elapsed_us=" +
                 std::to_wstring(plugin.phase_us[phase]) + L" status=" + std::to_wstring(plugin.status));
-            if (plugin.status != CMFM_STATUS_ACTIVE && g->warning) g->warning(L"CMFM reports a plugin phase failure; see the core log.");
+            if (plugin.status != AL_STATUS_ACTIVE && g->warning) g->warning(L"Astera Loader reports a plugin phase failure; see the core log.");
         }
     } catch (...) { unavailable(name, L"plugin-host dispatch failed"); }
 }
@@ -204,16 +204,16 @@ int WINAPI win_main(HINSTANCE instance,HINSTANCE previous,char* command,int show
     if (g->win_entered.exchange(true)) return g->win_original(instance,previous,command,show);
     const auto error=GetLastError();
     log(L"phase_win_main_observer_removed; CRT and WinMain code unchanged");
-    const cmfm_phase_win_main_t main_data{sizeof(main_data),0,instance,command,show,0};
-    dispatch(CMFM_PHASE_WIN_MAIN,L"win_main",&main_data);
+    const al_phase_win_main_t main_data{sizeof(main_data),0,instance,command,show,0};
+    dispatch(AL_PHASE_WIN_MAIN,L"win_main",&main_data);
     SetLastError(error);
     const auto code=g->win_original(instance,previous,command,show);
     const auto returned_error=GetLastError();
     g->stopped.store(true);
     stop_device();
     if (g->request) SetEvent(g->request.get());
-    const cmfm_phase_shutdown_t data{sizeof(data),code};
-    dispatch(CMFM_PHASE_SHUTDOWN,L"shutdown",&data);
+    const al_phase_shutdown_t data{sizeof(data),code};
+    dispatch(AL_PHASE_SHUTDOWN,L"shutdown",&data);
     SetLastError(returned_error);
     return code;
 }
@@ -327,8 +327,8 @@ void device_return(std::uint64_t result) noexcept {
                 log(L"phase_device_payload device="+std::to_wstring(reinterpret_cast<std::uintptr_t>(*p.out))+
                     L" adapter="+std::to_wstring(reinterpret_cast<std::uintptr_t>(p.adapter))+
                     L" minimum_feature_level="+std::to_wstring(p.level));
-                const cmfm_phase_device_t data{sizeof(data),0,*p.out,&p.iid,p.adapter,p.level,0};
-                dispatch(CMFM_PHASE_DEVICE_CREATED,L"device_created",&data);
+                const al_phase_device_t data{sizeof(data),0,*p.out,&p.iid,p.adapter,p.level,0};
+                dispatch(AL_PHASE_DEVICE_CREATED,L"device_created",&data);
             }
         } else if (!g->stopped.load() && *g->device_import.slot!=g->device_stub &&
                    !swap_slot(g->device_import.slot,forward,g->device_stub)) {
@@ -448,7 +448,7 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
         if (!host.graphics().chains().empty()) {
             g->graphics = new graphics::NativeInstaller(
                 [](std::string_view text) { log(widen(text)); },
-                [](std::string_view text) { if (g->warning) g->warning(L"CMFM graphics are unavailable: " + widen(text)); });
+                [](std::string_view text) { if (g->warning) g->warning(L"Astera Loader graphics are unavailable: " + widen(text)); });
             host.graphics().set_installer(g->graphics);
         }
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency); g->qpc_frequency=frequency.QuadPart;
@@ -485,4 +485,4 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
         log(L"phase_device_created_armed; import only, return address and game code unchanged");
     } catch (...) { if (g) unavailable(g->win_armed?L"device_created":L"win_main",L"phase preparation failed"); }
 }
-}  // namespace cmfm::phases
+}  // namespace al::phases

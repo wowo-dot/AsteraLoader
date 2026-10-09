@@ -1,19 +1,19 @@
 #pragma once
 
-// Pure pieces of CMFM's crash handler: who owns a module, what an exception
-// code means, and the crash settings in cmfm.ini. Everything here works
+// Pure pieces of AL's crash handler: who owns a module, what an exception
+// code means, and the crash settings in astera.ini. Everything here works
 // without the heap, so the handler can use it while the process is failing.
 
 #include <cstdint>
 #include <string_view>
 
-namespace cmfm::crash {
+namespace al::crash {
 
 enum class OwnerKind {
     unknown,
     game,             // the game exe
-    core,             // cmfm.dll
-    plugin,           // a CMFM plugin, or a DLL it ships: <...>\cmfm\plugins\<name>\...
+    core,             // astera.dll
+    plugin,           // an AL plugin, or a DLL it ships: <...>\astera\plugins\<name>\...
     stracker_plugin,  // a Stracker plugin: <...>\nativePC\plugins\<file>
     windows,          // System32, SysWOW64, WinSxS
     other,            // anything else: drivers, overlays, other loaders
@@ -29,7 +29,7 @@ struct Owner {
 // layout). `is_core` / `is_game` come from comparing the module's base.
 Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept;
 
-// "plugin", "Stracker plugin", "CMFM", "the game", "Windows", "module".
+// "plugin", "Stracker plugin", "Astera Loader", "the game", "Windows", "module".
 const char* owner_label(OwnerKind kind) noexcept;
 // A plugin or Stracker plugin: something the user installed and can remove.
 bool removable(OwnerKind kind) noexcept;
@@ -40,8 +40,8 @@ bool fatal(unsigned long code) noexcept;
 const char* exception_name(unsigned long code) noexcept;
 
 enum class Minidump { off, small, full };
-// The `crash_minidump = off | small | full` line of cmfm.ini; off when absent
+// The `crash_minidump = off | small | full` line of astera.ini; off when absent
 // or unreadable.
 Minidump minidump_setting(std::string_view ini_text) noexcept;
 
-}  // namespace cmfm::crash
+}  // namespace al::crash

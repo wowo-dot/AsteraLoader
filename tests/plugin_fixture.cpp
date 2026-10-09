@@ -1,6 +1,6 @@
 // A test plugin, built once per FIXTURE_NAME with different declarations.
-// It records init and phase calls in the file named by CMFM_TEST_PLUGIN_RECORD.
-#include "cmfm/cmfm_plugin.h"
+// It records init and phase calls in the file named by AL_TEST_PLUGIN_RECORD.
+#include "al/al_plugin.h"
 
 #include <windows.h>
 
@@ -15,7 +15,7 @@ extern "C" __declspec(dllexport) int not_a_plugin() { return 0; }
 #else
 
 #ifndef FIXTURE_API
-#define FIXTURE_API CMFM_API_VERSION
+#define FIXTURE_API AL_API_VERSION
 #endif
 #ifndef FIXTURE_ORDER
 #define FIXTURE_ORDER 0
@@ -27,7 +27,7 @@ extern "C" __declspec(dllexport) int not_a_plugin() { return 0; }
 namespace {
 void record(const std::string& line) {
     wchar_t path[1024]{};
-    if (!GetEnvironmentVariableW(L"CMFM_TEST_PLUGIN_RECORD", path, 1024)) return;
+    if (!GetEnvironmentVariableW(L"AL_TEST_PLUGIN_RECORD", path, 1024)) return;
     const HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                                     OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return;
@@ -43,7 +43,7 @@ bool ends_with(const wchar_t* path, const wchar_t* tail) {
     return text.size() >= end.size() && text.compare(text.size() - end.size(), end.size(), end) == 0;
 }
 
-void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
+void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void*) {
 #ifdef FIXTURE_NATIVE_PHASE
     RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
 #endif
@@ -51,9 +51,9 @@ void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
 #ifdef FIXTURE_RUNTIME
     using Check = BOOL(*)();
     const auto module = GetModuleHandleW(nullptr);
-    const auto cookie = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_cookie_unchanged"));
-    const auto common = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_common_unchanged"));
-    const auto restored = std::bit_cast<Check>(GetProcAddress(module, "cmfm_test_startup_restored"));
+    const auto cookie = std::bit_cast<Check>(GetProcAddress(module, "al_test_cookie_unchanged"));
+    const auto common = std::bit_cast<Check>(GetProcAddress(module, "al_test_common_unchanged"));
+    const auto restored = std::bit_cast<Check>(GetProcAddress(module, "al_test_startup_restored"));
     record(std::string(FIXTURE_NAME) + " phase_thread " + std::to_string(GetCurrentThreadId()));
     record(cookie && cookie() && common && common() && restored && restored() ?
            "startup-state-preserved" : "startup-state-changed");
@@ -82,50 +82,50 @@ const char* const exes[] = {"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 #ifndef FIXTURE_DEPENDS_VERSION
 #define FIXTURE_DEPENDS_VERSION nullptr
 #endif
-const cmfm_dependency_t dependencies[] = {{FIXTURE_DEPENDS, FIXTURE_DEPENDS_VERSION}, {nullptr, nullptr}};
+const al_dependency_t dependencies[] = {{FIXTURE_DEPENDS, FIXTURE_DEPENDS_VERSION}, {nullptr, nullptr}};
 #define FIXTURE_DEPENDENCY_LIST dependencies
 #else
 #define FIXTURE_DEPENDENCY_LIST nullptr
 #endif
 #ifndef FIXTURE_INFO_SIZE
-#define FIXTURE_INFO_SIZE sizeof(cmfm_plugin_info_t)
+#define FIXTURE_INFO_SIZE sizeof(al_plugin_info_t)
 #endif
 
-const cmfm_plugin_info_t info = {
+const al_plugin_info_t info = {
     FIXTURE_INFO_SIZE, FIXTURE_API, FIXTURE_NAME, "Fixture " FIXTURE_NAME, "0.0.1", FIXTURE_PHASES,
     FIXTURE_ORDER, FIXTURE_AFTER_LIST, FIXTURE_BEFORE_LIST, FIXTURE_EXE_LIST,
     FIXTURE_PHASES ? on_phase : nullptr, FIXTURE_DEPENDENCY_LIST,
 };
 }  // namespace
 
-extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
+extern "C" AL_PLUGIN_EXPORT const al_plugin_info_t* AL_CALL al_plugin_info(void) {
 #ifdef FIXTURE_FAULT_INFO
-    return reinterpret_cast<const cmfm_plugin_info_t*>(std::uintptr_t{1});
+    return reinterpret_cast<const al_plugin_info_t*>(std::uintptr_t{1});
 #else
     return &info;
 #endif
 }
 
-extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api,
-                                                                      const cmfm_init_t* init) {
+extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* api,
+                                                                      const al_init_t* init) {
 #ifdef FIXTURE_NATIVE_INIT
     RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
 #endif
 #ifdef FIXTURE_THROW_INIT
     if (GetCurrentProcessId() != 0) throw 1;
 #endif
-    const bool paths = init->size == sizeof(cmfm_init_t) && ends_with(init->folder, L"" FIXTURE_NAME) &&
+    const bool paths = init->size == sizeof(al_init_t) && ends_with(init->folder, L"" FIXTURE_NAME) &&
                        ends_with(init->folder_real, L"" FIXTURE_NAME);
     record(std::string(FIXTURE_NAME) + " init" + (paths ? "" : " bad-paths"));
 #ifdef FIXTURE_SLEEP_MS
     Sleep(FIXTURE_SLEEP_MS);
 #endif
-    api->log(init->self, CMFM_LOG_INFO, "fixture " FIXTURE_NAME " started");
+    api->log(init->self, AL_LOG_INFO, "fixture " FIXTURE_NAME " started");
 #ifdef FIXTURE_FAIL
-    api->set_status(init->self, CMFM_STATUS_DISABLED, "fixture refuses to start");
-    return CMFM_ERROR;
+    api->set_status(init->self, AL_STATUS_DISABLED, "fixture refuses to start");
+    return AL_ERROR;
 #else
-    return CMFM_OK;
+    return AL_OK;
 #endif
 }
 #endif

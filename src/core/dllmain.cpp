@@ -20,7 +20,7 @@ volatile LONG g_started = 0;
 
 // The core log stays open for the whole process: the exe checksum thread
 // writes to it after the bootstrap has returned.
-cmfm::LogFile g_log;
+al::LogFile g_log;
 SRWLOCK g_log_lock = SRWLOCK_INIT;
 
 class LogLock {
@@ -47,16 +47,16 @@ void log_line(std::wstring_view text) {
 DWORD WINAPI log_exe_hash(void*) noexcept {
     try {
         SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
-        const auto hash = cmfm::sha256_file(cmfm::module_path());
+        const auto hash = al::sha256_file(al::module_path());
         LARGE_INTEGER done{};
         QueryPerformanceCounter(&done);
         try {
             log_line(hash.empty() ? L"warning: exe SHA-256 unavailable" : L"exe_sha256=" + hash);
             log_line(L"exe_sha256_qpc=" + std::to_wstring(done.QuadPart));
         } catch (...) { /* The plugin hash result is independent of log writes. */ }
-        cmfm::startup::publish_hash_result(hash);
+        al::startup::publish_hash_result(hash);
     } catch (...) {
-        cmfm::startup::publish_hash_result({});
+        al::startup::publish_hash_result({});
         try {
             log_line(L"warning: exe SHA-256 logging failed");
         } catch (...) { /* Nothing left to report to. */ }
@@ -70,21 +70,21 @@ void start_exe_hash() {
     HMODULE self = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
                             reinterpret_cast<LPCWSTR>(&log_exe_hash), &self)) {
-        log_line(L"warning: exe SHA-256 not started: " + cmfm::win32_error_text(GetLastError()));
-        cmfm::startup::publish_hash_result({});
+        log_line(L"warning: exe SHA-256 not started: " + al::win32_error_text(GetLastError()));
+        al::startup::publish_hash_result({});
         return;
     }
-    cmfm::Handle thread(CreateThread(nullptr, 0, log_exe_hash, nullptr, 0, nullptr));
+    al::Handle thread(CreateThread(nullptr, 0, log_exe_hash, nullptr, 0, nullptr));
     if (!thread) {
         const DWORD code = GetLastError();
         FreeLibrary(self);
-        log_line(L"warning: exe SHA-256 not started: " + cmfm::win32_error_text(code));
-        cmfm::startup::publish_hash_result({});
+        log_line(L"warning: exe SHA-256 not started: " + al::win32_error_text(code));
+        al::startup::publish_hash_result({});
     }
 }
 
-DWORD startup(const cmfm::StartupRequest* request) {
-    if (!request || request->size != sizeof(*request) || request->abi != cmfm::kStartupAbi) {
+DWORD startup(const al::StartupRequest* request) {
+    if (!request || request->size != sizeof(*request) || request->abi != al::kStartupAbi) {
         return ERROR_REVISION_MISMATCH;
     }
     if (InterlockedCompareExchange(&g_started, 1, 0) != 0) return ERROR_ALREADY_INITIALIZED;
@@ -93,30 +93,30 @@ DWORD startup(const cmfm::StartupRequest* request) {
 
     // This export is called after LoadLibraryW has returned, outside DllMain
     // and the loader lock. Plugins remain deferred until verified PRE_MAIN.
-    const auto virtual_path = cmfm::module_path(g_module);
-    cmfm::Handle file(CreateFileW(virtual_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+    const auto virtual_path = al::module_path(g_module);
+    al::Handle file(CreateFileW(virtual_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
     if (!file) return GetLastError();
-    const auto real_path = cmfm::final_path(file.get());
+    const auto real_path = al::final_path(file.get());
     if (real_path.empty()) return GetLastError();
-    const auto folder = cmfm::join_path(cmfm::directory_of(real_path), L"logs");
-    const auto log_path = cmfm::join_path(folder, L"core." +
+    const auto folder = al::join_path(al::directory_of(real_path), L"logs");
+    const auto log_path = al::join_path(folder, L"core." +
                                         std::to_wstring(GetCurrentProcessId()) + L".log");
     {
         LogLock lock;
         if (!g_log.open(log_path)) return GetLastError();
     }
 
-    const auto profile = cmfm::environment(L"USERPROFILE");
-    log_line(L"CMFM " CMFM_VERSION L" commit=" CMFM_GIT_COMMIT);
+    const auto profile = al::environment(L"USERPROFILE");
+    log_line(L"Astera Loader " AL_BUILD_VERSION L" commit=" AL_GIT_COMMIT);
     log_line(L"bootstrap_stage=log_opened; preceding time includes path resolution and log creation");
     log_line(L"pid=" + std::to_wstring(GetCurrentProcessId()));
-    log_line(L"dll=" + cmfm::redact_profile(real_path, profile));
+    log_line(L"dll=" + al::redact_profile(real_path, profile));
     log_line(L"bootstrap_stage=dll_hash_begin");
-    const auto dll_hash = cmfm::sha256_file(real_path);
+    const auto dll_hash = al::sha256_file(real_path);
     log_line(L"bootstrap_stage=dll_hash_complete");
     log_line(L"dll_sha256=" + dll_hash);
-    log_line(L"exe=" + cmfm::redact_profile(cmfm::module_path(), profile));
+    log_line(L"exe=" + al::redact_profile(al::module_path(), profile));
     if (dll_hash.empty()) {
         log_line(L"startup_failed: DLL hash unavailable");
         return ERROR_READ_FAULT;
@@ -139,29 +139,29 @@ DWORD startup(const cmfm::StartupRequest* request) {
                             L"d3d12.dll", L"dinput8.dll", L"loader.dll"}) {
         const auto module = GetModuleHandleW(name);
         log_line(std::wstring(L"module ") + name + L"=" +
-                 (module ? cmfm::redact_profile(cmfm::module_path(module), profile) : L"absent"));
+                 (module ? al::redact_profile(al::module_path(module), profile) : L"absent"));
     }
     log_line(L"MO2 profile and force-load: record in the run manifest; not inferred here");
-    log_line(L"CMFM plugins deferred until verified PRE_MAIN");
+    log_line(L"Astera Loader plugins deferred until verified PRE_MAIN");
     log_line(L"startup_confirmed; game startup phase not yet entered");
     {
         LogLock lock;
         if (!g_log.good()) return ERROR_WRITE_FAULT;
     }
-    cmfm::startup::initialise_hash_result(folder, log_line);
+    al::startup::initialise_hash_result(folder, log_line);
     log_line(L"bootstrap_stage=exe_hash_thread_begin");
     start_exe_hash();
     log_line(L"bootstrap_stage=exe_hash_thread_ready");
     log_line(L"bootstrap_stage=observer_begin");
-    cmfm::startup::arm_pre_main(g_module, folder, log_line);
+    al::startup::arm_pre_main(g_module, folder, log_line);
     log_line(L"bootstrap_stage=bootstrap_complete");
-    return cmfm::kStartupOk;
+    return al::kStartupOk;
 }
 }  // namespace
 
-extern "C" __declspec(dllexport) DWORD WINAPI cmfm_bootstrap(void* parameter) noexcept {
+extern "C" __declspec(dllexport) DWORD WINAPI al_bootstrap(void* parameter) noexcept {
     try {
-        return startup(static_cast<const cmfm::StartupRequest*>(parameter));
+        return startup(static_cast<const al::StartupRequest*>(parameter));
     } catch (...) {
         return ERROR_UNHANDLED_EXCEPTION;
     }

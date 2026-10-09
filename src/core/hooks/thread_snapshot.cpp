@@ -20,7 +20,7 @@ struct Ids {
 };
 }
 
-extern "C" BOOL WINAPI cmfm_enumerate_process_threads(HANDLE heap, LPDWORD* ids, UINT* count) noexcept {
+extern "C" BOOL WINAPI al_enumerate_process_threads(HANDLE heap, LPDWORD* ids, UINT* count) noexcept {
     g_attempts.fetch_add(1);
     *ids = nullptr;
     *count = 0;
@@ -55,7 +55,7 @@ extern "C" BOOL WINAPI cmfm_enumerate_process_threads(HANDLE heap, LPDWORD* ids,
     return TRUE;
 }
 
-cmfm::hooks::ThreadSnapshotCounts cmfm::hooks::thread_snapshot_counts() noexcept {
+al::hooks::ThreadSnapshotCounts al::hooks::thread_snapshot_counts() noexcept {
     const auto succeeded = g_succeeded.load();
     return {g_attempts.load(), succeeded};
 }

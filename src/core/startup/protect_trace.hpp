@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace cmfm::startup {
+namespace al::startup {
 struct ProtectCall {
     std::int64_t begin_qpc = 0;
     std::int64_t end_qpc = 0;
@@ -55,4 +55,4 @@ private:
     std::atomic<std::uint64_t> total_{0};
     std::atomic<bool> accepting_{false};
 };
-}  // namespace cmfm::startup
+}  // namespace al::startup

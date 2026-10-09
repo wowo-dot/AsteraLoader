@@ -1,4 +1,4 @@
-// CMFM's crash handler. Pure parts first; then child processes of this exe
+// AL's crash handler. Pure parts first; then child processes of this exe
 // load the crashing fixture from plugin paths and crash with the handler in
 // place. Each child ends in a last filter that terminates it, so Windows
 // error reporting never runs. argv[1] is the fixture DLL, argv[2] a work
@@ -16,7 +16,7 @@
 #include <string>
 
 namespace fs = std::filesystem;
-namespace crash = cmfm::crash;
+namespace crash = al::crash;
 
 namespace {
 int failures = 0;
@@ -43,21 +43,21 @@ void pure() {
     const auto owner = [](const wchar_t* path, bool core = false, bool game = false) {
         return crash::classify(path, core, game);
     };
-    auto o = owner(L"D:\\Games\\MHW\\cmfm\\plugins\\mhw_dlss\\mhw_dlss.dll");
-    check(o.kind == OwnerKind::plugin && o.name == L"mhw_dlss", "CMFM plugin");
-    o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\MHW DLSS (CMFM plugin)\\cmfm\\plugins\\mhw_dlss\\sl.common.dll");
+    auto o = owner(L"D:\\Games\\MHW\\astera\\plugins\\mhw_dlss\\mhw_dlss.dll");
+    check(o.kind == OwnerKind::plugin && o.name == L"mhw_dlss", "Astera Loader plugin");
+    o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\MHW DLSS (Astera Loader plugin)\\astera\\plugins\\mhw_dlss\\sl.common.dll");
     check(o.kind == OwnerKind::plugin && o.name == L"mhw_dlss", "a DLL a plugin ships, MO2's real folder");
     o = owner(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\Stracker plugins\\NativePC\\Plugins\\more_auto_shoutouts.dll");
     check(o.kind == OwnerKind::stracker_plugin && o.name == L"more_auto_shoutouts.dll", "Stracker plugin, any case");
     o = owner(L"\\Device\\HarddiskVolume2\\Windows\\System32\\KERNELBASE.dll");
     check(o.kind == OwnerKind::windows && o.name == L"KERNELBASE.dll", "Windows");
-    o = owner(L"D:\\Games\\MHW\\cmfm\\cmfm.dll", true);
-    check(o.kind == OwnerKind::core, "CMFM core by base");
+    o = owner(L"D:\\Games\\MHW\\astera\\astera.dll", true);
+    check(o.kind == OwnerKind::core, "Astera Loader core by base");
     o = owner(L"D:\\Games\\MHW\\MonsterHunterWorld.exe", false, true);
     check(o.kind == OwnerKind::game && o.name == L"MonsterHunterWorld.exe", "the game by base");
     o = owner(L"C:\\Program Files (x86)\\Steam\\gameoverlayrenderer64.dll");
     check(o.kind == OwnerKind::other && o.name == L"gameoverlayrenderer64.dll", "other modules");
-    o = owner(L"D:\\Games\\MHW\\cmfm\\plugins\\");
+    o = owner(L"D:\\Games\\MHW\\astera\\plugins\\");
     check(o.kind == OwnerKind::other, "a plugins folder without a plugin name");
     check(owner(L"").kind == OwnerKind::unknown, "no path");
 
@@ -66,7 +66,7 @@ void pure() {
     check(std::string(crash::exception_name(0xC0000005u)) == "access violation", "exception names");
 
     check(crash::minidump_setting("") == crash::Minidump::off, "minidumps off by default");
-    check(crash::minidump_setting("; CMFM\r\n Crash_Minidump = Small ; opt in\r\n") == crash::Minidump::small,
+    check(crash::minidump_setting("; Astera Loader\r\n Crash_Minidump = Small ; opt in\r\n") == crash::Minidump::small,
           "small minidumps, case and comments");
     check(crash::minidump_setting("crash_minidump=full") == crash::Minidump::full, "full minidumps");
     check(crash::minidump_setting("crash_minidump = maybe") == crash::Minidump::off, "unknown values are off");
@@ -81,7 +81,7 @@ void marker(const wchar_t* name) {
     std::ofstream(g_case / name) << "called";
 }
 
-// The filter that was there before CMFM's (as the game's C runtime's is).
+// The filter that was there before AL's (as the game's C runtime's is).
 LONG WINAPI previous_filter(EXCEPTION_POINTERS* info) {
     marker(L"previous.txt");
     if (g_hold) Sleep(INFINITE);
@@ -89,7 +89,7 @@ LONG WINAPI previous_filter(EXCEPTION_POINTERS* info) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
-// A filter set after CMFM's that does not keep its predecessor.
+// A filter set after AL's that does not keep its predecessor.
 LONG WINAPI replacing_filter(EXCEPTION_POINTERS* info) {
     marker(L"replacer.txt");
     TerminateProcess(GetCurrentProcess(), info->ExceptionRecord->ExceptionCode);
@@ -100,9 +100,9 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     g_case = folder;
     if (mode != L"replaced") SetUnhandledExceptionFilter(previous_filter);
-    crash::install({(folder / L"logs").wstring(), (folder / L"cmfm.ini").wstring(), "test", "feedbeef"});
+    crash::install({(folder / L"logs").wstring(), (folder / L"astera.ini").wstring(), "test", "feedbeef"});
     if (!crash::installed()) return 3;
-    crash::note_phase(mode == L"exiting" ? CMFM_PHASE_SHUTDOWN : CMFM_PHASE_FIRST_PRESENT);
+    crash::note_phase(mode == L"exiting" ? AL_PHASE_SHUTDOWN : AL_PHASE_FIRST_PRESENT);
     g_hold = mode == L"raced";
     if (mode == L"replaced") SetUnhandledExceptionFilter(replacing_filter);
     const HMODULE module = LoadLibraryW(dll.c_str());
@@ -116,7 +116,7 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
         // The game's own exit wins the race: WinMain returns while the
         // crashing thread waits in the filter chain.
         for (int k = 0; k < 500 && !fs::exists(folder / L"previous.txt"); ++k) Sleep(10);
-        crash::note_phase(CMFM_PHASE_SHUTDOWN);
+        crash::note_phase(AL_PHASE_SHUTDOWN);
         ExitProcess(0);
     }
     Sleep(30000);  // the crashing thread ends the process
@@ -160,11 +160,11 @@ fs::path prepare(const fs::path& work, const wchar_t* name, const fs::path& rela
 }
 
 void plugin_thread(const fs::path& work, const fs::path& fixture) {
-    const auto folder = prepare(work, L"plugin_thread", L"cmfm/plugins/crashy/crashy.dll", fixture);
-    const auto code = run_child(L"plain", folder, folder / L"cmfm/plugins/crashy/crashy.dll");
+    const auto folder = prepare(work, L"plugin_thread", L"astera/plugins/crashy/crashy.dll", fixture);
+    const auto code = run_child(L"plain", folder, folder / L"astera/plugins/crashy/crashy.dll");
     check(code == 0xC0000005u, "a plugin thread's crash ends the process with its code");
     const auto report = read_file(find_report(folder, L".txt"));
-    check(has(report, "cmfm=test exe_sha256=feedbeef"), "report header");
+    check(has(report, "al=test exe_sha256=feedbeef"), "report header");
     check(has(report, "phase=first_present (while the game was running)"), "phase");
     check(has(report, "exception=0xc0000005 access violation, writing 0x0"), "exception and access");
     check(has(report, "at=crashy.dll+0x") && has(report, "(plugin crashy)"), "faulting module and its plugin");
@@ -178,7 +178,7 @@ void plugin_thread(const fs::path& work, const fs::path& fixture) {
 
     const auto logs = (folder / L"logs").wstring();
     const auto notice = crash::take_previous(logs);
-    check(notice.find(L"while the game was running, in the CMFM plugin \"crashy\": access violation at crashy.dll+0x") !=
+    check(notice.find(L"while the game was running, in the Astera Loader plugin \"crashy\": access violation at crashy.dll+0x") !=
               std::wstring::npos && notice.find(L"try the game without that plugin") != std::wstring::npos,
           "next-launch notice names the plugin");
     check(crash::take_previous(logs).empty() && fs::exists(folder / L"logs/crashes/last-crash.seen.txt"),
@@ -194,7 +194,7 @@ void replaced_filter(const fs::path& work, const fs::path& fixture) {
           "owner found on the stack below Windows code");
     check(has(report, "(Windows "), "faulting module is Windows code");
     check(has(report, "(the game's main thread)"), "main thread named");
-    check(fs::exists(folder / L"replacer.txt"), "the replacing filter still runs, after CMFM's");
+    check(fs::exists(folder / L"replacer.txt"), "the replacing filter still runs, after Astera Loader's");
     const auto notice = crash::take_previous((folder / L"logs").wstring());
     check(notice.find(L"in the Stracker plugin stracky.dll (inside ") != std::wstring::npos, "notice: called from");
     if (failures) std::cerr << report << '\n';
@@ -213,9 +213,9 @@ void raced_exit(const fs::path& work, const fs::path& fixture) {
 }
 
 void exiting_with_dump(const fs::path& work, const fs::path& fixture) {
-    const auto folder = prepare(work, L"exiting", L"cmfm/plugins/crashy/crashy.dll", fixture);
-    std::ofstream(folder / L"cmfm.ini") << "crash_minidump = small\r\n";
-    const auto code = run_child(L"exiting", folder, folder / L"cmfm/plugins/crashy/crashy.dll");
+    const auto folder = prepare(work, L"exiting", L"astera/plugins/crashy/crashy.dll", fixture);
+    std::ofstream(folder / L"astera.ini") << "crash_minidump = small\r\n";
+    const auto code = run_child(L"exiting", folder, folder / L"astera/plugins/crashy/crashy.dll");
     check(code == 0xC0000005u, "exit-time crash code");
     const auto report = read_file(find_report(folder, L".txt"));
     check(has(report, "phase=shutdown (while the game was exiting)"), "exit-time phase");
@@ -231,7 +231,7 @@ int wmain(int argc, wchar_t** argv) {
     if (argc == 5 && std::wstring(argv[1]) == L"child") return child(argv[2], argv[3], argv[4]);
     if (argc != 3) return 2;
     pure();
-    const auto work = cmfm_test::fresh_work_dir(argv[2]);
+    const auto work = al_test::fresh_work_dir(argv[2]);
     fs::create_directories(work);
     plugin_thread(work, argv[1]);
     replaced_filter(work, argv[1]);

@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 namespace {
-using namespace cmfm::game_hooks;
+using namespace al::game_hooks;
 void require(bool ok, const char* why) { if (!ok) throw std::runtime_error(why); }
 using Eight = double (*)(double, double, double, double, double, double, double, double);
 void* original{};
@@ -69,9 +69,9 @@ int main() {
         require(installer.enable(function).empty() && call(&target) == baseline + 1 && valid_arguments && valid_error,
             "enabled entry changed XMM/stack arguments or last error");
         InterlockedExchangePointer(&head, std::bit_cast<void*>(&other_detour));
-        cmfm::graphics::begin_internal();
+        al::graphics::begin_internal();
         require(call(&target) == baseline + 2 && valid_arguments, "head change failed or d3d12 internal bypassed game hook");
-        cmfm::graphics::end_internal();
+        al::graphics::end_internal();
         const auto sentinel = reinterpret_cast<void*>(0x1234);
         void* duplicate_original = sentinel;
         require(!installer.create(function, &head, &duplicate_original).empty() && duplicate_original == sentinel,
@@ -98,26 +98,26 @@ int main() {
         const auto bytes = signature(late);
         const auto expected = late_target(7);
         std::string why;
-        const cmfm_hook_t first{sizeof(first), 0, "LateAddress", bytes.c_str(), 0, 0, late, std::bit_cast<void*>(&late_a), &next_a};
+        const al_hook_t first{sizeof(first), 0, "LateAddress", bytes.c_str(), 0, 0, late, std::bit_cast<void*>(&late_a), &next_a};
         require(registry->hook(a, first, why) != 0 && why.empty() && late_target(7) == expected + 1, "first native registry hook");
         std::memcpy(before.data(), late, before.size());
-        const cmfm_hook_t second{sizeof(second), 0, "LateAddress", bytes.c_str(), 0, 0, late, std::bit_cast<void*>(&late_b), &next_b};
+        const al_hook_t second{sizeof(second), 0, "LateAddress", bytes.c_str(), 0, 0, late, std::bit_cast<void*>(&late_b), &next_b};
         require(registry->hook(b, second, why) != 0 && why.empty() && late_target(7) == expected + 3 &&
             !std::memcmp(before.data(), late, before.size()), "late address join rejected or repatched");
         Client wrong; wrong.name = "wrong";
         void* wrong_next = sentinel;
-        const cmfm_hook_t bad{sizeof(bad), 0, "Wrong", "90 90 90 90 90 90", 0, 0, late, std::bit_cast<void*>(&late_b), &wrong_next};
+        const al_hook_t bad{sizeof(bad), 0, "Wrong", "90 90 90 90 90 90", 0, 0, late, std::bit_cast<void*>(&late_b), &wrong_next};
         require(!registry->hook(wrong, bad, why) && why.find("do not match") != std::string::npos && wrong_next == sentinel,
             "late join ignored a signature mismatch");
         auto hot = const_cast<unsigned char*>(hot_code + 5);
         const auto hot_bytes = signature(hot);
-        const cmfm_hook_t hot_first{sizeof(hot_first), 0, "HotPatch", hot_bytes.c_str(), 0, 0, hot, std::bit_cast<void*>(&hot_a), &hot_next_a};
+        const al_hook_t hot_first{sizeof(hot_first), 0, "HotPatch", hot_bytes.c_str(), 0, 0, hot, std::bit_cast<void*>(&hot_a), &hot_next_a};
         const auto hot_handle = registry->hook(a, hot_first, why);
         if (!hot_handle) std::cerr << why << '\n';
         const volatile unsigned char* hot_live = hot;
         require(hot_handle && std::bit_cast<Hot>(hot)() == 1 && hot_live[0] == 0xeb && hot_live[-5] == 0xe9,
             "MinHook hotpatch fixture did not activate");
-        const cmfm_hook_t hot_second{sizeof(hot_second), 0, "HotPatch", hot_bytes.c_str(), 0, 0, hot, std::bit_cast<void*>(&hot_b), &hot_next_b};
+        const al_hook_t hot_second{sizeof(hot_second), 0, "HotPatch", hot_bytes.c_str(), 0, 0, hot, std::bit_cast<void*>(&hot_b), &hot_next_b};
         require(registry->hook(b, hot_second, why) && std::bit_cast<Hot>(hot)() == 3, "hotpatch footprint rejected a late join");
         std::cout << "Game-hook inactive creation, ABI, live head, relocation refusals and late address join passed\n";
         return 0;

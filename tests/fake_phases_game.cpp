@@ -21,7 +21,7 @@ struct InstallSplLikeHook {
         using Install=BOOL (*)(void*);
         const auto plugin=GetModuleHandleW(L"phase_probe.dll");
         if (!plugin) return;
-        const auto install=std::bit_cast<Install>(GetProcAddress(plugin,"cmfm_test_install_win_main_hook"));
+        const auto install=std::bit_cast<Install>(GetProcAddress(plugin,"al_test_install_win_main_hook"));
         const auto wrapper=reinterpret_cast<const std::uint8_t*>(&WinMainCRTStartup);
         std::int32_t delta=0; std::memcpy(&delta,wrapper+14,4);
         const auto common=wrapper+18+delta;
@@ -39,14 +39,14 @@ struct InstallSplLikeHook {
     }
 } install_spl_like_hook;
 }
-extern "C" __declspec(dllexport) __declspec(noinline) void* cmfm_test_create_device(IUnknown* adapter, BOOL probe) {
+extern "C" __declspec(dllexport) __declspec(noinline) void* al_test_create_device(IUnknown* adapter, BOOL probe) {
     void* device=nullptr;
     const auto result=D3D12CreateDevice(adapter,D3D_FEATURE_LEVEL_11_0,__uuidof(ID3D12Device),probe?nullptr:&device);
     if (GetLastError()!=0x5a || FAILED(result)) return reinterpret_cast<void*>(1);
     return device;
 }
-extern "C" __declspec(dllexport) BOOL cmfm_test_prime_code() {
-    const auto pointer=reinterpret_cast<DWORD64>(&cmfm_test_create_device);
+extern "C" __declspec(dllexport) BOOL al_test_prime_code() {
+    const auto pointer=reinterpret_cast<DWORD64>(&al_test_create_device);
     DWORD64 base=0;
     const auto fn=RtlLookupFunctionEntry(pointer,&base,nullptr);
     if (!fn || fn->EndAddress<=fn->BeginAddress || fn->EndAddress-fn->BeginAddress>sizeof(saved)) return FALSE;
@@ -55,38 +55,38 @@ extern "C" __declspec(dllexport) BOOL cmfm_test_prime_code() {
     std::memcpy(saved,begin,extent);
     return TRUE;
 }
-extern "C" __declspec(dllexport) BOOL cmfm_test_validate_device_caller(const void* caller) {
+extern "C" __declspec(dllexport) BOOL al_test_validate_device_caller(const void* caller) {
     const auto at=static_cast<const std::uint8_t*>(caller);
     return begin && at>=begin+6 && at<begin+extent &&
         ((at[-6]==0xff && at[-5]==0x15) || at[-5]==0xe8) && !std::memcmp(saved,begin,extent);
 }
-extern "C" BOOL cmfm_test_startup_restored();
-extern "C" BOOL cmfm_test_cookie_unchanged();
+extern "C" BOOL al_test_startup_restored();
+extern "C" BOOL al_test_cookie_unchanged();
 struct RenderSetup { IUnknown* adapter; ID3D12Device* device{}; DWORD thread{}; };
 DWORD WINAPI create_on_setup_thread(void* parameter) {
     auto& setup=*static_cast<RenderSetup*>(parameter);
     setup.thread=GetCurrentThreadId();
-    setup.device=static_cast<ID3D12Device*>(cmfm_test_create_device(setup.adapter,FALSE));
-    auto again=static_cast<ID3D12Device*>(cmfm_test_create_device(setup.adapter,FALSE));
+    setup.device=static_cast<ID3D12Device*>(al_test_create_device(setup.adapter,FALSE));
+    auto again=static_cast<ID3D12Device*>(al_test_create_device(setup.adapter,FALSE));
     if (reinterpret_cast<std::uintptr_t>(again)<=1) return 95;
     again->Release();
     return reinterpret_cast<std::uintptr_t>(setup.device)>1?0:94;
 }
 int WINAPI WinMain(HINSTANCE,HINSTANCE,char*,int) {
-    cmfm::LogFile log;
-    if (!log.open(cmfm::environment(L"CMFM_FAKE_OUTPUT"))) return 90;
+    al::LogFile log;
+    if (!log.open(al::environment(L"AL_FAKE_OUTPUT"))) return 90;
     log.line(L"main_thread_id="+std::to_wstring(GetCurrentThreadId()));
-    if (!cmfm_test_startup_restored() || !cmfm_test_cookie_unchanged()) return 91;
+    if (!al_test_startup_restored() || !al_test_cookie_unchanged()) return 91;
     Microsoft::WRL::ComPtr<IDXGIFactory4> factory;
     Microsoft::WRL::ComPtr<IUnknown> adapter;
     if (FAILED(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory))) || FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter)))) return 92;
-    if (cmfm_test_create_device(adapter.Get(),TRUE)) return 93;
-    if (cmfm_test_create_device(adapter.Get(),TRUE)) return 93;
+    if (al_test_create_device(adapter.Get(),TRUE)) return 93;
+    if (al_test_create_device(adapter.Get(),TRUE)) return 93;
     RenderSetup setup{adapter.Get()};
-    if (cmfm::environment(L"CMFM_FAKE_DEVICE_THREAD").empty()) {
+    if (al::environment(L"AL_FAKE_DEVICE_THREAD").empty()) {
         if (const auto result=create_on_setup_thread(&setup)) return static_cast<int>(result);
     } else {
-        cmfm::Handle thread(CreateThread(nullptr,0,create_on_setup_thread,&setup,0,nullptr));
+        al::Handle thread(CreateThread(nullptr,0,create_on_setup_thread,&setup,0,nullptr));
         DWORD result=99;
         if (!thread || WaitForSingleObject(thread.get(),5000)!=WAIT_OBJECT_0 || !GetExitCodeThread(thread.get(),&result) || result) return 98;
     }

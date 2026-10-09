@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <optional>
 
-namespace cmfm::phases {
+namespace al::phases {
 struct DebugSlot { unsigned index; DWORD64 address, control, target; };
 inline DWORD64& debug_address(CONTEXT& context,unsigned slot) noexcept {
     switch(slot) { case 0:return context.Dr0; case 1:return context.Dr1; case 2:return context.Dr2; default:return context.Dr3; }
@@ -30,4 +30,4 @@ inline bool release_debug_slot(CONTEXT& context,const DebugSlot& saved) noexcept
     context.Dr6 &= ~(DWORD64{1}<<saved.index);
     return true;
 }
-}  // namespace cmfm::phases
+}  // namespace al::phases

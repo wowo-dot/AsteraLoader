@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 
 #include <array>
 #include <cstdint>
@@ -8,20 +8,20 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::graphics {
+namespace al::graphics {
 class Hub;
 }
-namespace cmfm::game_hooks {
+namespace al::game_hooks {
 class Registry;
 }
 
-namespace cmfm::plugins {
+namespace al::plugins {
 
 struct HostOptions {
-    std::wstring plugins_root;  // <game>\cmfm\plugins as the game sees it
-    std::wstring logs_folder;   // CMFM's log folder; plugin logs go in <logs>\plugins
+    std::wstring plugins_root;  // <game>\astera\plugins as the game sees it
+    std::wstring logs_folder;   // AL's log folder; plugin logs go in <logs>\plugins
     std::wstring exe_sha256;    // the running exe, lower-case hex; empty if unknown
-    // API 1.1. Empty means a folder beside logs_folder (<cmfm>\data, <cmfm>\cache)
+    // API 1.1. Empty means a folder beside logs_folder (<astera>\data, <astera>\cache)
     // or, for game_folder, the exe's folder.
     std::wstring data_root;     // plugin data folders: <data_root>\<name>
     std::wstring cache_folder;  // the scanner's cache, one file per exe hash
@@ -33,20 +33,20 @@ struct PluginReport {
     std::wstring name;  // folder or file name in the plugins folder
     std::string display_name;
     std::string version;
-    cmfm_status_t status = CMFM_STATUS_DISABLED;
+    al_status_t status = AL_STATUS_DISABLED;
     std::string reason;
-    bool initialised = false;  // cmfm_plugin_init was called; stays loaded
+    bool initialised = false;  // al_plugin_init was called; stays loaded
     std::wstring folder;
     std::wstring folder_real;
     // Start-up cost on the calling thread, in microseconds.
     std::uint64_t load_us = 0;                               // LoadLibrary and the info check
-    std::uint64_t init_us = 0;                               // cmfm_plugin_init
-    std::array<std::uint64_t, CMFM_PHASE_COUNT> phase_us{};  // on_phase, summed per phase
+    std::uint64_t init_us = 0;                               // al_plugin_init
+    std::array<std::uint64_t, AL_PHASE_COUNT> phase_us{};  // on_phase, summed per phase
 };
 
 struct HostState;  // services and published interfaces, shared by all plugins
 
-// Loads and runs CMFM plugins. It lives until the process exits: initialised
+// Loads and runs AL plugins. It lives until the process exits: initialised
 // plugins hold pointers into it and are never unloaded.
 class Host {
 public:
@@ -62,7 +62,7 @@ public:
 
     // Calls on_phase of every running plugin that asked for `phase`, in load
     // order, on the calling thread.
-    void dispatch(cmfm_phase_t phase, const void* data);
+    void dispatch(al_phase_t phase, const void* data);
 
     // Initialised plugins in load order, then the ones that did not run.
     std::vector<PluginReport> report() const;
@@ -71,20 +71,20 @@ public:
     // (crash handler notice). Valid after load_all.
     std::vector<std::wstring> notices() const;
 
-    // The "cmfm.d3d12" service, for the hook layer. Registration closes when
+    // The "al.d3d12" service, for the hook layer. Registration closes when
     // dispatch(PRE_MAIN) returns; dispatch(DEVICE_CREATED) hands it the device.
     // Valid after load_all.
-    ::cmfm::graphics::Hub& graphics();
+    ::al::graphics::Hub& graphics();
 
-    // The "cmfm.hooks" service, for the hook layer: hand it the installer
+    // The "al.hooks" service, for the hook layer: hand it the installer
     // after PRE_MAIN with set_installer. Valid after load_all.
-    ::cmfm::game_hooks::Registry& game_hooks();
+    ::al::game_hooks::Registry& game_hooks();
 
 private:
     void close_graphics();
 
     std::unique_ptr<HostState> state_;
-    std::vector<std::unique_ptr<cmfm_plugin_t>> plugins_;
+    std::vector<std::unique_ptr<al_plugin_t>> plugins_;
 };
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

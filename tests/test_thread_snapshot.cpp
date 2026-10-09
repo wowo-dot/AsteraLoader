@@ -11,7 +11,7 @@ DWORD WINAPI worker(void* event) { WaitForSingleObject(event, INFINITE); return 
 std::vector<DWORD> process_ids() {
     LPDWORD ids = nullptr;
     UINT count = 0;
-    if (!cmfm_enumerate_process_threads(GetProcessHeap(), &ids, &count)) throw 1;
+    if (!al_enumerate_process_threads(GetProcessHeap(), &ids, &count)) throw 1;
     std::vector<DWORD> result;
     if (count) result.assign(ids, ids + count);
     if (ids) HeapFree(GetProcessHeap(), 0, ids);

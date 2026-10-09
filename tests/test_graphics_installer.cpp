@@ -11,7 +11,7 @@
 #include <stdexcept>
 
 namespace {
-using namespace cmfm::graphics;
+using namespace al::graphics;
 void require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
 bool arguments_valid{};
 using Mixed = double (*)(std::uint64_t, double, std::uint64_t, double, std::uint64_t, double, std::uint64_t, double);
@@ -45,7 +45,7 @@ ULONG STDMETHODCALLTYPE count(Fake*) { return 1; }
 UINT STDMETHODCALLTYPE node_count(ID3D12Device*) { return 777; }
 UINT STDMETHODCALLTYPE descriptor_size(ID3D12Device*, D3D12_DESCRIPTOR_HEAP_TYPE) { return 888; }
 Chain chain(std::uint32_t family, unsigned slot, void** next, void* detour = std::bit_cast<void*>(&foreign)) {
-    return {CMFM_D3D12_METHOD(family, slot), {{detour, next, nullptr, 0}}};
+    return {AL_D3D12_METHOD(family, slot), {{detour, next, nullptr, 0}}};
 }
 }
 int main() {
@@ -62,11 +62,11 @@ int main() {
         const auto variadic = detail::entry_stub(std::bit_cast<void*>(&varargs), &select_mixed);
         require(variadic && std::bit_cast<Varargs>(variadic)(5, 1.25, 2.5, 3.75, 4.125, 5.5) == 17.125, "bridge varargs registers/stack");
         VirtualFree(variadic, 0, MEM_RELEASE);
-        require(detail::interface_version(CMFM_D3D12_SWAPCHAIN, 8) == 0 &&
-            detail::interface_version(CMFM_D3D12_SWAPCHAIN, 22) == 1 &&
-            detail::interface_version(CMFM_D3D12_SWAPCHAIN, 39) == 3 &&
-            detail::interface_version(CMFM_D3D12_DEVICE, 2) == -1 &&
-            detail::interface_version(CMFM_D3D12_COMMAND_LIST, 255) == -1, "SDK interface bounds");
+        require(detail::interface_version(AL_D3D12_SWAPCHAIN, 8) == 0 &&
+            detail::interface_version(AL_D3D12_SWAPCHAIN, 22) == 1 &&
+            detail::interface_version(AL_D3D12_SWAPCHAIN, 39) == 3 &&
+            detail::interface_version(AL_D3D12_DEVICE, 2) == -1 &&
+            detail::interface_version(AL_D3D12_COMMAND_LIST, 255) == -1, "SDK interface bounds");
 
         using Microsoft::WRL::ComPtr;
         ComPtr<IDXGIFactory4> factory; ComPtr<IUnknown> adapter; ComPtr<ID3D12Device> device;
@@ -78,35 +78,35 @@ int main() {
         const auto sentinel = reinterpret_cast<void*>(0x1234);
         void* next = sentinel;
         NativeInstaller installer({}, {});
-        require(installer.install(CMFM_D3D12_DEVICE, nullptr, {}).empty() && next == sentinel, "empty registry changed storage");
+        require(installer.install(AL_D3D12_DEVICE, nullptr, {}).empty() && next == sentinel, "empty registry changed storage");
         std::array<void*, 256> table{};
         table[0] = std::bit_cast<void*>(&query); table[1] = table[2] = std::bit_cast<void*>(&count);
         table[8] = std::bit_cast<void*>(&foreign);
         Fake fake{table.data()};
-        auto invalid = chain(CMFM_D3D12_SWAPCHAIN, 8, &next);
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&invalid}).find("not a native") != std::string::npos && next == sentinel,
+        auto invalid = chain(AL_D3D12_SWAPCHAIN, 8, &next);
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&invalid}).find("not a native") != std::string::npos && next == sentinel,
             "non-System32 target accepted/changed next");
-        auto high = chain(CMFM_D3D12_SWAPCHAIN, 255, &next);
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&high}).find("exceeds") != std::string::npos && next == sentinel,
+        auto high = chain(AL_D3D12_SWAPCHAIN, 255, &next);
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&high}).find("exceeds") != std::string::npos && next == sentinel,
             "out-of-range slot accepted");
-        auto newer = chain(CMFM_D3D12_SWAPCHAIN, 39, &next);
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&newer}).find("does not implement") != std::string::npos && next == sentinel,
+        auto newer = chain(AL_D3D12_SWAPCHAIN, 39, &next);
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&newer}).find("does not implement") != std::string::npos && next == sentinel,
             "missing interface accepted");
         table[8] = table[13] = native_table[7];
         void* other_next = sentinel;
-        auto duplicate = chain(CMFM_D3D12_SWAPCHAIN, 13, &other_next);
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&invalid, &duplicate}).find("one target") != std::string::npos &&
+        auto duplicate = chain(AL_D3D12_SWAPCHAIN, 13, &other_next);
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&invalid, &duplicate}).find("one target") != std::string::npos &&
             next == sentinel && other_next == sentinel, "duplicate target accepted/partially linked");
         table[13] = native_table[15];
         duplicate.layers[0].next = &next;
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&invalid, &duplicate}).find("share next") != std::string::npos &&
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&invalid, &duplicate}).find("share next") != std::string::npos &&
             next == sentinel, "shared next storage accepted");
         auto readonly = static_cast<void**>(VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
         require(readonly != nullptr, "readonly storage allocation");
         *readonly = sentinel; DWORD old{};
         require(VirtualProtect(readonly, 4096, PAGE_READONLY, &old) != FALSE, "readonly protection");
         invalid.layers[0].next = readonly;
-        require(installer.install(CMFM_D3D12_SWAPCHAIN, &fake, {&invalid}).find("unwritable") != std::string::npos &&
+        require(installer.install(AL_D3D12_SWAPCHAIN, &fake, {&invalid}).find("unwritable") != std::string::npos &&
             *readonly == sentinel, "readonly next storage accepted");
         VirtualFree(readonly, 0, MEM_RELEASE);
 
@@ -114,14 +114,14 @@ int main() {
         // was created. No next may change and the first target must stay native.
         void* blocked_original{};
         require(MH_CreateHook(native_table[15], std::bit_cast<void*>(&descriptor_size), &blocked_original) == MH_OK, "conflicting hook fixture");
-        auto first = chain(CMFM_D3D12_DEVICE, 7, &next, std::bit_cast<void*>(&node_count));
-        auto blocked = chain(CMFM_D3D12_DEVICE, 15, &other_next, std::bit_cast<void*>(&descriptor_size));
-        require(installer.install(CMFM_D3D12_DEVICE, device.Get(), {&first, &blocked}).find("MinHook create") != std::string::npos &&
+        auto first = chain(AL_D3D12_DEVICE, 7, &next, std::bit_cast<void*>(&node_count));
+        auto blocked = chain(AL_D3D12_DEVICE, 15, &other_next, std::bit_cast<void*>(&descriptor_size));
+        require(installer.install(AL_D3D12_DEVICE, device.Get(), {&first, &blocked}).find("MinHook create") != std::string::npos &&
             next == sentinel && other_next == sentinel && device->GetNodeCount() == 1, "create failure did not roll back");
         require(MH_RemoveHook(native_table[15]) == MH_OK, "conflicting hook cleanup");
 
         NativeInstaller active({}, {});
-        require(active.install(CMFM_D3D12_DEVICE, device.Get(), {&blocked}).empty() && other_next != sentinel &&
+        require(active.install(AL_D3D12_DEVICE, device.Get(), {&blocked}).empty() && other_next != sentinel &&
             device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) == 888, "native detour not enabled");
         begin_internal(); begin_internal();
         require(device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) != 888, "internal call entered layers");

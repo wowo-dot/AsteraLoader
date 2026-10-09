@@ -30,7 +30,7 @@ std::string read_file(const fs::path& path) {
     return text.str();
 }
 
-const cmfm::plugins::PluginReport* find(const std::vector<cmfm::plugins::PluginReport>& report,
+const al::plugins::PluginReport* find(const std::vector<al::plugins::PluginReport>& report,
                                          const std::wstring& name) {
     for (const auto& line : report) {
         if (line.name == name) return &line;
@@ -38,11 +38,11 @@ const cmfm::plugins::PluginReport* find(const std::vector<cmfm::plugins::PluginR
     return nullptr;
 }
 
-void expect_refused(const std::vector<cmfm::plugins::PluginReport>& report, const std::wstring& name,
+void expect_refused(const std::vector<al::plugins::PluginReport>& report, const std::wstring& name,
                     const std::string& reason_part) {
-    const auto label = cmfm::to_utf8(name) + " refused";
+    const auto label = al::to_utf8(name) + " refused";
     const auto line = find(report, name);
-    check(line && line->status == CMFM_STATUS_DISABLED && !line->initialised &&
+    check(line && line->status == AL_STATUS_DISABLED && !line->initialised &&
           line->reason.find(reason_part) != std::string::npos, label);
     if (line && line->reason.find(reason_part) == std::string::npos) std::cerr << "  reason: " << line->reason << '\n';
 }
@@ -51,7 +51,7 @@ void expect_refused(const std::vector<cmfm::plugins::PluginReport>& report, cons
 int wmain(int argc, wchar_t** argv) {
     if (argc != 3) return 2;
     const fs::path fixtures = argv[1];
-    const fs::path work = cmfm_test::fresh_work_dir(argv[2]);
+    const fs::path work = al_test::fresh_work_dir(argv[2]);
     const auto root = work / L"plugins";
     const auto logs = work / L"logs";
     fs::create_directories(root);
@@ -72,14 +72,14 @@ int wmain(int argc, wchar_t** argv) {
     fs::copy_file(fixtures / L"alpha.dll", root / L"stray.dll");
 
     const auto record = work / L"record.txt";
-    SetEnvironmentVariableW(L"CMFM_TEST_PLUGIN_RECORD", record.c_str());
+    SetEnvironmentVariableW(L"AL_TEST_PLUGIN_RECORD", record.c_str());
 
-    cmfm::plugins::Host empty_host;
+    al::plugins::Host empty_host;
     empty_host.load_all({(work / L"missing").wstring(), logs.wstring(), L""});
     check(empty_host.report().empty(), "missing plugins folder means no plugins");
 
-    cmfm::plugins::Host host;
-    host.load_all({root.wstring(), logs.wstring(), cmfm::sha256_file(cmfm::module_path())});
+    al::plugins::Host host;
+    host.load_all({root.wstring(), logs.wstring(), al::sha256_file(al::module_path())});
     const auto report = host.report();
 
     std::vector<std::wstring> initialised;
@@ -93,18 +93,18 @@ int wmain(int argc, wchar_t** argv) {
 
     for (const auto name : {L"alpha", L"phased", L"gamma", L"delta", L"beta"}) {
         const auto line = find(report, name);
-        check(line && line->status == CMFM_STATUS_ACTIVE && line->reason.empty() && line->version == "0.0.1" &&
-              line->display_name == "Fixture " + cmfm::to_utf8(name), cmfm::to_utf8(name) + " active");
+        check(line && line->status == AL_STATUS_ACTIVE && line->reason.empty() && line->version == "0.0.1" &&
+              line->display_name == "Fixture " + al::to_utf8(name), al::to_utf8(name) + " active");
     }
     const auto failing = find(report, L"failing");
-    check(failing && failing->initialised && failing->status == CMFM_STATUS_DISABLED &&
+    check(failing && failing->initialised && failing->status == AL_STATUS_DISABLED &&
           failing->reason == "fixture refuses to start", "failing init keeps the plugin's own reason");
 
     expect_refused(report, L"cycle_x", "cycle with cycle_y");
     expect_refused(report, L"cycle_y", "cycle with cycle_x");
-    expect_refused(report, L"newer_api", "Update CMFM");
+    expect_refused(report, L"newer_api", "Update Astera Loader");
     expect_refused(report, L"wrong_exe", "does not support this game exe");
-    expect_refused(report, L"no_exports", "not a CMFM plugin");
+    expect_refused(report, L"no_exports", "not an Astera Loader plugin");
     expect_refused(report, L"mismatch", "does not match its folder 'mismatch'");
     expect_refused(report, L"Bad Folder", "not a valid plugin name");
     expect_refused(report, L"empty", "no empty.dll");
@@ -115,19 +115,19 @@ int wmain(int argc, wchar_t** argv) {
     // Refused plugins were unloaded again; initialised ones stay loaded.
     for (const auto name : {L"cycle_x", L"newer_api", L"wrong_exe", L"no_exports", L"mismatch"}) {
         const auto dll = (root / name / (std::wstring(name) + L".dll")).wstring();
-        check(GetModuleHandleW(dll.c_str()) == nullptr, cmfm::to_utf8(name) + " unloaded");
+        check(GetModuleHandleW(dll.c_str()) == nullptr, al::to_utf8(name) + " unloaded");
     }
     for (const auto name : {L"alpha", L"failing", L"beta"}) {
         const auto dll = (root / name / (std::wstring(name) + L".dll")).wstring();
-        check(GetModuleHandleW(dll.c_str()) != nullptr, cmfm::to_utf8(name) + " stays loaded");
+        check(GetModuleHandleW(dll.c_str()) != nullptr, al::to_utf8(name) + " stays loaded");
     }
 
     // Phases reach running plugins that asked for them, never disabled ones.
     fs::remove(record);
-    host.dispatch(CMFM_PHASE_PRE_MAIN, nullptr);
-    host.dispatch(CMFM_PHASE_WIN_MAIN, nullptr);
-    host.dispatch(CMFM_PHASE_GAME_READY, nullptr);
-    host.dispatch(CMFM_PHASE_COUNT, nullptr);
+    host.dispatch(AL_PHASE_PRE_MAIN, nullptr);
+    host.dispatch(AL_PHASE_WIN_MAIN, nullptr);
+    host.dispatch(AL_PHASE_GAME_READY, nullptr);
+    host.dispatch(AL_PHASE_COUNT, nullptr);
     check(read_file(record) == "phased phase 0\nphased phase 5\n", "phase dispatch");
 
     const auto alpha_log = read_file(logs / L"plugins" / L"alpha.log");

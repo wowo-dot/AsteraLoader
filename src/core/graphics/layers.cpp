@@ -1,4 +1,4 @@
-// CMFM's own layer in the d3d12 chains: plain detours with each method's
+// AL's own layer in the d3d12 chains: plain detours with each method's
 // signature that tell the hub about swap-chain creation, Present and
 // ResizeBuffers, then continue with `next` like any plugin detour.
 #include "core/graphics/hub.hpp"
@@ -8,7 +8,7 @@
 
 #include <atomic>
 
-namespace cmfm::graphics {
+namespace al::graphics {
 namespace {
 std::atomic<Hub*> g_hub{nullptr};
 
@@ -124,28 +124,28 @@ void release_layer_hub(Hub* hub) noexcept {
     g_hub.compare_exchange_strong(hub, nullptr);
 }
 
-void* layer_detour(cmfm_d3d12_method_t method) noexcept {
+void* layer_detour(al_d3d12_method_t method) noexcept {
     switch (method) {
-    case CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN: return reinterpret_cast<void*>(&create_swapchain);
-    case CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND: return reinterpret_cast<void*>(&create_swapchain_for_hwnd);
-    case CMFM_D3D12_SWAPCHAIN_PRESENT: return reinterpret_cast<void*>(&present);
-    case CMFM_D3D12_SWAPCHAIN_PRESENT1: return reinterpret_cast<void*>(&present1);
-    case CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS: return reinterpret_cast<void*>(&resize_buffers);
-    case CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS1: return reinterpret_cast<void*>(&resize_buffers1);
+    case AL_D3D12_FACTORY_CREATE_SWAPCHAIN: return reinterpret_cast<void*>(&create_swapchain);
+    case AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND: return reinterpret_cast<void*>(&create_swapchain_for_hwnd);
+    case AL_D3D12_SWAPCHAIN_PRESENT: return reinterpret_cast<void*>(&present);
+    case AL_D3D12_SWAPCHAIN_PRESENT1: return reinterpret_cast<void*>(&present1);
+    case AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS: return reinterpret_cast<void*>(&resize_buffers);
+    case AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS1: return reinterpret_cast<void*>(&resize_buffers1);
     default: return nullptr;
     }
 }
 
-void** layer_next(cmfm_d3d12_method_t method) noexcept {
+void** layer_next(al_d3d12_method_t method) noexcept {
     switch (method) {
-    case CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN: return &g_next_create_swapchain;
-    case CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND: return &g_next_create_swapchain_for_hwnd;
-    case CMFM_D3D12_SWAPCHAIN_PRESENT: return &g_next_present;
-    case CMFM_D3D12_SWAPCHAIN_PRESENT1: return &g_next_present1;
-    case CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS: return &g_next_resize_buffers;
-    case CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS1: return &g_next_resize_buffers1;
+    case AL_D3D12_FACTORY_CREATE_SWAPCHAIN: return &g_next_create_swapchain;
+    case AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND: return &g_next_create_swapchain_for_hwnd;
+    case AL_D3D12_SWAPCHAIN_PRESENT: return &g_next_present;
+    case AL_D3D12_SWAPCHAIN_PRESENT1: return &g_next_present1;
+    case AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS: return &g_next_resize_buffers;
+    case AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS1: return &g_next_resize_buffers1;
     default: return nullptr;
     }
 }
 
-}  // namespace cmfm::graphics
+}  // namespace al::graphics

@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace cmfm {
+namespace al {
 
 std::string to_utf8(std::wstring_view text);
 
@@ -31,4 +31,4 @@ private:
     bool good_ = false;
 };
 
-}  // namespace cmfm
+}  // namespace al

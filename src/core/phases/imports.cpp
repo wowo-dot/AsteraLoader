@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace cmfm::phases {
+namespace al::phases {
 namespace {
 // Bounds-checked views into one mapped image.
 class Image {
@@ -131,4 +131,4 @@ bool swap_slot(void** slot, void* expected, void* value) noexcept {
     return swapped;
 }
 
-}  // namespace cmfm::phases
+}  // namespace al::phases

@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <string>
 
-namespace cmfm_test {
+namespace al_test {
 inline std::filesystem::path fresh_work_dir(const std::filesystem::path& root) {
     std::filesystem::create_directories(root);
     for (unsigned attempt = 0;; ++attempt) {
@@ -17,4 +17,4 @@ inline std::filesystem::path fresh_work_dir(const std::filesystem::path& root) {
         if (std::filesystem::create_directory(work)) return work;
     }
 }
-}  // namespace cmfm_test
+}  // namespace al_test

@@ -9,7 +9,7 @@
 #include <cstring>
 #include <vector>
 
-namespace cmfm {
+namespace al {
 
 bool plausible_version(std::string_view text) {
     if (text.empty() || text.size() > 63) return false;
@@ -71,4 +71,4 @@ GameVersion read_game_version_at(const void* image, std::size_t match) {
     return {version, {}};
 }
 
-}  // namespace cmfm
+}  // namespace al

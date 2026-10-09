@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(cmfm VERSION 0.1.0 LANGUAGES C CXX)
+project(astera_loader VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "CMFM targets 64-bit Windows only")
+    message(FATAL_ERROR "Astera Loader targets 64-bit Windows only")
 endif()
 
 if(NOT MSVC)
-    message(FATAL_ERROR "CMFM currently requires MSVC")
+    message(FATAL_ERROR "Astera Loader currently requires MSVC")
 endif()
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -21,37 +21,37 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# Static CRT: the early-loaded cmfm.dll should import no DLL beyond KERNEL32.
+# Static CRT: the early-loaded astera.dll should import no DLL beyond KERNEL32.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 find_package(Git QUIET)
-set(CMFM_GIT_COMMIT "unknown")
+set(AL_GIT_COMMIT "unknown")
 if(GIT_FOUND)
     execute_process(
         COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE CMFM_GIT_COMMIT
+        OUTPUT_VARIABLE AL_GIT_COMMIT
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
 endif()
 
 # Project code builds with warnings as errors. Third-party code, when there is
 # some, gets its own targets without these options.
-function(cmfm_project_target target)
+function(al_project_target target)
     target_compile_options(${target} PRIVATE /W4 /WX /utf-8
         "$<$<COMPILE_LANGUAGE:CXX>:/permissive-;/Zc:__cplusplus>"
-        "$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:CMFM_TEST_C_EXCEPTIONS>>,/EHs,/EHsc>>")
+        "$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:AL_TEST_C_EXCEPTIONS>>,/EHs,/EHsc>>")
     target_compile_definitions(${target} PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
-        CMFM_VERSION=L"${PROJECT_VERSION}-dev"
-        CMFM_GIT_COMMIT=L"${CMFM_GIT_COMMIT}")
+        AL_BUILD_VERSION=L"${PROJECT_VERSION}-dev"
+        AL_GIT_COMMIT=L"${AL_GIT_COMMIT}")
     target_link_options(${target} PRIVATE /WX)
 endfunction()
 
-# Install layout: dist/<config>/cmfm_launcher.exe and dist/<config>/cmfm/cmfm.dll.
-set(CMFM_DIST "${CMAKE_BINARY_DIR}/dist/$<CONFIG>")
+# Install layout: dist/<config>/astera_launcher.exe and dist/<config>/astera/astera.dll.
+set(AL_DIST "${CMAKE_BINARY_DIR}/dist/$<CONFIG>")
 
-add_library(cmfm_common STATIC
+add_library(al_common STATIC
     src/common/launch_plan.cpp
     src/common/launch_plan.hpp
     src/common/game_version.cpp
@@ -68,15 +68,15 @@ add_library(cmfm_common STATIC
     src/common/sha256.hpp
     src/common/startup.hpp
     src/common/windows.hpp)
-target_include_directories(cmfm_common PUBLIC src)
-cmfm_project_target(cmfm_common)
+target_include_directories(al_common PUBLIC src)
+al_project_target(al_common)
 
 # The public plugin API: one C header, the only thing plugins build against.
-add_library(cmfm_api INTERFACE)
-target_include_directories(cmfm_api INTERFACE include)
+add_library(al_api INTERFACE)
+target_include_directories(al_api INTERFACE include)
 
 # Plugin manifests and load order (core side of the plugin API).
-add_library(cmfm_plugins STATIC
+add_library(al_plugins STATIC
     src/core/crash/handler.cpp
     src/core/crash/handler.hpp
     src/core/crash/report.cpp
@@ -98,26 +98,26 @@ add_library(cmfm_plugins STATIC
     src/core/plugins/manifest.hpp
     src/core/plugins/services.cpp
     src/core/plugins/services.hpp)
-target_link_libraries(cmfm_plugins PUBLIC cmfm_api cmfm_common)
-cmfm_project_target(cmfm_plugins)
+target_link_libraries(al_plugins PUBLIC al_api al_common)
+al_project_target(al_plugins)
 
 # Process-only thread IDs for MinHook; project code keeps /W4 /WX.
-add_library(cmfm_thread_snapshot STATIC src/core/hooks/thread_snapshot.cpp src/core/hooks/thread_snapshot.hpp)
-target_include_directories(cmfm_thread_snapshot PUBLIC src)
-cmfm_project_target(cmfm_thread_snapshot)
+add_library(al_thread_snapshot STATIC src/core/hooks/thread_snapshot.cpp src/core/hooks/thread_snapshot.hpp)
+target_include_directories(al_thread_snapshot PUBLIC src)
+al_project_target(al_thread_snapshot)
 
 # MinHook 1.3.4, c3fcafdc10146beb5919319d0683e44e3c30d537.
 # Vendored source; BSD-2 notices in third_party/minhook/LICENSE.txt.
-add_library(cmfm_minhook STATIC
+add_library(al_minhook STATIC
     third_party/minhook/src/buffer.c
     third_party/minhook/src/hook.c
     third_party/minhook/src/trampoline.c
     third_party/minhook/src/hde/hde64.c)
-target_include_directories(cmfm_minhook PUBLIC third_party/minhook/include)
-target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMFM_MINHOOK_PROCESS_THREADS)
-target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
+target_include_directories(al_minhook PUBLIC third_party/minhook/include)
+target_compile_definitions(al_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MINHOOK_PROCESS_THREADS)
+target_link_libraries(al_minhook PRIVATE al_thread_snapshot)
 
-add_library(cmfm_startup STATIC
+add_library(al_startup STATIC
     src/core/game_hooks/installer.cpp
     src/core/game_hooks/installer.hpp
     src/core/graphics/installer.cpp
@@ -133,430 +133,436 @@ add_library(cmfm_startup STATIC
     src/core/startup/protect_trace.hpp
     src/core/startup/runtime.cpp
     src/core/startup/runtime.hpp)
-target_link_libraries(cmfm_startup PUBLIC cmfm_plugins PRIVATE cmfm_minhook)
-cmfm_project_target(cmfm_startup)
+target_link_libraries(al_startup PUBLIC al_plugins PRIVATE al_minhook)
+al_project_target(al_startup)
 
-add_executable(cmfm_launcher WIN32 src/launcher/main.cpp)
-target_link_libraries(cmfm_launcher PRIVATE cmfm_common shell32 user32)
-cmfm_project_target(cmfm_launcher)
-set_target_properties(cmfm_launcher PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMFM_DIST}")
+add_executable(astera_launcher WIN32 src/launcher/main.cpp)
+target_link_libraries(astera_launcher PRIVATE al_common shell32 user32)
+al_project_target(astera_launcher)
+set_target_properties(astera_launcher PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}")
 
-add_library(cmfm SHARED src/core/dllmain.cpp)
-target_link_libraries(cmfm PRIVATE cmfm_startup)
-cmfm_project_target(cmfm)
-set_target_properties(cmfm PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMFM_DIST}/cmfm")
+add_library(astera SHARED src/core/dllmain.cpp)
+target_link_libraries(astera PRIVATE al_startup)
+al_project_target(astera)
+set_target_properties(astera PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}/astera")
 
 # Package only production binaries and the licence, never stand-ins or fixtures.
-install(FILES "$<TARGET_FILE:cmfm_launcher>" DESTINATION .)
-install(FILES "$<TARGET_FILE:cmfm>" DESTINATION cmfm)
+install(FILES "$<TARGET_FILE:astera_launcher>" DESTINATION .)
+install(FILES "$<TARGET_FILE:astera>" DESTINATION astera)
 install(FILES LICENSE DESTINATION .)
 install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
 install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
-# Stracker's Loader compatibility, shipped with CMFM as a plugin:
-# cmfm/plugins/stracker_compat/stracker_compat.dll (the CMFM plugin) and
+# Stracker's Loader compatibility, shipped with AL as a plugin:
+# astera/plugins/stracker_compat/stracker_compat.dll (the AL plugin) and
 # loader.dll beside it, which exports Stracker's exact ABI. Like Stracker's
 # loader.dll it is MSVC release with the static CRT (the project default):
 # Stracker plugins run their own inline operator<< on its std::stringstream.
-set(CMFM_STRACKER_DIST "${CMFM_DIST}/cmfm/plugins/stracker_compat")
-add_library(cmfm_stracker_logic STATIC
+set(AL_STRACKER_DIST "${AL_DIST}/astera/plugins/stracker_compat")
+add_library(al_stracker_logic STATIC
     plugins/stracker_compat/stracker_logic.cpp
     plugins/stracker_compat/stracker_logic.hpp)
-target_include_directories(cmfm_stracker_logic PUBLIC plugins/stracker_compat)
-cmfm_project_target(cmfm_stracker_logic)
+target_include_directories(al_stracker_logic PUBLIC plugins/stracker_compat)
+al_project_target(al_stracker_logic)
 
-add_library(cmfm_stracker_loader SHARED
+add_library(al_stracker_loader SHARED
     plugins/stracker_compat/loader.cpp
     plugins/stracker_compat/loader_abi.h
     plugins/stracker_compat/shim.h)
-target_link_libraries(cmfm_stracker_loader PRIVATE cmfm_stracker_logic cmfm_common)
-cmfm_project_target(cmfm_stracker_loader)
-set_target_properties(cmfm_stracker_loader PROPERTIES
+target_link_libraries(al_stracker_loader PRIVATE al_stracker_logic al_common)
+al_project_target(al_stracker_loader)
+set_target_properties(al_stracker_loader PROPERTIES
     OUTPUT_NAME loader
-    RUNTIME_OUTPUT_DIRECTORY "${CMFM_STRACKER_DIST}")
+    RUNTIME_OUTPUT_DIRECTORY "${AL_STRACKER_DIST}")
 
-add_library(cmfm_stracker_compat SHARED plugins/stracker_compat/stracker_compat.cpp)
-target_link_libraries(cmfm_stracker_compat PRIVATE cmfm_api)
-target_include_directories(cmfm_stracker_compat PRIVATE plugins/stracker_compat)
-cmfm_project_target(cmfm_stracker_compat)
-set_target_properties(cmfm_stracker_compat PROPERTIES
+add_library(al_stracker_compat SHARED plugins/stracker_compat/stracker_compat.cpp)
+target_link_libraries(al_stracker_compat PRIVATE al_api)
+target_include_directories(al_stracker_compat PRIVATE plugins/stracker_compat)
+al_project_target(al_stracker_compat)
+set_target_properties(al_stracker_compat PROPERTIES
     OUTPUT_NAME stracker_compat
-    RUNTIME_OUTPUT_DIRECTORY "${CMFM_STRACKER_DIST}")
+    RUNTIME_OUTPUT_DIRECTORY "${AL_STRACKER_DIST}")
 
-install(FILES "$<TARGET_FILE:cmfm_stracker_compat>" "$<TARGET_FILE:cmfm_stracker_loader>"
-    DESTINATION cmfm/plugins/stracker_compat)
+install(FILES "$<TARGET_FILE:al_stracker_compat>" "$<TARGET_FILE:al_stracker_loader>"
+    DESTINATION astera/plugins/stracker_compat)
 install(FILES third_party/notices/StrackerLoader-MIT.txt third_party/notices/StrackerLoader-log-BSD-2.txt
     DESTINATION licences)
 
-# The smallest CMFM plugin, in C, as an example for plugin authors. It is not
-# part of the CMFM package: `cmake --install <build> --component examples`
-# stages it in its own mod layout, cmfm/plugins/hello/hello.dll.
-add_library(cmfm_hello SHARED examples/hello/hello.c)
-target_link_libraries(cmfm_hello PRIVATE cmfm_api)
-cmfm_project_target(cmfm_hello)
-set_target_properties(cmfm_hello PROPERTIES
+# The smallest AL plugin, in C, as an example for plugin authors. It is not
+# part of the AL package: `cmake --install <build> --component examples`
+# stages it in its own mod layout, astera/plugins/hello/hello.dll.
+add_library(al_hello SHARED examples/hello/hello.c)
+target_link_libraries(al_hello PRIVATE al_api)
+al_project_target(al_hello)
+set_target_properties(al_hello PROPERTIES
     OUTPUT_NAME hello
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/cmfm/plugins/hello")
-install(FILES "$<TARGET_FILE:cmfm_hello>" DESTINATION cmfm/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/astera/plugins/hello")
+install(FILES "$<TARGET_FILE:al_hello>" DESTINATION astera/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
 
 # A throwaway diagnostic plugin, staged with the examples for test runs only:
 # it finds the game's per-frame function and reports its thread and stack.
-add_library(cmfm_site_probe SHARED probes/site_probe.cpp)
-target_link_libraries(cmfm_site_probe PRIVATE cmfm_api)
-cmfm_project_target(cmfm_site_probe)
-set_target_properties(cmfm_site_probe PROPERTIES
+add_library(al_site_probe SHARED probes/site_probe.cpp)
+target_link_libraries(al_site_probe PRIVATE al_api)
+al_project_target(al_site_probe)
+set_target_properties(al_site_probe PROPERTIES
     OUTPUT_NAME site_probe
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/cmfm/plugins/site_probe")
-install(FILES "$<TARGET_FILE:cmfm_site_probe>" DESTINATION cmfm/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/astera/plugins/site_probe")
+install(FILES "$<TARGET_FILE:al_site_probe>" DESTINATION astera/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
 
 include(CTest)
 if(BUILD_TESTING)
 
-add_executable(cmfm_thread_snapshot_tests tests/test_thread_snapshot.cpp)
-target_link_libraries(cmfm_thread_snapshot_tests PRIVATE cmfm_thread_snapshot)
-cmfm_project_target(cmfm_thread_snapshot_tests)
-add_test(NAME hook_thread_snapshot COMMAND cmfm_thread_snapshot_tests)
+add_executable(al_thread_snapshot_tests tests/test_thread_snapshot.cpp)
+target_link_libraries(al_thread_snapshot_tests PRIVATE al_thread_snapshot)
+al_project_target(al_thread_snapshot_tests)
+add_test(NAME hook_thread_snapshot COMMAND al_thread_snapshot_tests)
 
-add_executable(cmfm_hook_thread_tests tests/test_hook_threads.cpp)
-target_link_libraries(cmfm_hook_thread_tests PRIVATE cmfm_minhook)
-cmfm_project_target(cmfm_hook_thread_tests)
-add_test(NAME hook_threads COMMAND cmfm_hook_thread_tests)
+add_executable(al_hook_thread_tests tests/test_hook_threads.cpp)
+target_link_libraries(al_hook_thread_tests PRIVATE al_minhook)
+al_project_target(al_hook_thread_tests)
+add_test(NAME hook_threads COMMAND al_hook_thread_tests)
 
 # Force enumeration failure only here to exercise unchanged Toolhelp fallback.
-add_library(cmfm_minhook_fallback STATIC
+add_library(al_minhook_fallback STATIC
     third_party/minhook/src/buffer.c third_party/minhook/src/hook.c
     third_party/minhook/src/trampoline.c third_party/minhook/src/hde/hde64.c
     tests/thread_snapshot_failure.c)
-target_include_directories(cmfm_minhook_fallback PUBLIC third_party/minhook/include)
-target_compile_definitions(cmfm_minhook_fallback PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMFM_MINHOOK_PROCESS_THREADS)
-add_executable(cmfm_hook_fallback_tests tests/test_hook_threads.cpp)
-target_link_libraries(cmfm_hook_fallback_tests PRIVATE cmfm_minhook_fallback)
-cmfm_project_target(cmfm_hook_fallback_tests)
-add_test(NAME hook_thread_fallback COMMAND cmfm_hook_fallback_tests)
+target_include_directories(al_minhook_fallback PUBLIC third_party/minhook/include)
+target_compile_definitions(al_minhook_fallback PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MINHOOK_PROCESS_THREADS)
+add_executable(al_hook_fallback_tests tests/test_hook_threads.cpp)
+target_link_libraries(al_hook_fallback_tests PRIVATE al_minhook_fallback)
+al_project_target(al_hook_fallback_tests)
+add_test(NAME hook_thread_fallback COMMAND al_hook_fallback_tests)
 set_tests_properties(hook_thread_snapshot hook_threads hook_thread_fallback PROPERTIES TIMEOUT 30)
 
-add_executable(cmfm_tests tests/test_common.cpp)
-target_link_libraries(cmfm_tests PRIVATE cmfm_common shell32)
-cmfm_project_target(cmfm_tests)
-add_test(NAME common COMMAND cmfm_tests)
+add_executable(al_tests tests/test_common.cpp)
+target_link_libraries(al_tests PRIVATE al_common shell32)
+al_project_target(al_tests)
+add_test(NAME common COMMAND al_tests)
 
-add_executable(cmfm_core_tests tests/test_core.cpp)
-target_link_libraries(cmfm_core_tests PRIVATE cmfm_common)
-cmfm_project_target(cmfm_core_tests)
-add_test(NAME core_startup_abi COMMAND cmfm_core_tests "$<TARGET_FILE:cmfm>")
+add_executable(al_core_tests tests/test_core.cpp)
+target_link_libraries(al_core_tests PRIVATE al_common)
+al_project_target(al_core_tests)
+add_test(NAME core_startup_abi COMMAND al_core_tests "$<TARGET_FILE:astera>")
 
 # The plugin ABI layout, compiled as C and as C++ (tests/abi_layout.h).
 foreach(language IN ITEMS c cpp)
-    add_executable(cmfm_abi_${language} tests/test_abi.${language})
-    target_link_libraries(cmfm_abi_${language} PRIVATE cmfm_api)
-    cmfm_project_target(cmfm_abi_${language})
-    add_test(NAME plugin_abi_${language} COMMAND cmfm_abi_${language})
+    add_executable(al_abi_${language} tests/test_abi.${language})
+    target_link_libraries(al_abi_${language} PRIVATE al_api)
+    al_project_target(al_abi_${language})
+    add_test(NAME plugin_abi_${language} COMMAND al_abi_${language})
 endforeach()
 
-add_executable(cmfm_plugin_tests tests/test_plugins.cpp)
-target_link_libraries(cmfm_plugin_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_plugin_tests)
-add_test(NAME plugin_manifest_order COMMAND cmfm_plugin_tests)
+# OpenAL uses the AL_ prefix too; the header must compile after its names.
+add_executable(al_openal_names tests/test_openal_names.c)
+target_link_libraries(al_openal_names PRIVATE al_api)
+al_project_target(al_openal_names)
+add_test(NAME openal_names COMMAND al_openal_names)
 
-add_executable(cmfm_d3d12_hub_tests tests/test_d3d12_hub.cpp)
-target_link_libraries(cmfm_d3d12_hub_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_d3d12_hub_tests)
-add_test(NAME d3d12_hub COMMAND cmfm_d3d12_hub_tests)
+add_executable(al_plugin_tests tests/test_plugins.cpp)
+target_link_libraries(al_plugin_tests PRIVATE al_plugins)
+al_project_target(al_plugin_tests)
+add_test(NAME plugin_manifest_order COMMAND al_plugin_tests)
 
-add_executable(cmfm_graphics_installer_tests tests/test_graphics_installer.cpp)
-target_link_libraries(cmfm_graphics_installer_tests PRIVATE cmfm_startup cmfm_minhook d3d12 dxgi)
-cmfm_project_target(cmfm_graphics_installer_tests)
-add_test(NAME graphics_installer COMMAND cmfm_graphics_installer_tests)
+add_executable(al_d3d12_hub_tests tests/test_d3d12_hub.cpp)
+target_link_libraries(al_d3d12_hub_tests PRIVATE al_plugins)
+al_project_target(al_d3d12_hub_tests)
+add_test(NAME d3d12_hub COMMAND al_d3d12_hub_tests)
+
+add_executable(al_graphics_installer_tests tests/test_graphics_installer.cpp)
+target_link_libraries(al_graphics_installer_tests PRIVATE al_startup al_minhook d3d12 dxgi)
+al_project_target(al_graphics_installer_tests)
+add_test(NAME graphics_installer COMMAND al_graphics_installer_tests)
 set_tests_properties(graphics_installer PROPERTIES TIMEOUT 30)
 
 # The crash handler: child processes crash a fixture loaded from plugin paths.
-add_library(cmfm_crash_fixture SHARED tests/crash_fixture.cpp)
-cmfm_project_target(cmfm_crash_fixture)
-set_target_properties(cmfm_crash_fixture PROPERTIES
+add_library(al_crash_fixture SHARED tests/crash_fixture.cpp)
+al_project_target(al_crash_fixture)
+set_target_properties(al_crash_fixture PROPERTIES
     OUTPUT_NAME crash_fixture
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/crash_fixture/$<CONFIG>")
-add_executable(cmfm_crash_tests tests/test_crash.cpp)
-target_link_libraries(cmfm_crash_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_crash_tests)
-add_dependencies(cmfm_crash_tests cmfm_crash_fixture)
+add_executable(al_crash_tests tests/test_crash.cpp)
+target_link_libraries(al_crash_tests PRIVATE al_plugins)
+al_project_target(al_crash_tests)
+add_dependencies(al_crash_tests al_crash_fixture)
 add_test(NAME crash_handler
-    COMMAND cmfm_crash_tests "$<TARGET_FILE:cmfm_crash_fixture>" "${CMAKE_BINARY_DIR}/crash_handler")
+    COMMAND al_crash_tests "$<TARGET_FILE:al_crash_fixture>" "${CMAKE_BINARY_DIR}/crash_handler")
 set_tests_properties(crash_handler PROPERTIES TIMEOUT 180)
 
-add_executable(cmfm_game_hooks_tests tests/test_game_hooks.cpp)
-target_link_libraries(cmfm_game_hooks_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_game_hooks_tests)
-add_test(NAME game_hooks COMMAND cmfm_game_hooks_tests)
+add_executable(al_game_hooks_tests tests/test_game_hooks.cpp)
+target_link_libraries(al_game_hooks_tests PRIVATE al_plugins)
+al_project_target(al_game_hooks_tests)
+add_test(NAME game_hooks COMMAND al_game_hooks_tests)
 
-add_executable(cmfm_game_hook_installer_tests tests/test_game_hook_installer.cpp)
-target_link_libraries(cmfm_game_hook_installer_tests PRIVATE cmfm_startup cmfm_minhook)
-cmfm_project_target(cmfm_game_hook_installer_tests)
-add_test(NAME game_hook_installer COMMAND cmfm_game_hook_installer_tests)
+add_executable(al_game_hook_installer_tests tests/test_game_hook_installer.cpp)
+target_link_libraries(al_game_hook_installer_tests PRIVATE al_startup al_minhook)
+al_project_target(al_game_hook_installer_tests)
+add_test(NAME game_hook_installer COMMAND al_game_hook_installer_tests)
 set_tests_properties(game_hook_installer PROPERTIES TIMEOUT 30)
 
-add_executable(cmfm_services_tests tests/test_services.cpp)
-target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_services_tests)
-add_test(NAME services COMMAND cmfm_services_tests "${CMAKE_BINARY_DIR}/services")
+add_executable(al_services_tests tests/test_services.cpp)
+target_link_libraries(al_services_tests PRIVATE al_plugins)
+al_project_target(al_services_tests)
+add_test(NAME services COMMAND al_services_tests "${CMAKE_BINARY_DIR}/services")
 
 # The plugin host against fixture plugins, one DLL per declared case.
-add_executable(cmfm_plugin_host_tests tests/test_plugin_host.cpp)
-target_link_libraries(cmfm_plugin_host_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_plugin_host_tests)
-set(CMFM_PLUGIN_FIXTURES "${CMAKE_BINARY_DIR}/plugin_fixtures/$<CONFIG>")
-function(cmfm_plugin_fixture name)
-    add_library(cmfm_plugin_fixture_${name} SHARED tests/plugin_fixture.cpp)
-    target_link_libraries(cmfm_plugin_fixture_${name} PRIVATE cmfm_api)
-    target_compile_definitions(cmfm_plugin_fixture_${name} PRIVATE "FIXTURE_NAME=\"${name}\"" ${ARGN})
-    cmfm_project_target(cmfm_plugin_fixture_${name})
-    set_target_properties(cmfm_plugin_fixture_${name} PROPERTIES
+add_executable(al_plugin_host_tests tests/test_plugin_host.cpp)
+target_link_libraries(al_plugin_host_tests PRIVATE al_plugins)
+al_project_target(al_plugin_host_tests)
+set(AL_PLUGIN_FIXTURES "${CMAKE_BINARY_DIR}/plugin_fixtures/$<CONFIG>")
+function(al_plugin_fixture name)
+    add_library(al_plugin_fixture_${name} SHARED tests/plugin_fixture.cpp)
+    target_link_libraries(al_plugin_fixture_${name} PRIVATE al_api)
+    target_compile_definitions(al_plugin_fixture_${name} PRIVATE "FIXTURE_NAME=\"${name}\"" ${ARGN})
+    al_project_target(al_plugin_fixture_${name})
+    set_target_properties(al_plugin_fixture_${name} PROPERTIES
         OUTPUT_NAME ${name}
-        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
-    add_dependencies(cmfm_plugin_host_tests cmfm_plugin_fixture_${name})
+        RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
+    add_dependencies(al_plugin_host_tests al_plugin_fixture_${name})
 endfunction()
-cmfm_plugin_fixture(alpha)
-cmfm_plugin_fixture(beta "FIXTURE_AFTER=\"gamma\"")
-cmfm_plugin_fixture(gamma FIXTURE_ORDER=5)
-cmfm_plugin_fixture(delta FIXTURE_ORDER=10 "FIXTURE_BEFORE=\"beta\"")
-cmfm_plugin_fixture(cycle_x "FIXTURE_AFTER=\"cycle_y\"")
-cmfm_plugin_fixture(cycle_y "FIXTURE_AFTER=\"cycle_x\"")
-cmfm_plugin_fixture(newer_api FIXTURE_API=0x20000u)
-cmfm_plugin_fixture(failing FIXTURE_FAIL FIXTURE_PHASES=0x1u)
-cmfm_plugin_fixture(wrong_exe FIXTURE_WRONG_EXE)
-cmfm_plugin_fixture(no_exports FIXTURE_NO_EXPORTS)
-cmfm_plugin_fixture(phased FIXTURE_PHASES=0x21u)
-cmfm_plugin_fixture(pre_main_probe FIXTURE_RUNTIME FIXTURE_PHASES=0x1u)
-cmfm_plugin_fixture(seh_info FIXTURE_FAULT_INFO)
-cmfm_plugin_fixture(seh_init FIXTURE_NATIVE_INIT FIXTURE_PHASES=0x1u)
-cmfm_plugin_fixture(seh_phase FIXTURE_NATIVE_PHASE FIXTURE_PHASES=0x1u)
-cmfm_plugin_fixture(cpp_init FIXTURE_THROW_INIT)
+al_plugin_fixture(alpha)
+al_plugin_fixture(beta "FIXTURE_AFTER=\"gamma\"")
+al_plugin_fixture(gamma FIXTURE_ORDER=5)
+al_plugin_fixture(delta FIXTURE_ORDER=10 "FIXTURE_BEFORE=\"beta\"")
+al_plugin_fixture(cycle_x "FIXTURE_AFTER=\"cycle_y\"")
+al_plugin_fixture(cycle_y "FIXTURE_AFTER=\"cycle_x\"")
+al_plugin_fixture(newer_api FIXTURE_API=0x20000u)
+al_plugin_fixture(failing FIXTURE_FAIL FIXTURE_PHASES=0x1u)
+al_plugin_fixture(wrong_exe FIXTURE_WRONG_EXE)
+al_plugin_fixture(no_exports FIXTURE_NO_EXPORTS)
+al_plugin_fixture(phased FIXTURE_PHASES=0x21u)
+al_plugin_fixture(pre_main_probe FIXTURE_RUNTIME FIXTURE_PHASES=0x1u)
+al_plugin_fixture(seh_info FIXTURE_FAULT_INFO)
+al_plugin_fixture(seh_init FIXTURE_NATIVE_INIT FIXTURE_PHASES=0x1u)
+al_plugin_fixture(seh_phase FIXTURE_NATIVE_PHASE FIXTURE_PHASES=0x1u)
+al_plugin_fixture(cpp_init FIXTURE_THROW_INIT)
 # This fixture deliberately violates the no-exceptions C plugin contract.
-set_target_properties(cmfm_plugin_fixture_cpp_init PROPERTIES CMFM_TEST_C_EXCEPTIONS TRUE)
+set_target_properties(al_plugin_fixture_cpp_init PROPERTIES AL_TEST_C_EXCEPTIONS TRUE)
 # API 1.1: dependencies, a plugin built for 1.0, start-up timing.
-cmfm_plugin_fixture(needs_missing "FIXTURE_DEPENDS=\"ghost\"")
-cmfm_plugin_fixture(needs_newer "FIXTURE_DEPENDS=\"provider\"" "FIXTURE_DEPENDS_VERSION=\"9.0\"")
-cmfm_plugin_fixture(needs_failing "FIXTURE_DEPENDS=\"failing\"")
-cmfm_plugin_fixture(legacy10 FIXTURE_API=0x10000u FIXTURE_INFO_SIZE=72u "FIXTURE_DEPENDS=\"BadName\"")
-cmfm_plugin_fixture(slow FIXTURE_SLEEP_MS=30)
+al_plugin_fixture(needs_missing "FIXTURE_DEPENDS=\"ghost\"")
+al_plugin_fixture(needs_newer "FIXTURE_DEPENDS=\"provider\"" "FIXTURE_DEPENDS_VERSION=\"9.0\"")
+al_plugin_fixture(needs_failing "FIXTURE_DEPENDS=\"failing\"")
+al_plugin_fixture(legacy10 FIXTURE_API=0x10000u FIXTURE_INFO_SIZE=72u "FIXTURE_DEPENDS=\"BadName\"")
+al_plugin_fixture(slow FIXTURE_SLEEP_MS=30)
 # API 1.1: a plugin publishing an interface and one using it and the services.
-add_executable(cmfm_plugin_services_tests tests/test_plugin_services.cpp)
-target_link_libraries(cmfm_plugin_services_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_plugin_services_tests)
+add_executable(al_plugin_services_tests tests/test_plugin_services.cpp)
+target_link_libraries(al_plugin_services_tests PRIVATE al_plugins)
+al_project_target(al_plugin_services_tests)
 foreach(role IN ITEMS provider consumer)
-    add_library(cmfm_plugin_fixture_${role} SHARED tests/plugin_fixture_services.cpp)
-    target_link_libraries(cmfm_plugin_fixture_${role} PRIVATE cmfm_api)
-    cmfm_project_target(cmfm_plugin_fixture_${role})
-    set_target_properties(cmfm_plugin_fixture_${role} PROPERTIES
+    add_library(al_plugin_fixture_${role} SHARED tests/plugin_fixture_services.cpp)
+    target_link_libraries(al_plugin_fixture_${role} PRIVATE al_api)
+    al_project_target(al_plugin_fixture_${role})
+    set_target_properties(al_plugin_fixture_${role} PROPERTIES
         OUTPUT_NAME ${role}
-        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
-    add_dependencies(cmfm_plugin_services_tests cmfm_plugin_fixture_${role})
+        RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
+    add_dependencies(al_plugin_services_tests al_plugin_fixture_${role})
 endforeach()
-target_compile_definitions(cmfm_plugin_fixture_provider PRIVATE FIXTURE_PROVIDER)
-add_dependencies(cmfm_plugin_services_tests cmfm_plugin_fixture_needs_missing cmfm_plugin_fixture_needs_newer
-    cmfm_plugin_fixture_failing cmfm_plugin_fixture_needs_failing cmfm_plugin_fixture_legacy10
-    cmfm_plugin_fixture_slow)
+target_compile_definitions(al_plugin_fixture_provider PRIVATE FIXTURE_PROVIDER)
+add_dependencies(al_plugin_services_tests al_plugin_fixture_needs_missing al_plugin_fixture_needs_newer
+    al_plugin_fixture_failing al_plugin_fixture_needs_failing al_plugin_fixture_legacy10
+    al_plugin_fixture_slow)
 add_test(NAME plugin_services
-    COMMAND cmfm_plugin_services_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_services")
+    COMMAND al_plugin_services_tests "${AL_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_services")
 add_test(NAME plugin_host
-    COMMAND cmfm_plugin_host_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
+    COMMAND al_plugin_host_tests "${AL_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_host")
 
-add_executable(cmfm_example_hello_tests tests/test_example_hello.cpp)
-target_link_libraries(cmfm_example_hello_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_example_hello_tests)
-add_dependencies(cmfm_example_hello_tests cmfm_hello)
+add_executable(al_example_hello_tests tests/test_example_hello.cpp)
+target_link_libraries(al_example_hello_tests PRIVATE al_plugins)
+al_project_target(al_example_hello_tests)
+add_dependencies(al_example_hello_tests al_hello)
 add_test(NAME example_hello
-    COMMAND cmfm_example_hello_tests "$<TARGET_FILE:cmfm_hello>" "${CMAKE_BINARY_DIR}/example_hello")
+    COMMAND al_example_hello_tests "$<TARGET_FILE:al_hello>" "${CMAKE_BINARY_DIR}/example_hello")
 
-add_executable(cmfm_stracker_logic_tests tests/test_stracker_logic.cpp)
-target_link_libraries(cmfm_stracker_logic_tests PRIVATE cmfm_stracker_logic)
-cmfm_project_target(cmfm_stracker_logic_tests)
-add_test(NAME stracker_logic COMMAND cmfm_stracker_logic_tests)
+add_executable(al_stracker_logic_tests tests/test_stracker_logic.cpp)
+target_link_libraries(al_stracker_logic_tests PRIVATE al_stracker_logic)
+al_project_target(al_stracker_logic_tests)
+add_test(NAME stracker_logic COMMAND al_stracker_logic_tests)
 
-add_executable(cmfm_pattern_tests tests/test_pattern.cpp)
-target_link_libraries(cmfm_pattern_tests PRIVATE cmfm_common)
-cmfm_project_target(cmfm_pattern_tests)
-add_test(NAME pattern COMMAND cmfm_pattern_tests)
+add_executable(al_pattern_tests tests/test_pattern.cpp)
+target_link_libraries(al_pattern_tests PRIVATE al_common)
+al_project_target(al_pattern_tests)
+add_test(NAME pattern COMMAND al_pattern_tests)
 
 # A stand-in Stracker plugin that imports loader.dll, kept away from the shim.
-add_library(cmfm_stracker_plugin_fixture SHARED tests/stracker_plugin_fixture.cpp)
-target_link_libraries(cmfm_stracker_plugin_fixture PRIVATE cmfm_stracker_loader)
-target_include_directories(cmfm_stracker_plugin_fixture PRIVATE plugins/stracker_compat)
-cmfm_project_target(cmfm_stracker_plugin_fixture)
-set_target_properties(cmfm_stracker_plugin_fixture PROPERTIES
+add_library(al_stracker_plugin_fixture SHARED tests/stracker_plugin_fixture.cpp)
+target_link_libraries(al_stracker_plugin_fixture PRIVATE al_stracker_loader)
+target_include_directories(al_stracker_plugin_fixture PRIVATE plugins/stracker_compat)
+al_project_target(al_stracker_plugin_fixture)
+set_target_properties(al_stracker_plugin_fixture PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stracker_fixture/$<CONFIG>")
-add_executable(cmfm_stracker_shim_tests tests/test_stracker_shim.cpp)
-target_include_directories(cmfm_stracker_shim_tests PRIVATE plugins/stracker_compat)
-cmfm_project_target(cmfm_stracker_shim_tests)
-add_dependencies(cmfm_stracker_shim_tests cmfm_stracker_loader cmfm_stracker_plugin_fixture)
+add_executable(al_stracker_shim_tests tests/test_stracker_shim.cpp)
+target_include_directories(al_stracker_shim_tests PRIVATE plugins/stracker_compat)
+al_project_target(al_stracker_shim_tests)
+add_dependencies(al_stracker_shim_tests al_stracker_loader al_stracker_plugin_fixture)
 add_test(NAME stracker_shim
-    COMMAND cmfm_stracker_shim_tests "$<TARGET_FILE:cmfm_stracker_loader>"
-        "$<TARGET_FILE:cmfm_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim")
-# The same, with CMFM passing the game version it already found.
+    COMMAND al_stracker_shim_tests "$<TARGET_FILE:al_stracker_loader>"
+        "$<TARGET_FILE:al_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim")
+# The same, with AL passing the game version it already found.
 add_test(NAME stracker_shim_known_version
-    COMMAND cmfm_stracker_shim_tests "$<TARGET_FILE:cmfm_stracker_loader>"
-        "$<TARGET_FILE:cmfm_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim" known)
+    COMMAND al_stracker_shim_tests "$<TARGET_FILE:al_stracker_loader>"
+        "$<TARGET_FILE:al_stracker_plugin_fixture>" "${CMAKE_BINARY_DIR}/stracker_shim" known)
 
-add_executable(cmfm_plugin_fault_tests tests/test_plugin_faults.cpp)
-target_link_libraries(cmfm_plugin_fault_tests PRIVATE cmfm_plugins)
-cmfm_project_target(cmfm_plugin_fault_tests)
-add_dependencies(cmfm_plugin_fault_tests cmfm_plugin_host_tests)
-add_test(NAME plugin_faults COMMAND cmfm_plugin_fault_tests "${CMFM_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_faults")
+add_executable(al_plugin_fault_tests tests/test_plugin_faults.cpp)
+target_link_libraries(al_plugin_fault_tests PRIVATE al_plugins)
+al_project_target(al_plugin_fault_tests)
+add_dependencies(al_plugin_fault_tests al_plugin_host_tests)
+add_test(NAME plugin_faults COMMAND al_plugin_fault_tests "${AL_PLUGIN_FIXTURES}" "${CMAKE_BINARY_DIR}/plugin_faults")
 
-add_executable(cmfm_startup_signature_tests tests/test_startup_signature.cpp)
-target_link_libraries(cmfm_startup_signature_tests PRIVATE cmfm_startup)
-cmfm_project_target(cmfm_startup_signature_tests)
-add_test(NAME startup_signature COMMAND cmfm_startup_signature_tests)
-add_executable(cmfm_entry_cache_tests tests/test_entry_cache.cpp)
-target_link_libraries(cmfm_entry_cache_tests PRIVATE cmfm_startup)
-cmfm_project_target(cmfm_entry_cache_tests)
-add_test(NAME startup_entry_cache COMMAND cmfm_entry_cache_tests "${CMAKE_BINARY_DIR}/entry_cache")
+add_executable(al_startup_signature_tests tests/test_startup_signature.cpp)
+target_link_libraries(al_startup_signature_tests PRIVATE al_startup)
+al_project_target(al_startup_signature_tests)
+add_test(NAME startup_signature COMMAND al_startup_signature_tests)
+add_executable(al_entry_cache_tests tests/test_entry_cache.cpp)
+target_link_libraries(al_entry_cache_tests PRIVATE al_startup)
+al_project_target(al_entry_cache_tests)
+add_test(NAME startup_entry_cache COMMAND al_entry_cache_tests "${CMAKE_BINARY_DIR}/entry_cache")
 
-add_executable(cmfm_protect_trace_tests tests/test_protect_trace.cpp)
-target_link_libraries(cmfm_protect_trace_tests PRIVATE cmfm_common)
-cmfm_project_target(cmfm_protect_trace_tests)
-add_test(NAME startup_protect_trace COMMAND cmfm_protect_trace_tests)
+add_executable(al_protect_trace_tests tests/test_protect_trace.cpp)
+target_link_libraries(al_protect_trace_tests PRIVATE al_common)
+al_project_target(al_protect_trace_tests)
+add_test(NAME startup_protect_trace COMMAND al_protect_trace_tests)
 
-add_executable(cmfm_phase_site_tests tests/test_phase_sites.cpp)
-target_link_libraries(cmfm_phase_site_tests PRIVATE cmfm_startup)
-cmfm_project_target(cmfm_phase_site_tests)
-add_test(NAME phase_sites COMMAND cmfm_phase_site_tests)
+add_executable(al_phase_site_tests tests/test_phase_sites.cpp)
+target_link_libraries(al_phase_site_tests PRIVATE al_startup)
+al_project_target(al_phase_site_tests)
+add_test(NAME phase_sites COMMAND al_phase_site_tests)
 
 add_executable(fake_phases_game WIN32 tests/fake_phases_game.cpp tests/fake_packed_entry.cpp)
-target_link_libraries(fake_phases_game PRIVATE cmfm_common d3d12 dxgi delayimp)
-target_compile_definitions(fake_phases_game PRIVATE CMFM_FAKE_PHASES)
-target_link_options(fake_phases_game PRIVATE /ENTRY:cmfm_test_packed_entry /DELAYLOAD:d3d12.dll)
-cmfm_project_target(fake_phases_game)
+target_link_libraries(fake_phases_game PRIVATE al_common d3d12 dxgi delayimp)
+target_compile_definitions(fake_phases_game PRIVATE AL_FAKE_PHASES)
+target_link_options(fake_phases_game PRIVATE /ENTRY:al_test_packed_entry /DELAYLOAD:d3d12.dll)
+al_project_target(fake_phases_game)
 set_target_properties(fake_phases_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_phases_game/$<CONFIG>")
-add_library(cmfm_phase_probe SHARED tests/phase_probe.cpp)
-target_link_libraries(cmfm_phase_probe PRIVATE cmfm_api cmfm_common cmfm_minhook d3d12)
-cmfm_project_target(cmfm_phase_probe)
-set_target_properties(cmfm_phase_probe PROPERTIES OUTPUT_NAME phase_probe
-    RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+add_library(al_phase_probe SHARED tests/phase_probe.cpp)
+target_link_libraries(al_phase_probe PRIVATE al_api al_common al_minhook d3d12)
+al_project_target(al_phase_probe)
+set_target_properties(al_phase_probe PROPERTIES OUTPUT_NAME phase_probe
+    RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
 add_test(NAME remaining_phases
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
-    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:cmfm_phase_probe>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:al_phase_probe>"
     "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases" -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
 set_tests_properties(remaining_phases PROPERTIES TIMEOUT 45)
 add_test(NAME remaining_phases_setup_thread
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
-    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:cmfm_phase_probe>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:al_phase_probe>"
     "-DDEVICE_THREAD=1" "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_setup_thread"
     -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
 set_tests_properties(remaining_phases_setup_thread PROPERTIES TIMEOUT 45)
 
 add_executable(fake_graphics_game WIN32 tests/fake_graphics_game.cpp tests/fake_packed_entry.cpp)
-target_link_libraries(fake_graphics_game PRIVATE cmfm_common d3d12 dxgi delayimp user32)
-target_compile_definitions(fake_graphics_game PRIVATE CMFM_FAKE_PHASES)
-target_link_options(fake_graphics_game PRIVATE /ENTRY:cmfm_test_packed_entry /DELAYLOAD:d3d12.dll)
-cmfm_project_target(fake_graphics_game)
+target_link_libraries(fake_graphics_game PRIVATE al_common d3d12 dxgi delayimp user32)
+target_compile_definitions(fake_graphics_game PRIVATE AL_FAKE_PHASES)
+target_link_options(fake_graphics_game PRIVATE /ENTRY:al_test_packed_entry /DELAYLOAD:d3d12.dll)
+al_project_target(fake_graphics_game)
 set_target_properties(fake_graphics_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_graphics_game/$<CONFIG>"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_graphics_game/$<CONFIG>")
 foreach(role IN ITEMS owner probe)
-    add_library(cmfm_graphics_${role} SHARED tests/graphics_plugin.cpp)
-    target_link_libraries(cmfm_graphics_${role} PRIVATE cmfm_api cmfm_minhook d3d12 dxgi)
-    cmfm_project_target(cmfm_graphics_${role})
-    set_target_properties(cmfm_graphics_${role} PROPERTIES OUTPUT_NAME graphics_${role}
-        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+    add_library(al_graphics_${role} SHARED tests/graphics_plugin.cpp)
+    target_link_libraries(al_graphics_${role} PRIVATE al_api al_minhook d3d12 dxgi)
+    al_project_target(al_graphics_${role})
+    set_target_properties(al_graphics_${role} PROPERTIES OUTPUT_NAME graphics_${role}
+        RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
 endforeach()
-target_compile_definitions(cmfm_graphics_owner PRIVATE GRAPHICS_OWNER)
+target_compile_definitions(al_graphics_owner PRIVATE GRAPHICS_OWNER)
 add_test(NAME graphics_native_chains COMMAND "${CMAKE_COMMAND}"
-    "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
-    "-DFAKE_GAME=$<TARGET_FILE:fake_graphics_game>" "-DOWNER=$<TARGET_FILE:cmfm_graphics_owner>"
-    "-DPROBE=$<TARGET_FILE:cmfm_graphics_probe>" "-DWORK=${CMAKE_BINARY_DIR}/graphics_native_chains"
+    "-DLAUNCHER=$<TARGET_FILE:astera_launcher>" "-DCORE=$<TARGET_FILE:astera>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_graphics_game>" "-DOWNER=$<TARGET_FILE:al_graphics_owner>"
+    "-DPROBE=$<TARGET_FILE:al_graphics_probe>" "-DWORK=${CMAKE_BINARY_DIR}/graphics_native_chains"
     -P "${CMAKE_SOURCE_DIR}/tests/graphics.cmake")
 set_tests_properties(graphics_native_chains PROPERTIES TIMEOUT 45)
 
 add_executable(fake_game_hooks WIN32 tests/fake_game_hooks.cpp tests/fake_packed_entry.cpp)
-target_link_libraries(fake_game_hooks PRIVATE cmfm_common)
-target_compile_definitions(fake_game_hooks PRIVATE CMFM_FAKE_PHASES)
-target_link_options(fake_game_hooks PRIVATE /ENTRY:cmfm_test_packed_entry)
-cmfm_project_target(fake_game_hooks)
+target_link_libraries(fake_game_hooks PRIVATE al_common)
+target_compile_definitions(fake_game_hooks PRIVATE AL_FAKE_PHASES)
+target_link_options(fake_game_hooks PRIVATE /ENTRY:al_test_packed_entry)
+al_project_target(fake_game_hooks)
 set_target_properties(fake_game_hooks PROPERTIES OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game_hooks/$<CONFIG>"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game_hooks/$<CONFIG>")
 set(role_id 0)
 foreach(role IN ITEMS alpha beta gamma)
     math(EXPR role_id "${role_id} + 1")
-    add_library(cmfm_game_hook_${role} SHARED tests/game_hook_plugin.cpp)
-    target_link_libraries(cmfm_game_hook_${role} PRIVATE cmfm_api cmfm_minhook)
-    target_compile_definitions(cmfm_game_hook_${role} PRIVATE GAME_HOOK_ROLE=${role_id})
-    cmfm_project_target(cmfm_game_hook_${role})
-    set_target_properties(cmfm_game_hook_${role} PROPERTIES OUTPUT_NAME hook_${role}
-        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+    add_library(al_game_hook_${role} SHARED tests/game_hook_plugin.cpp)
+    target_link_libraries(al_game_hook_${role} PRIVATE al_api al_minhook)
+    target_compile_definitions(al_game_hook_${role} PRIVATE GAME_HOOK_ROLE=${role_id})
+    al_project_target(al_game_hook_${role})
+    set_target_properties(al_game_hook_${role} PROPERTIES OUTPUT_NAME hook_${role}
+        RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
 endforeach()
-add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-    "-DCORE=$<TARGET_FILE:cmfm>" "-DFAKE_GAME=$<TARGET_FILE:fake_game_hooks>"
-    "-DPLUGIN_alpha=$<TARGET_FILE:cmfm_game_hook_alpha>" "-DPLUGIN_beta=$<TARGET_FILE:cmfm_game_hook_beta>"
-    "-DPLUGIN_gamma=$<TARGET_FILE:cmfm_game_hook_gamma>" "-DWORK=${CMAKE_BINARY_DIR}/game_hooks_native"
+add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+    "-DCORE=$<TARGET_FILE:astera>" "-DFAKE_GAME=$<TARGET_FILE:fake_game_hooks>"
+    "-DPLUGIN_alpha=$<TARGET_FILE:al_game_hook_alpha>" "-DPLUGIN_beta=$<TARGET_FILE:al_game_hook_beta>"
+    "-DPLUGIN_gamma=$<TARGET_FILE:al_game_hook_gamma>" "-DWORK=${CMAKE_BINARY_DIR}/game_hooks_native"
     -P "${CMAKE_SOURCE_DIR}/tests/game_hooks_native.cmake")
 set_tests_properties(game_hooks_native PROPERTIES TIMEOUT 45)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.
 add_executable(fake_game WIN32 tests/fake_game.cpp)
-target_link_libraries(fake_game PRIVATE cmfm_common shell32)
-cmfm_project_target(fake_game)
+target_link_libraries(fake_game PRIVATE al_common shell32)
+al_project_target(fake_game)
 set_target_properties(fake_game PROPERTIES
     OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game/$<CONFIG>")
 
 add_executable(fake_packed_game WIN32 tests/fake_game.cpp tests/fake_packed_entry.cpp)
-target_link_libraries(fake_packed_game PRIVATE cmfm_common shell32)
-target_compile_definitions(fake_packed_game PRIVATE CMFM_FAKE_PACKED)
-cmfm_project_target(fake_packed_game)
+target_link_libraries(fake_packed_game PRIVATE al_common shell32)
+target_compile_definitions(fake_packed_game PRIVATE AL_FAKE_PACKED)
+al_project_target(fake_packed_game)
 # Only this test entry runs before its own CRT; it uses plain Win32 calls.
 set_source_files_properties(tests/fake_packed_entry.cpp PROPERTIES COMPILE_OPTIONS /GS-)
-target_link_options(fake_packed_game PRIVATE /ENTRY:cmfm_test_packed_entry)
+target_link_options(fake_packed_game PRIVATE /ENTRY:al_test_packed_entry)
 set_target_properties(fake_packed_game PROPERTIES
     OUTPUT_NAME MonsterHunterWorld
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>"
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_packed_game/$<CONFIG>")
 add_test(NAME startup_phase
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
-        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_phase"
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_phase PROPERTIES TIMEOUT 45)
 add_test(NAME startup_helper_transition
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
-        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_helper_transition"
         -DEXPECT_HELPER=1
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_helper_transition PROPERTIES TIMEOUT 45)
 add_test(NAME startup_cached_transition
-    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>" "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
-        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>" "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_cached_transition"
         -P "${CMAKE_SOURCE_DIR}/tests/startup_cache.cmake")
 set_tests_properties(startup_cached_transition PROPERTIES TIMEOUT 60)
 add_test(NAME startup_trace_overflow
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
-        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_trace_overflow"
         -DEXPECT_TRUNCATION=1
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_trace_overflow PROPERTIES TIMEOUT 45)
 add_test(NAME startup_missing_transition
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
-        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DPLUGIN=$<TARGET_FILE:al_plugin_fixture_pre_main_probe>"
         "-DWORK=${CMAKE_BINARY_DIR}/startup_missing_transition"
         -DEXPECT_SKIP=1
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
@@ -564,30 +570,30 @@ set_tests_properties(startup_missing_transition PROPERTIES TIMEOUT 45)
 
 add_test(NAME launcher_injection
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:astera_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_injection"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_injection.cmake")
 
 # Same implementation; dialogs are compiled out only in this test binary.
-add_executable(cmfm_test_launcher src/launcher/main.cpp)
-target_link_libraries(cmfm_test_launcher PRIVATE cmfm_common shell32)
-target_compile_definitions(cmfm_test_launcher PRIVATE CMFM_TEST_NO_DIALOGS)
-cmfm_project_target(cmfm_test_launcher)
+add_executable(al_test_launcher src/launcher/main.cpp)
+target_link_libraries(al_test_launcher PRIVATE al_common shell32)
+target_compile_definitions(al_test_launcher PRIVATE AL_TEST_NO_DIALOGS)
+al_project_target(al_test_launcher)
 add_test(NAME launcher_failures
     COMMAND "${CMAKE_COMMAND}"
-        "-DLAUNCHER=$<TARGET_FILE:cmfm_test_launcher>"
-        "-DCORE=$<TARGET_FILE:cmfm>"
+        "-DLAUNCHER=$<TARGET_FILE:al_test_launcher>"
+        "-DCORE=$<TARGET_FILE:astera>"
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_failures"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_failures.cmake")
 set_tests_properties(launcher_injection launcher_failures PROPERTIES TIMEOUT 60)
 
 foreach(mode IN ITEMS 1 2 3 4)
-    add_library(cmfm_fixture_${mode} SHARED tests/core_fixture.cpp)
-    target_compile_definitions(cmfm_fixture_${mode} PRIVATE CMFM_FIXTURE_MODE=${mode})
-    cmfm_project_target(cmfm_fixture_${mode})
+    add_library(al_fixture_${mode} SHARED tests/core_fixture.cpp)
+    target_compile_definitions(al_fixture_${mode} PRIVATE AL_FIXTURE_MODE=${mode})
+    al_project_target(al_fixture_${mode})
     if(mode EQUAL 3)
         set(expected_result 1)
     else()
@@ -600,8 +606,8 @@ foreach(mode IN ITEMS 1 2 3 4)
     endif()
     add_test(NAME launcher_core_failure_${mode}
         COMMAND "${CMAKE_COMMAND}"
-            "-DLAUNCHER=$<TARGET_FILE:cmfm_test_launcher>"
-            "-DCORE=$<TARGET_FILE:cmfm_fixture_${mode}>"
+            "-DLAUNCHER=$<TARGET_FILE:al_test_launcher>"
+            "-DCORE=$<TARGET_FILE:al_fixture_${mode}>"
             "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
             "-DWORK=${CMAKE_BINARY_DIR}/launcher_core_failure_${mode}"
             "-DEXPECT_RESULT=${expected_result}"

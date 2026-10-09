@@ -3,13 +3,13 @@
 
 static const char* const after[] = {"other", NULL};
 
-static const cmfm_plugin_info_t info = {
-    sizeof(cmfm_plugin_info_t), CMFM_API_VERSION, "sample", NULL, "1.0", 0, 0, after, NULL, NULL, NULL,
+static const al_plugin_info_t info = {
+    sizeof(al_plugin_info_t), AL_API_VERSION, "sample", NULL, "1.0", 0, 0, after, NULL, NULL, NULL,
 };
 
 int main(void) {
-    return info.api_version == CMFM_MAKE_VERSION(1, 4) && CMFM_VERSION_MAJOR(info.api_version) == 1 &&
-                   CMFM_VERSION_MINOR(info.api_version) == 4
+    return info.api_version == AL_MAKE_VERSION(1, 4) && AL_VERSION_MAJOR(info.api_version) == 1 &&
+                   AL_VERSION_MINOR(info.api_version) == 4
                ? 0
                : 1;
 }

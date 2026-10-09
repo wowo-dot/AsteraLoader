@@ -3,7 +3,7 @@
 #include <array>
 #include <cstring>
 
-namespace cmfm::phases {
+namespace al::phases {
 namespace {
 bool code_at(std::span<const std::uint8_t> image, std::span<const startup::CodeRange> code,
              std::int64_t rva, std::size_t count) {
@@ -68,4 +68,4 @@ bool calls_slot(const void* return_address, void** slot) noexcept {
     std::memcpy(&offset,jump+2,4);
     return thunk+6+static_cast<std::intptr_t>(offset)==reinterpret_cast<std::uintptr_t>(slot);
 }
-}  // namespace cmfm::phases
+}  // namespace al::phases

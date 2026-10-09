@@ -16,7 +16,7 @@
 // uses static buffers: no heap, no locks, no loader calls. The heap may be
 // what broke, and the crashing thread may hold any lock.
 
-namespace cmfm::crash {
+namespace al::crash {
 namespace {
 using DumpFn = BOOL(WINAPI*)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE, PMINIDUMP_EXCEPTION_INFORMATION,
                              PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION);
@@ -29,8 +29,8 @@ std::atomic<bool> g_active{false};     // and put the handler in place
 std::atomic<bool> g_entered{false};
 std::atomic<bool> g_written{false};  // the report (and notice) of the first crash are on disk
 std::atomic<int> g_phase{-1};
-std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_previous{nullptr};  // the filter CMFM replaced
-std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_replacer{nullptr};  // one that replaced CMFM later
+std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_previous{nullptr};  // the filter AL replaced
+std::atomic<LPTOP_LEVEL_EXCEPTION_FILTER> g_replacer{nullptr};  // one that replaced AL later
 DumpFn g_dump = nullptr;
 Minidump g_minidump = Minidump::off;
 const void* g_core = nullptr;
@@ -128,13 +128,13 @@ int g_frame_count = 0;
 
 const char* phase_name(int phase) noexcept {
     switch (phase) {
-    case CMFM_PHASE_PRE_MAIN: return "pre_main";
-    case CMFM_PHASE_WIN_MAIN: return "win_main";
-    case CMFM_PHASE_DEVICE_CREATED: return "device_created";
-    case CMFM_PHASE_SWAPCHAIN_CREATED: return "swapchain_created";
-    case CMFM_PHASE_FIRST_PRESENT: return "first_present";
-    case CMFM_PHASE_GAME_READY: return "game_ready";
-    case CMFM_PHASE_SHUTDOWN: return "shutdown";
+    case AL_PHASE_PRE_MAIN: return "pre_main";
+    case AL_PHASE_WIN_MAIN: return "win_main";
+    case AL_PHASE_DEVICE_CREATED: return "device_created";
+    case AL_PHASE_SWAPCHAIN_CREATED: return "swapchain_created";
+    case AL_PHASE_FIRST_PRESENT: return "first_present";
+    case AL_PHASE_GAME_READY: return "game_ready";
+    case AL_PHASE_SHUTDOWN: return "shutdown";
     default: return "before PRE_MAIN";
     }
 }
@@ -142,13 +142,13 @@ const char* phase_name(int phase) noexcept {
 // What the user reads: when in the game's life it happened.
 const char* phase_moment(int phase) noexcept {
     switch (phase) {
-    case CMFM_PHASE_PRE_MAIN:
-    case CMFM_PHASE_WIN_MAIN: return "while the game was starting";
-    case CMFM_PHASE_DEVICE_CREATED:
-    case CMFM_PHASE_SWAPCHAIN_CREATED: return "while the game set up its graphics";
-    case CMFM_PHASE_FIRST_PRESENT:
-    case CMFM_PHASE_GAME_READY: return "while the game was running";
-    case CMFM_PHASE_SHUTDOWN: return "while the game was exiting";
+    case AL_PHASE_PRE_MAIN:
+    case AL_PHASE_WIN_MAIN: return "while the game was starting";
+    case AL_PHASE_DEVICE_CREATED:
+    case AL_PHASE_SWAPCHAIN_CREATED: return "while the game set up its graphics";
+    case AL_PHASE_FIRST_PRESENT:
+    case AL_PHASE_GAME_READY: return "while the game was running";
+    case AL_PHASE_SHUTDOWN: return "while the game was exiting";
     default: return "early in start-up";
     }
 }
@@ -193,9 +193,9 @@ void add_owner(Text& text, const Owner& owner) noexcept {
 // The plugin-facing description of an owner for the notice.
 void add_owner_phrase(Text& text, const Owner& owner) noexcept {
     switch (owner.kind) {
-    case OwnerKind::plugin: text.add("the CMFM plugin \""); text.add(owner.name); text.add("\""); break;
+    case OwnerKind::plugin: text.add("the Astera Loader plugin \""); text.add(owner.name); text.add("\""); break;
     case OwnerKind::stracker_plugin: text.add("the Stracker plugin "); text.add(owner.name); break;
-    case OwnerKind::core: text.add("CMFM itself"); break;
+    case OwnerKind::core: text.add("Astera Loader itself"); break;
     case OwnerKind::game: text.add("the game's own code"); break;
     default: text.add(owner.name.empty() ? std::wstring_view(L"unknown code") : owner.name); break;
     }
@@ -285,7 +285,7 @@ void write(EXCEPTION_POINTERS* info) noexcept {
     std::copy_n(owner.name.data(), owner_size, owner_name);
     owner.name = std::wstring_view(owner_name, owner_size);
 
-    text.add("CMFM crash report\r\ncmfm=");
+    text.add("Astera Loader crash report\r\nal=");
     text.add(g_version);
     text.add(" exe_sha256=");
     text.add(g_exe[0] ? std::string_view(g_exe) : std::string_view("unknown"));
@@ -372,7 +372,7 @@ void write(EXCEPTION_POINTERS* info) noexcept {
     save(g_report_path, text, CREATE_ALWAYS, GENERIC_WRITE);
 
     // The notice for the next launch; a crash while exiting gets none.
-    if (phase != CMFM_PHASE_SHUTDOWN) {
+    if (phase != AL_PHASE_SHUTDOWN) {
         auto& notice = g_notice;
         notice.reset();
         notice.add("The game crashed in your last session, ");
@@ -433,8 +433,8 @@ void write_guarded(EXCEPTION_POINTERS* info) noexcept {
 }
 
 LONG WINAPI unhandled(EXCEPTION_POINTERS* info) {
-    // Entered again: a filter that replaced CMFM's and keeps its predecessor
-    // calls back into it. Go on to the filter CMFM replaced.
+    // Entered again: a filter that replaced AL's and keeps its predecessor
+    // calls back into it. Go on to the filter AL replaced.
     if (g_entered.exchange(true)) {
         const auto previous = g_previous.load();
         return previous ? previous(info) : EXCEPTION_CONTINUE_SEARCH;
@@ -448,8 +448,8 @@ LONG WINAPI unhandled(EXCEPTION_POINTERS* info) {
     return result;
 }
 
-// First chance, for fatal codes only: if something replaced CMFM's
-// top-level filter, put CMFM's back in front and remember the other one to
+// First chance, for fatal codes only: if something replaced AL's
+// top-level filter, put AL's back in front and remember the other one to
 // call after it. Never handles anything.
 LONG CALLBACK first_chance(EXCEPTION_POINTERS* info) {
     if (info && info->ExceptionRecord && fatal(info->ExceptionRecord->ExceptionCode) && !g_entered.load()) {
@@ -538,9 +538,9 @@ bool installed() noexcept {
     return g_active.load();
 }
 
-void note_phase(cmfm_phase_t phase) noexcept {
+void note_phase(al_phase_t phase) noexcept {
     g_phase = static_cast<int>(phase);
-    if (phase != CMFM_PHASE_SHUTDOWN || !g_entered.load()) return;
+    if (phase != AL_PHASE_SHUTDOWN || !g_entered.load()) return;
     // The game still returned from WinMain after a crash on another thread:
     // the crash raced the game's own shutdown and did not end the session.
     // Withdraw the notice and say so in the report. The crashing thread may
@@ -569,4 +569,4 @@ std::wstring take_previous(const std::wstring& logs_folder) {
     return wide;
 }
 
-}  // namespace cmfm::crash
+}  // namespace al::crash

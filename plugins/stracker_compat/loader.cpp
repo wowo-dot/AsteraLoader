@@ -1,4 +1,4 @@
-// loader.dll: CMFM's stand-in for Stracker's Loader's loader.dll.
+// loader.dll: AL's stand-in for Stracker's Loader's loader.dll.
 //
 // It exports Stracker's ABI (loader_abi.h), so a Stracker plugin's loader.dll
 // import binds to it, and runs Stracker's start-up (MHWLoader/loaderdll.cpp,
@@ -6,13 +6,13 @@
 // Lavergne): read loader-config.json, warn about obsolete files, find the
 // game version, load nativePC\plugins. Log texts and loader.log / console
 // output follow Stracker. Differences, on purpose:
-// - paths are taken from the game folder CMFM passes in, not the current
+// - paths are taken from the game folder AL passes in, not the current
 //   directory;
 // - a broken config, an unknown logLevel or an unreadable version pointer is
-//   logged and reported to CMFM instead of throwing or crashing;
-// - every log line also goes to CMFM (stracker_compat's log).
+//   logged and reported to AL instead of throwing or crashing;
+// - every log line also goes to AL (stracker_compat's log).
 
-#define CMFM_STRACKER_SHIM
+#define AL_STRACKER_SHIM
 #include "loader_abi.h"
 #include "shim.h"
 #include "stracker_logic.hpp"
@@ -32,13 +32,13 @@ const char* loader::GameVersion = "???";
 loader::LogLevel loader::MinLogLevel = loader::INFO;
 
 namespace {
-using namespace cmfm::stracker;
+using namespace al::stracker;
 
 // Plugins may log from any thread; the lock guards the outputs below.
 SRWLOCK g_lock = SRWLOCK_INIT;
 Config g_config;
 std::wstring g_log_path;
-cmfm_stracker_log_fn g_sink = nullptr;
+al_stracker_log_fn g_sink = nullptr;
 void* g_sink_context = nullptr;
 HANDLE g_console = nullptr;
 std::string g_version;
@@ -91,7 +91,7 @@ void to_console(int level, const char* stamp, const std::string& text) {
     SetConsoleTextAttribute(g_console, kWhite);
 }
 
-// Stracker's _log: level filter, time stamp, file and console; plus CMFM.
+// Stracker's _log: level filter, time stamp, file and console; plus AL.
 void write_line(int level, const std::string& text) noexcept {
     if (level < loader::MinLogLevel) return;
     try {
@@ -111,9 +111,9 @@ void write_line(int level, const std::string& text) noexcept {
     } catch (...) { /* Logging never throws into a plugin. */ }
 }
 
-// A line for CMFM's log only: not filtered by Stracker's logLevel and not
+// A line for AL's log only: not filtered by Stracker's logLevel and not
 // written to loader.log or the console, so those stay as Stracker wrote them.
-void cmfm_only(int level, const std::string& text) noexcept {
+void al_only(int level, const std::string& text) noexcept {
     try {
         Lock lock;
         if (g_sink) g_sink(g_sink_context, level, text.c_str());
@@ -159,22 +159,22 @@ bool read_file(const std::wstring& path, std::string& out) {
     return ok;
 }
 
-void load_config(const std::wstring& game, cmfm_stracker_result& result) {
+void load_config(const std::wstring& game, al_stracker_result& result) {
     std::string text;
     std::vector<std::string> problems;
     if (!read_file(game + L"\\loader-config.json", text)) {
-        result.config_state = CMFM_STRACKER_CONFIG_MISSING;
+        result.config_state = AL_STRACKER_CONFIG_MISSING;
         g_config = {};
     } else if (!parse_config(text, g_config, problems)) {
-        result.config_state = CMFM_STRACKER_CONFIG_INVALID;
+        result.config_state = AL_STRACKER_CONFIG_INVALID;
         g_config = {};
     } else {
-        result.config_state = CMFM_STRACKER_CONFIG_FOUND;
+        result.config_state = AL_STRACKER_CONFIG_FOUND;
     }
     result.config_problems = static_cast<std::uint32_t>(problems.size());
     loader::MinLogLevel = static_cast<loader::LogLevel>(g_config.log_level);
-    if (result.config_state == CMFM_STRACKER_CONFIG_FOUND) loader::LOG(loader::INFO) << "Found config file";
-    if (result.config_state == CMFM_STRACKER_CONFIG_INVALID) {
+    if (result.config_state == AL_STRACKER_CONFIG_FOUND) loader::LOG(loader::INFO) << "Found config file";
+    if (result.config_state == AL_STRACKER_CONFIG_INVALID) {
         loader::LOG(loader::ERR) << "loader-config.json is not valid JSON; using the defaults";
     }
     for (const auto& problem : problems) loader::LOG(loader::ERR) << "loader-config.json: " << problem;
@@ -188,10 +188,10 @@ void old_warning(const std::wstring& game) {
     }
 }
 
-void find_version(const void* image, const char* known, cmfm_stracker_result& result) {
-    // CMFM may already know the version (cmfm.game, the same pattern): no second search.
-    const auto found = known && cmfm::plausible_version(known) ? cmfm::GameVersion{known, {}}
-                                                               : cmfm::find_game_version(image);
+void find_version(const void* image, const char* known, al_stracker_result& result) {
+    // AL may already know the version (al.game, the same pattern): no second search.
+    const auto found = known && al::plausible_version(known) ? al::GameVersion{known, {}}
+                                                               : al::find_game_version(image);
     if (found.text.empty()) {
         loader::LOG(loader::ERR) << "Build Number check failed.";
         loader::LOG(loader::ERR) << "Could not find game version";
@@ -206,7 +206,7 @@ void find_version(const void* image, const char* known, cmfm_stracker_result& re
     loader::LOG(loader::INFO) << "Game version " << loader::GameVersion;
 }
 
-void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
+void load_plugins(const std::wstring& game, al_stracker_result& result) {
     result.plugin_loader_enabled = g_config.enable_plugin_loader ? 1 : 0;
     if (!g_config.enable_plugin_loader) return;
     const auto folder = game + L"\\nativePC\\plugins";
@@ -237,7 +237,7 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
         // gets the loaded module, not a second copy (run stracker-mo2-3).
         //
         // A damaged DLL would make Windows show a "Bad Image" box and wait for
-        // a click; the failure is reported through CMFM instead. Only this
+        // a click; the failure is reported through AL instead. Only this
         // thread's error mode changes, and only while it loads the plugin.
         DWORD previous_mode = 0;
         const bool quiet = SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &previous_mode);
@@ -250,7 +250,7 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
         QueryPerformanceFrequency(&frequency);
         if (plugin && frequency.QuadPart) {
             const auto tenths = (finished.QuadPart - started.QuadPart) * 10000 / frequency.QuadPart;
-            cmfm_only(loader::INFO, "loaded " + utf8(name) + " in " + std::to_string(tenths / 10) + "." +
+            al_only(loader::INFO, "loaded " + utf8(name) + " in " + std::to_string(tenths / 10) + "." +
                                         std::to_string(tenths % 10) + " ms");
         }
         if (plugin) {
@@ -267,7 +267,7 @@ void load_plugins(const std::wstring& game, cmfm_stracker_result& result) {
     }
 }
 
-void start(const std::wstring& game, const void* image, const char* known_version, cmfm_stracker_result& result) {
+void start(const std::wstring& game, const void* image, const char* known_version, al_stracker_result& result) {
     {
         Lock lock;
         g_log_path = game + L"\\loader.log";
@@ -296,10 +296,10 @@ loader::LOG::~LOG() {
     } catch (...) { /* A destructor must not throw. */ }
 }
 
-extern "C" __declspec(dllexport) std::uint32_t __cdecl cmfm_stracker_start(const cmfm_stracker_host* host,
-                                                                           cmfm_stracker_result* result) noexcept {
-    if (!host || host->size < sizeof(cmfm_stracker_host) || host->version != CMFM_STRACKER_HOST_VERSION ||
-        !host->game_folder || !result || result->size < sizeof(cmfm_stracker_result)) {
+extern "C" __declspec(dllexport) std::uint32_t __cdecl al_stracker_start(const al_stracker_host* host,
+                                                                           al_stracker_result* result) noexcept {
+    if (!host || host->size < sizeof(al_stracker_host) || host->version != AL_STRACKER_HOST_VERSION ||
+        !host->game_folder || !result || result->size < sizeof(al_stracker_result)) {
         return 2;
     }
     const auto size = result->size;
@@ -324,11 +324,11 @@ extern "C" __declspec(dllexport) std::uint32_t __cdecl cmfm_stracker_start(const
 }
 
 // Stracker's own entry point, kept so this DLL can stand in for loader.dll
-// anywhere. After cmfm_stracker_start, or a first call, it does nothing.
+// anywhere. After al_stracker_start, or a first call, it does nothing.
 extern "C" __declspec(dllexport) void Initialize() {
     if (InterlockedCompareExchange(&g_started, 1, 0) != 0) return;
     try {
-        cmfm_stracker_result result{};
+        al_stracker_result result{};
         result.size = sizeof(result);
         const auto game = exe_folder();
         if (!game.empty()) start(game, GetModuleHandleW(nullptr), nullptr, result);

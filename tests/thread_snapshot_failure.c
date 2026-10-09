@@ -1,6 +1,6 @@
 #include <windows.h>
 
-BOOL WINAPI cmfm_enumerate_process_threads(HANDLE heap, LPDWORD *ids, UINT *count)
+BOOL WINAPI al_enumerate_process_threads(HANDLE heap, LPDWORD *ids, UINT *count)
 {
     (void)heap;
     *ids = NULL;

@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace cmfm {
+namespace al {
 
 // Ordinal comparison that ignores case, as Windows compares file names.
 bool iequals(std::wstring_view a, std::wstring_view b);
@@ -27,4 +27,4 @@ std::wstring strip_extended_prefix(std::wstring_view path);
 // whole path components match; an empty profile leaves the path unchanged.
 std::wstring redact_profile(std::wstring_view path, std::wstring_view profile);
 
-}  // namespace cmfm
+}  // namespace al

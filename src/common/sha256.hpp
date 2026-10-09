@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <string>
 
-namespace cmfm {
+namespace al {
 
-// SHA-256 (FIPS 180-4) in plain C++, so CMFM needs no crypto DLL to identify
+// SHA-256 (FIPS 180-4) in plain C++, so AL needs no crypto DLL to identify
 // files in its logs.
 class Sha256 {
 public:
@@ -31,4 +31,4 @@ private:
 // Lower-case hex SHA-256 of a file, or an empty string if it cannot be read.
 std::wstring sha256_file(const std::wstring& path);
 
-}  // namespace cmfm
+}  // namespace al

@@ -11,41 +11,41 @@
 #include <cstring>
 #include <map>
 
-namespace cmfm::graphics {
+namespace al::graphics {
 namespace {
 thread_local int t_internal = 0;
 
-constexpr std::uint32_t kFamilyCount = CMFM_D3D12_COMMAND_LIST + 1;
+constexpr std::uint32_t kFamilyCount = AL_D3D12_COMMAND_LIST + 1;
 
 const char* family_name(std::uint32_t family) {
     switch (family) {
-    case CMFM_D3D12_FACTORY: return "factory";
-    case CMFM_D3D12_SWAPCHAIN: return "swapchain";
-    case CMFM_D3D12_DEVICE: return "device";
-    case CMFM_D3D12_QUEUE: return "queue";
-    case CMFM_D3D12_COMMAND_LIST: return "command_list";
+    case AL_D3D12_FACTORY: return "factory";
+    case AL_D3D12_SWAPCHAIN: return "swapchain";
+    case AL_D3D12_DEVICE: return "device";
+    case AL_D3D12_QUEUE: return "queue";
+    case AL_D3D12_COMMAND_LIST: return "command_list";
     default: return "unknown";
     }
 }
 
 const char* event_name(std::uint32_t event) {
     switch (event) {
-    case CMFM_D3D12_SWAPCHAIN_CREATED: return "swapchain_created";
-    case CMFM_D3D12_PRE_PRESENT: return "pre_present";
-    case CMFM_D3D12_POST_PRESENT: return "post_present";
-    case CMFM_D3D12_PRE_RESIZE: return "pre_resize";
-    case CMFM_D3D12_POST_RESIZE: return "post_resize";
+    case AL_D3D12_SWAPCHAIN_CREATED: return "swapchain_created";
+    case AL_D3D12_PRE_PRESENT: return "pre_present";
+    case AL_D3D12_POST_PRESENT: return "post_present";
+    case AL_D3D12_PRE_RESIZE: return "pre_resize";
+    case AL_D3D12_POST_RESIZE: return "post_resize";
     default: return "unknown";
     }
 }
 
-std::string method_name(cmfm_d3d12_method_t method) {
-    return std::string(family_name(CMFM_D3D12_METHOD_FAMILY(method))) + ":" +
-           std::to_string(CMFM_D3D12_METHOD_SLOT(method));
+std::string method_name(al_d3d12_method_t method) {
+    return std::string(family_name(AL_D3D12_METHOD_FAMILY(method))) + ":" +
+           std::to_string(AL_D3D12_METHOD_SLOT(method));
 }
 
 bool presentation_family(std::uint32_t family) {
-    return family == CMFM_D3D12_FACTORY || family == CMFM_D3D12_SWAPCHAIN;
+    return family == AL_D3D12_FACTORY || family == AL_D3D12_SWAPCHAIN;
 }
 
 std::int64_t qpc() {
@@ -88,9 +88,9 @@ Hub::~Hub() {
     release_layer_hub(this);
 }
 
-std::string Hub::subscribe(Client& client, std::uint32_t events, std::int32_t order, cmfm_d3d12_event_fn callback,
+std::string Hub::subscribe(Client& client, std::uint32_t events, std::int32_t order, al_d3d12_event_fn callback,
                            void* user) {
-    constexpr std::uint32_t known = (1u << CMFM_D3D12_EVENT_COUNT) - 1;
+    constexpr std::uint32_t known = (1u << AL_D3D12_EVENT_COUNT) - 1;
     std::lock_guard lock(mutex_);
     if (closed_) return "registration closed when PRE_MAIN ended";
     if (!callback) return "no callback";
@@ -105,22 +105,22 @@ std::string Hub::subscribe(Client& client, std::uint32_t events, std::int32_t or
     return {};
 }
 
-std::string Hub::hook(Client& client, const cmfm_d3d12_hook_t* hooks, std::uint32_t count) {
+std::string Hub::hook(Client& client, const al_d3d12_hook_t* hooks, std::uint32_t count) {
     std::lock_guard lock(mutex_);
     if (closed_) return "registration closed when PRE_MAIN ended";
     if (!hooks || !count) return "no hooks";
-    std::vector<cmfm_d3d12_method_t> mine;
+    std::vector<al_d3d12_method_t> mine;
     for (std::size_t k = 0; k < pending_.size(); ++k) {
         if (pending_[k].client == &client) mine.push_back(pending_methods_[k]);
     }
     for (std::uint32_t k = 0; k < count; ++k) {
         const auto& hook = hooks[k];
-        const auto family = CMFM_D3D12_METHOD_FAMILY(hook.method);
-        const auto slot = CMFM_D3D12_METHOD_SLOT(hook.method);
+        const auto family = AL_D3D12_METHOD_FAMILY(hook.method);
+        const auto slot = AL_D3D12_METHOD_SLOT(hook.method);
         const auto shown = "hook " + std::to_string(k) + " (" + method_name(hook.method) + ")";
-        if (family < CMFM_D3D12_FACTORY || family > CMFM_D3D12_COMMAND_LIST) return shown + ": unknown family";
+        if (family < AL_D3D12_FACTORY || family > AL_D3D12_COMMAND_LIST) return shown + ": unknown family";
         if (slot < 3) return shown + ": IUnknown methods cannot be hooked";
-        if (slot >= CMFM_D3D12_SLOT_LIMIT) return shown + ": slot beyond CMFM_D3D12_SLOT_LIMIT";
+        if (slot >= AL_D3D12_SLOT_LIMIT) return shown + ": slot beyond AL_D3D12_SLOT_LIMIT";
         if (!hook.detour || !hook.next) return shown + ": no detour or no next";
         if (presentation_family(family) && owner_ != &client) {
             return shown + ": " + family_name(family) + " methods need the presentation role" +
@@ -147,14 +147,14 @@ std::string Hub::claim_presentation(Client& client) {
     return {};
 }
 
-void Hub::status(cmfm_d3d12_status_t& out) const {
+void Hub::status(al_d3d12_status_t& out) const {
     if (out.size < sizeof(std::uint32_t)) return;
-    cmfm_d3d12_status_t full{};
+    al_d3d12_status_t full{};
     full.size = sizeof(full);
     full.state = state_.load();
     {
         std::lock_guard lock(mutex_);
-        full.reason = full.state == CMFM_D3D12_UNAVAILABLE ? reason_.c_str() : nullptr;
+        full.reason = full.state == AL_D3D12_UNAVAILABLE ? reason_.c_str() : nullptr;
         full.owner = owner_ ? owner_name_.c_str() : nullptr;
     }
     full.frames = frames_.load(std::memory_order_relaxed);
@@ -170,10 +170,10 @@ void Hub::close(std::uint32_t phase_mask) {
     phase_mask_ = phase_mask;
 
     // Subscriptions per event: lower order first, then load order.
-    for (std::uint32_t event = 0; event < CMFM_D3D12_EVENT_COUNT; ++event) {
+    for (std::uint32_t event = 0; event < AL_D3D12_EVENT_COUNT; ++event) {
         auto& list = by_event_[event];
         for (const auto& subscription : subscriptions_) {
-            if (subscription->events & CMFM_D3D12_EVENT_BIT(event)) list.push_back(subscription.get());
+            if (subscription->events & AL_D3D12_EVENT_BIT(event)) list.push_back(subscription.get());
         }
         std::stable_sort(list.begin(), list.end(), [](const Subscription* a, const Subscription* b) {
             return a->order != b->order ? a->order < b->order : a->client->load_index < b->client->load_index;
@@ -181,7 +181,7 @@ void Hub::close(std::uint32_t phase_mask) {
     }
 
     // Plugin detours per method, in the same order.
-    std::map<cmfm_d3d12_method_t, std::vector<Layer>> methods;
+    std::map<al_d3d12_method_t, std::vector<Layer>> methods;
     for (std::size_t k = 0; k < pending_.size(); ++k) methods[pending_methods_[k]].push_back(pending_[k]);
     for (auto& [method, layers] : methods) {
         std::stable_sort(layers.begin(), layers.end(), [](const Layer& a, const Layer& b) {
@@ -189,31 +189,31 @@ void Hub::close(std::uint32_t phase_mask) {
         });
     }
 
-    // CMFM's own layer, entered first, only where something needs it.
+    // AL's own layer, entered first, only where something needs it.
     const auto subscribed = [&](std::uint32_t event) { return !by_event_[event].empty(); };
-    const bool present = subscribed(CMFM_D3D12_PRE_PRESENT) || subscribed(CMFM_D3D12_POST_PRESENT) ||
-                         (phase_mask & CMFM_PHASE_BIT(CMFM_PHASE_FIRST_PRESENT));
-    const bool resize = subscribed(CMFM_D3D12_PRE_RESIZE) || subscribed(CMFM_D3D12_POST_RESIZE);
+    const bool present = subscribed(AL_D3D12_PRE_PRESENT) || subscribed(AL_D3D12_POST_PRESENT) ||
+                         (phase_mask & AL_PHASE_BIT(AL_PHASE_FIRST_PRESENT));
+    const bool resize = subscribed(AL_D3D12_PRE_RESIZE) || subscribed(AL_D3D12_POST_RESIZE);
     bool swapchain_detours = false;
     for (const auto& [method, layers] : methods) {
-        if (CMFM_D3D12_METHOD_FAMILY(method) == CMFM_D3D12_SWAPCHAIN) swapchain_detours = true;
+        if (AL_D3D12_METHOD_FAMILY(method) == AL_D3D12_SWAPCHAIN) swapchain_detours = true;
     }
     // Swap-chain detours are hooked when the game creates its swap chain,
-    // which CMFM's factory layer sees.
-    const bool creation = present || resize || swapchain_detours || subscribed(CMFM_D3D12_SWAPCHAIN_CREATED) ||
-                          (phase_mask & CMFM_PHASE_BIT(CMFM_PHASE_SWAPCHAIN_CREATED));
-    std::vector<cmfm_d3d12_method_t> own;
+    // which AL's factory layer sees.
+    const bool creation = present || resize || swapchain_detours || subscribed(AL_D3D12_SWAPCHAIN_CREATED) ||
+                          (phase_mask & AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED));
+    std::vector<al_d3d12_method_t> own;
     if (creation) {
-        own.push_back(CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN);
-        own.push_back(CMFM_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND);
+        own.push_back(AL_D3D12_FACTORY_CREATE_SWAPCHAIN);
+        own.push_back(AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND);
     }
     if (present) {
-        own.push_back(CMFM_D3D12_SWAPCHAIN_PRESENT);
-        own.push_back(CMFM_D3D12_SWAPCHAIN_PRESENT1);
+        own.push_back(AL_D3D12_SWAPCHAIN_PRESENT);
+        own.push_back(AL_D3D12_SWAPCHAIN_PRESENT1);
     }
     if (resize) {
-        own.push_back(CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS);
-        own.push_back(CMFM_D3D12_SWAPCHAIN_RESIZE_BUFFERS1);
+        own.push_back(AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS);
+        own.push_back(AL_D3D12_SWAPCHAIN_RESIZE_BUFFERS1);
     }
     for (const auto method : own) {
         auto& layers = methods[method];
@@ -236,14 +236,14 @@ const std::vector<Chain>& Hub::chains() const {
 
 bool Hub::wants(std::uint32_t family) const {
     return std::any_of(chains_.begin(), chains_.end(),
-                       [&](const Chain& chain) { return CMFM_D3D12_METHOD_FAMILY(chain.method) == family; });
+                       [&](const Chain& chain) { return AL_D3D12_METHOD_FAMILY(chain.method) == family; });
 }
 
 void Hub::set_installer(Installer* installer) {
     installer_ = installer;
 }
 
-void Hub::set_phase_dispatch(std::function<void(cmfm_phase_t, const void*)> dispatch) {
+void Hub::set_phase_dispatch(std::function<void(al_phase_t, const void*)> dispatch) {
     dispatch_phase_ = std::move(dispatch);
 }
 
@@ -251,28 +251,28 @@ void Hub::set_unavailable(std::string reason) {
     std::vector<const Client*> told;
     {
         std::lock_guard lock(mutex_);
-        if (state_ == CMFM_D3D12_UNAVAILABLE) return;
+        if (state_ == AL_D3D12_UNAVAILABLE) return;
         reason_ = std::move(reason);
-        state_ = CMFM_D3D12_UNAVAILABLE;
+        state_ = AL_D3D12_UNAVAILABLE;
         for (const auto& subscription : subscriptions_) told.push_back(subscription->client);
         for (const auto& layer : pending_) told.push_back(layer.client);
         if (owner_) told.push_back(owner_);
     }
     std::sort(told.begin(), told.end());
     told.erase(std::unique(told.begin(), told.end()), told.end());
-    for (const auto* client : told) note(*client, "WARN", "cmfm.d3d12 is unavailable: " + reason_);
+    for (const auto* client : told) note(*client, "WARN", "al.d3d12 is unavailable: " + reason_);
 }
 
 void Hub::install(std::uint32_t family, void* object) {
     std::lock_guard install_lock(install_mutex_);
-    if (family >= kFamilyCount || installed_[family] || state_ == CMFM_D3D12_UNAVAILABLE || !object) return;
+    if (family >= kFamilyCount || installed_[family] || state_ == AL_D3D12_UNAVAILABLE || !object) return;
     std::vector<const Chain*> list;
     for (const auto& chain : chains_) {
-        if (CMFM_D3D12_METHOD_FAMILY(chain.method) == family) list.push_back(&chain);
+        if (AL_D3D12_METHOD_FAMILY(chain.method) == family) list.push_back(&chain);
     }
     if (list.empty()) return;
     if (!installer_) {
-        set_unavailable("this CMFM build cannot hook Direct3D 12 methods yet");
+        set_unavailable("this Astera Loader build cannot hook Direct3D 12 methods yet");
         return;
     }
     const auto problem = installer_->install(family, object, list);
@@ -282,8 +282,8 @@ void Hub::install(std::uint32_t family, void* object) {
         return;
     }
     installed_[family] = true;
-    auto expected = CMFM_D3D12_WAITING;
-    state_.compare_exchange_strong(expected, CMFM_D3D12_RUNNING);
+    auto expected = AL_D3D12_WAITING;
+    state_.compare_exchange_strong(expected, AL_D3D12_RUNNING);
     installer_->report(*this);
 }
 
@@ -291,7 +291,7 @@ void Hub::device_created(void* device) {
     if (!closed_ || !device) return;
     device_ = device;
     current_.device = device;
-    for (const auto family : {CMFM_D3D12_DEVICE, CMFM_D3D12_QUEUE, CMFM_D3D12_COMMAND_LIST, CMFM_D3D12_FACTORY}) {
+    for (const auto family : {AL_D3D12_DEVICE, AL_D3D12_QUEUE, AL_D3D12_COMMAND_LIST, AL_D3D12_FACTORY}) {
         install(family, device);
     }
 }
@@ -323,19 +323,19 @@ void Hub::describe(void* swapchain) {
 }
 
 void Hub::swapchain_created(void* swapchain, void* queue) {
-    if (!swapchain || state_ == CMFM_D3D12_UNAVAILABLE) return;
+    if (!swapchain || state_ == AL_D3D12_UNAVAILABLE) return;
     current_.swapchain = swapchain;
     current_.queue = queue;
     current_.device = device_;
     describe(swapchain);
     // Detours go in before anyone hears of the swap chain.
-    install(CMFM_D3D12_SWAPCHAIN, swapchain);
-    if (state_ == CMFM_D3D12_UNAVAILABLE) return;
+    install(AL_D3D12_SWAPCHAIN, swapchain);
+    if (state_ == AL_D3D12_UNAVAILABLE) return;
     if (!swapchain_phase_done_) {
         swapchain_phase_done_ = true;
-        if (dispatch_phase_) dispatch_phase_(CMFM_PHASE_SWAPCHAIN_CREATED, &current_);
+        if (dispatch_phase_) dispatch_phase_(AL_PHASE_SWAPCHAIN_CREATED, &current_);
     }
-    raise(CMFM_D3D12_SWAPCHAIN_CREATED, &current_);
+    raise(AL_D3D12_SWAPCHAIN_CREATED, &current_);
 }
 
 bool Hub::is_present_thread() {
@@ -347,7 +347,7 @@ bool Hub::is_present_thread() {
 
 PresentCall Hub::begin_present(void* swapchain, std::uint32_t sync_interval, std::uint32_t flags) {
     PresentCall call;
-    if (state_ == CMFM_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain || !is_present_thread()) return call;
+    if (state_ == AL_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain || !is_present_thread()) return call;
     const auto now = qpc();
     auto& data = call.data;
     data.size = sizeof(data);
@@ -357,11 +357,11 @@ PresentCall Hub::begin_present(void* swapchain, std::uint32_t sync_interval, std
     data.flags = flags;
     data.present_qpc = now;
     data.previous_qpc = last_present_qpc_.load(std::memory_order_relaxed);
-    if (swapchain3_ && !by_event_[CMFM_D3D12_PRE_PRESENT].empty()) {
+    if (swapchain3_ && !by_event_[AL_D3D12_PRE_PRESENT].empty()) {
         data.back_buffer = static_cast<IDXGISwapChain3*>(swapchain3_)->GetCurrentBackBufferIndex();
     }
-    if (data.frame == 0 && dispatch_phase_) dispatch_phase_(CMFM_PHASE_FIRST_PRESENT, &data);
-    raise(CMFM_D3D12_PRE_PRESENT, &data);
+    if (data.frame == 0 && dispatch_phase_) dispatch_phase_(AL_PHASE_FIRST_PRESENT, &data);
+    raise(AL_D3D12_PRE_PRESENT, &data);
     last_present_qpc_.store(now, std::memory_order_relaxed);
     call.raised = true;
     return call;
@@ -370,16 +370,16 @@ PresentCall Hub::begin_present(void* swapchain, std::uint32_t sync_interval, std
 void Hub::end_present(PresentCall& call, std::int32_t result) {
     if (!call.raised) return;
     call.data.result = result;
-    raise(CMFM_D3D12_POST_PRESENT, &call.data);
+    raise(AL_D3D12_POST_PRESENT, &call.data);
     frames_.fetch_add(1, std::memory_order_relaxed);
 }
 
 ResizeCall Hub::begin_resize(void* swapchain, std::uint32_t buffer_count, std::uint32_t width, std::uint32_t height,
                              std::uint32_t format, std::uint32_t flags) {
     ResizeCall call;
-    if (state_ == CMFM_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain) return call;
+    if (state_ == AL_D3D12_UNAVAILABLE || !swapchain || swapchain != current_.swapchain) return call;
     call.data = {sizeof(call.data), 0, &current_, buffer_count, width, height, format, flags, 0};
-    raise(CMFM_D3D12_PRE_RESIZE, &call.data);
+    raise(AL_D3D12_PRE_RESIZE, &call.data);
     call.raised = true;
     return call;
 }
@@ -388,11 +388,11 @@ void Hub::end_resize(ResizeCall& call, std::int32_t result) {
     if (!call.raised) return;
     if (result >= 0) describe(current_.swapchain);
     call.data.result = result;
-    raise(CMFM_D3D12_POST_RESIZE, &call.data);
+    raise(AL_D3D12_POST_RESIZE, &call.data);
 }
 
-void Hub::raise(cmfm_d3d12_event_t event, const void* data) {
-    if (state_ == CMFM_D3D12_UNAVAILABLE) return;
+void Hub::raise(al_d3d12_event_t event, const void* data) {
+    if (state_ == AL_D3D12_UNAVAILABLE) return;
     for (auto* subscription : by_event_[event]) {
         auto& client = *subscription->client;
         if (client.stopped && client.stopped->load(std::memory_order_relaxed)) continue;
@@ -418,8 +418,8 @@ std::vector<std::string> Hub::summary() const {
     std::lock_guard lock(mutex_);
     char text[256]{};
     for (const auto& subscription : subscriptions_) {
-        for (std::uint32_t event = 0; event < CMFM_D3D12_EVENT_COUNT; ++event) {
-            if (!(subscription->events & CMFM_D3D12_EVENT_BIT(event))) continue;
+        for (std::uint32_t event = 0; event < AL_D3D12_EVENT_COUNT; ++event) {
+            if (!(subscription->events & AL_D3D12_EVENT_BIT(event))) continue;
             const auto calls = subscription->calls[event].load(std::memory_order_relaxed);
             const auto total = ticks_to_us(subscription->ticks[event].load(std::memory_order_relaxed));
             std::snprintf(text, sizeof(text), "d3d12_event plugin=%s event=%s order=%d calls=%llu total_us=%.1f "
@@ -433,19 +433,19 @@ std::vector<std::string> Hub::summary() const {
     for (const auto& chain : chains_) {
         std::string line = "d3d12_chain method=" + method_name(chain.method) + " layers=";
         for (std::size_t k = 0; k < chain.layers.size(); ++k) {
-            line += (k ? "," : "") + (chain.layers[k].client ? chain.layers[k].client->name : std::string("cmfm"));
+            line += (k ? "," : "") + (chain.layers[k].client ? chain.layers[k].client->name : std::string("astera"));
         }
         line += std::string(" installed=") +
-                (installed_[CMFM_D3D12_METHOD_FAMILY(chain.method)] ? "yes" : "no");
+                (installed_[AL_D3D12_METHOD_FAMILY(chain.method)] ? "yes" : "no");
         lines.push_back(std::move(line));
     }
     lines.push_back(std::string("d3d12_state=") +
-                    (state_ == CMFM_D3D12_RUNNING ? "running" : state_ == CMFM_D3D12_WAITING ? "waiting"
+                    (state_ == AL_D3D12_RUNNING ? "running" : state_ == AL_D3D12_WAITING ? "waiting"
                                                                                              : "unavailable") +
                     " presentation_owner=" + (owner_ ? owner_name_ : std::string("none")) +
                     " frames=" + std::to_string(frames_.load()) +
-                    (state_ == CMFM_D3D12_UNAVAILABLE ? " reason=" + reason_ : std::string()));
+                    (state_ == AL_D3D12_UNAVAILABLE ? " reason=" + reason_ : std::string()));
     return lines;
 }
 
-}  // namespace cmfm::graphics
+}  // namespace al::graphics

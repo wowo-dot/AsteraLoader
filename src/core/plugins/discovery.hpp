@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 
 // A plugin folder that holds its DLL: <root>\<name>\<name>.dll.
 struct Candidate {
@@ -27,4 +27,4 @@ struct Discovery {
 // plugin's folder belong to the plugin. A missing root means no plugins.
 Discovery discover(const std::wstring& root);
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

@@ -26,7 +26,7 @@
 #include <mutex>
 #include <string_view>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
 // A plugin's own log file, <logs>\plugins\<name>.log. It is created on the
 // first line, keeps the previous run as <name>.previous.log, and stops at a
@@ -84,20 +84,20 @@ private:
     bool stopped_ = false;
 };
 
-std::string_view level_name(cmfm_log_level_t level) {
+std::string_view level_name(al_log_level_t level) {
     switch (level) {
-    case CMFM_LOG_DEBUG: return "DEBUG";
-    case CMFM_LOG_INFO: return "INFO";
-    case CMFM_LOG_WARNING: return "WARN";
-    case CMFM_LOG_ERROR: return "ERROR";
+    case AL_LOG_DEBUG: return "DEBUG";
+    case AL_LOG_INFO: return "INFO";
+    case AL_LOG_WARNING: return "WARN";
+    case AL_LOG_ERROR: return "ERROR";
     default: return "LOG";
     }
 }
 
-std::string_view status_name(cmfm_status_t status) {
+std::string_view status_name(al_status_t status) {
     switch (status) {
-    case CMFM_STATUS_ACTIVE: return "active";
-    case CMFM_STATUS_DEGRADED: return "degraded";
+    case AL_STATUS_ACTIVE: return "active";
+    case AL_STATUS_DEGRADED: return "degraded";
     default: return "disabled";
     }
 }
@@ -119,7 +119,7 @@ std::uint64_t microseconds_since(const LARGE_INTEGER& start) {
 // An interface version satisfies a request with the same major version and
 // at most the same minor version.
 bool compatible(std::uint32_t have, std::uint32_t want) {
-    return CMFM_VERSION_MAJOR(have) == CMFM_VERSION_MAJOR(want) && CMFM_VERSION_MINOR(have) >= CMFM_VERSION_MINOR(want);
+    return AL_VERSION_MAJOR(have) == AL_VERSION_MAJOR(want) && AL_VERSION_MINOR(have) >= AL_VERSION_MINOR(want);
 }
 
 std::wstring scan_cache_file(const HostOptions& options) {
@@ -137,7 +137,7 @@ struct HostState {
         : scanner(GetModuleHandleW(nullptr), scan_cache_file(options)),
           game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder, &scanner),
           hooks(GetModuleHandleW(nullptr),
-                [this](const Pattern& pattern) { return scanner.find(pattern, CMFM_SCAN_CODE).matches; }) {}
+                [this](const Pattern& pattern) { return scanner.find(pattern, AL_SCAN_CODE).matches; }) {}
 
     Scanner scanner;  // before game, which uses it
     GameService game;
@@ -147,74 +147,74 @@ struct HostState {
     std::wstring previous_crash;  // the last session's crash notice, if any
     std::mutex mutex;  // guards interfaces
     struct Published {
-        cmfm_plugin_t* owner;
+        al_plugin_t* owner;
         std::uint32_t version;
         const void* table;
     };
     std::map<std::string, Published> interfaces;
 };
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins
 
-// The opaque cmfm_plugin_t of the C API: one per entry in the plugins folder.
-struct cmfm_plugin {
+// The opaque al_plugin_t of the C API: one per entry in the plugins folder.
+struct al_plugin {
     std::wstring name;
     std::wstring folder;
     std::wstring folder_real;
     std::wstring data_folder;
-    cmfm::plugins::HostState* state = nullptr;
+    al::plugins::HostState* state = nullptr;
     HMODULE module = nullptr;
-    cmfm_plugin_init_fn init = nullptr;
-    cmfm::plugins::Manifest manifest;
+    al_plugin_init_fn init = nullptr;
+    al::plugins::Manifest manifest;
     bool initialised = false;
-    cmfm_init_t init_block{};  // handed to the plugin; must outlive it
-    std::unique_ptr<cmfm::plugins::PluginLog> log;
+    al_init_t init_block{};  // handed to the plugin; must outlive it
+    std::unique_ptr<al::plugins::PluginLog> log;
     std::uint64_t load_us = 0;
     std::uint64_t init_us = 0;
-    std::array<std::uint64_t, CMFM_PHASE_COUNT> phase_us{};
+    std::array<std::uint64_t, AL_PHASE_COUNT> phase_us{};
     std::size_t load_index = 0;  // position in load order, once initialised
     mutable std::mutex mutex;  // guards status, reason and graphics
-    cmfm_status_t status = CMFM_STATUS_DISABLED;
+    al_status_t status = AL_STATUS_DISABLED;
     std::string reason;
     std::atomic<bool> stopped{true};  // status is DISABLED; read without the lock every frame
-    std::unique_ptr<cmfm::graphics::Client> graphics;  // made on its first cmfm.d3d12 call
+    std::unique_ptr<al::graphics::Client> graphics;  // made on its first al.d3d12 call
 };
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
-void note(cmfm_plugin_t& plugin, std::string_view level, std::string_view text) {
+void note(al_plugin_t& plugin, std::string_view level, std::string_view text) {
     if (plugin.log) plugin.log->write(level, text);
 }
 
-void CMFM_CALL api_log(cmfm_plugin_t* self, cmfm_log_level_t level, const char* message) noexcept {
+void AL_CALL api_log(al_plugin_t* self, al_log_level_t level, const char* message) noexcept {
     if (!self || !self->log) return;
     try {
         self->log->write(level_name(level), message ? plugin_text(message, 16384) : "(null)");
     } catch (...) { /* Logging must never throw into a plugin. */ }
 }
 
-void CMFM_CALL api_set_status(cmfm_plugin_t* self, cmfm_status_t status, const char* reason) noexcept {
-    if (!self || status > CMFM_STATUS_DISABLED) return;
+void AL_CALL api_set_status(al_plugin_t* self, al_status_t status, const char* reason) noexcept {
+    if (!self || status > AL_STATUS_DISABLED) return;
     try {
         auto text = plugin_text(reason, 1024);
         note(*self, "STATUS", std::string(status_name(status)) + (text.empty() ? "" : ": " + text));
         std::lock_guard lock(self->mutex);
         self->status = status;
         self->reason = std::move(text);
-        self->stopped = status == CMFM_STATUS_DISABLED;
+        self->stopped = status == AL_STATUS_DISABLED;
     } catch (...) { /* Never throw into a plugin. */ }
 }
 
-std::uint32_t CMFM_CALL scanner_find(cmfm_plugin_t* self, const char* pattern, std::uint32_t where, void** matches,
+std::uint32_t AL_CALL scanner_find(al_plugin_t* self, const char* pattern, std::uint32_t where, void** matches,
                                      std::uint32_t capacity) noexcept {
-    if (!self || !self->state || !pattern) return CMFM_SCAN_INVALID;
+    if (!self || !self->state || !pattern) return AL_SCAN_INVALID;
     try {
         const auto text = plugin_text(pattern, 2048);
         const auto parsed = parse_pattern(text);
         const auto shown = "\"" + text.substr(0, 200) + "\"";
-        if (!parsed || (where != CMFM_SCAN_CODE && where != CMFM_SCAN_IMAGE)) {
-            note(*self, "WARN", "scan " + shown + ": not a pattern or scope CMFM can read");
-            return CMFM_SCAN_INVALID;
+        if (!parsed || (where != AL_SCAN_CODE && where != AL_SCAN_IMAGE)) {
+            note(*self, "WARN", "scan " + shown + ": not a pattern or scope Astera Loader can read");
+            return AL_SCAN_INVALID;
         }
         const auto result = self->state->scanner.find(*parsed, where);
         const auto count = static_cast<std::uint32_t>(result.matches.size());
@@ -224,22 +224,22 @@ std::uint32_t CMFM_CALL scanner_find(cmfm_plugin_t* self, const char* pattern, s
         char detail[64]{};
         std::snprintf(detail, sizeof(detail), result.cached ? "from the cache, %.2f ms" : "searched in %.1f ms",
                       result.milliseconds);
-        note(*self, "DEBUG", "scan " + shown + (where == CMFM_SCAN_CODE ? " in code: " : " in image: ") +
+        note(*self, "DEBUG", "scan " + shown + (where == AL_SCAN_CODE ? " in code: " : " in image: ") +
                                  std::to_string(count) + " match(es), " + detail);
         return count;
     } catch (...) {
-        return CMFM_SCAN_INVALID;
+        return AL_SCAN_INVALID;
     }
 }
 
-void* CMFM_CALL scanner_rip_target(const void* instruction, std::uint32_t offset, std::uint32_t length) noexcept {
+void* AL_CALL scanner_rip_target(const void* instruction, std::uint32_t offset, std::uint32_t length) noexcept {
     return rip_target(instruction, offset, length);
 }
 
-const cmfm_scanner_t kScanner{sizeof(cmfm_scanner_t), CMFM_SCANNER_VERSION, scanner_find, scanner_rip_target};
+const al_scanner_t kScanner{sizeof(al_scanner_t), AL_SCANNER_VERSION, scanner_find, scanner_rip_target};
 
-// cmfm.d3d12: the hub's view of a plugin, made on its first call.
-graphics::Client& graphics_client(cmfm_plugin_t& plugin) {
+// al.d3d12: the hub's view of a plugin, made on its first call.
+graphics::Client& graphics_client(al_plugin_t& plugin) {
     std::lock_guard lock(plugin.mutex);
     if (!plugin.graphics) {
         auto client = std::make_unique<graphics::Client>();
@@ -251,7 +251,7 @@ graphics::Client& graphics_client(cmfm_plugin_t& plugin) {
         client->disable = [&plugin](std::string reason) {
             note(plugin, "ERROR", "disabled: " + reason);
             std::lock_guard inner(plugin.mutex);
-            plugin.status = CMFM_STATUS_DISABLED;
+            plugin.status = AL_STATUS_DISABLED;
             plugin.reason = std::move(reason);
             plugin.stopped = true;
         };
@@ -261,89 +261,89 @@ graphics::Client& graphics_client(cmfm_plugin_t& plugin) {
 }
 
 std::string event_names(std::uint32_t events) {
-    static const char* const names[CMFM_D3D12_EVENT_COUNT] = {"swapchain_created", "pre_present", "post_present",
+    static const char* const names[AL_D3D12_EVENT_COUNT] = {"swapchain_created", "pre_present", "post_present",
                                                               "pre_resize", "post_resize"};
     std::string text;
-    for (std::uint32_t event = 0; event < CMFM_D3D12_EVENT_COUNT; ++event) {
-        if (events & CMFM_D3D12_EVENT_BIT(event)) text += (text.empty() ? "" : ",") + std::string(names[event]);
+    for (std::uint32_t event = 0; event < AL_D3D12_EVENT_COUNT; ++event) {
+        if (events & AL_D3D12_EVENT_BIT(event)) text += (text.empty() ? "" : ",") + std::string(names[event]);
     }
     return text;
 }
 
-cmfm_result_t CMFM_CALL d3d12_subscribe(cmfm_plugin_t* self, std::uint32_t events, std::int32_t order,
-                                        cmfm_d3d12_event_fn callback, void* user) noexcept {
-    if (!self || !self->state) return CMFM_ERROR;
+al_result_t AL_CALL d3d12_subscribe(al_plugin_t* self, std::uint32_t events, std::int32_t order,
+                                        al_d3d12_event_fn callback, void* user) noexcept {
+    if (!self || !self->state) return AL_ERROR;
     try {
         auto& client = graphics_client(*self);
         const auto problem = self->state->hub.subscribe(client, events, order, callback, user);
         note(*self, problem.empty() ? "INFO" : "WARN",
-             problem.empty() ? "cmfm.d3d12: subscribed to " + event_names(events) + " at order " + std::to_string(order)
-                             : "cmfm.d3d12: cannot subscribe: " + problem);
-        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+             problem.empty() ? "al.d3d12: subscribed to " + event_names(events) + " at order " + std::to_string(order)
+                             : "al.d3d12: cannot subscribe: " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
 }
 
-cmfm_result_t CMFM_CALL d3d12_hook(cmfm_plugin_t* self, const cmfm_d3d12_hook_t* hooks, std::uint32_t count) noexcept {
-    if (!self || !self->state) return CMFM_ERROR;
+al_result_t AL_CALL d3d12_hook(al_plugin_t* self, const al_d3d12_hook_t* hooks, std::uint32_t count) noexcept {
+    if (!self || !self->state) return AL_ERROR;
     try {
         auto& client = graphics_client(*self);
         const auto problem = self->state->hub.hook(client, hooks, count);
         note(*self, problem.empty() ? "INFO" : "WARN",
-             problem.empty() ? "cmfm.d3d12: registered " + std::to_string(count) + " detour(s)"
-                             : "cmfm.d3d12: cannot register detours: " + problem);
-        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+             problem.empty() ? "al.d3d12: registered " + std::to_string(count) + " detour(s)"
+                             : "al.d3d12: cannot register detours: " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
 }
 
-cmfm_result_t CMFM_CALL d3d12_claim_presentation(cmfm_plugin_t* self) noexcept {
-    if (!self || !self->state) return CMFM_ERROR;
+al_result_t AL_CALL d3d12_claim_presentation(al_plugin_t* self) noexcept {
+    if (!self || !self->state) return AL_ERROR;
     try {
         auto& client = graphics_client(*self);
         const auto problem = self->state->hub.claim_presentation(client);
         note(*self, problem.empty() ? "INFO" : "WARN",
-             problem.empty() ? "cmfm.d3d12: holds the presentation role"
-                             : "cmfm.d3d12: cannot take the presentation role: " + problem);
-        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+             problem.empty() ? "al.d3d12: holds the presentation role"
+                             : "al.d3d12: cannot take the presentation role: " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
 }
 
-void CMFM_CALL d3d12_begin_internal(cmfm_plugin_t*) noexcept {
+void AL_CALL d3d12_begin_internal(al_plugin_t*) noexcept {
     graphics::begin_internal();
 }
 
-void CMFM_CALL d3d12_end_internal(cmfm_plugin_t*) noexcept {
+void AL_CALL d3d12_end_internal(al_plugin_t*) noexcept {
     graphics::end_internal();
 }
 
-void CMFM_CALL d3d12_status(cmfm_plugin_t* self, cmfm_d3d12_status_t* status) noexcept {
+void AL_CALL d3d12_status(al_plugin_t* self, al_d3d12_status_t* status) noexcept {
     if (!self || !self->state || !status) return;
     self->state->hub.status(*status);
 }
 
-const cmfm_d3d12_t kD3d12{sizeof(cmfm_d3d12_t),    CMFM_D3D12_VERSION,   d3d12_subscribe,
+const al_d3d12_t kD3d12{sizeof(al_d3d12_t),    AL_D3D12_VERSION,   d3d12_subscribe,
                           d3d12_hook,              d3d12_claim_presentation, d3d12_begin_internal,
                           d3d12_end_internal,      d3d12_status};
 
-std::uint32_t CMFM_CALL hooks_hook(cmfm_plugin_t* self, const cmfm_hook_t* hook) noexcept {
+std::uint32_t AL_CALL hooks_hook(al_plugin_t* self, const al_hook_t* hook) noexcept {
     if (!self || !self->state || !hook) return 0;
     try {
         auto& client = graphics_client(*self);
         std::string problem;
         const auto handle = self->state->hooks.hook(client, *hook, problem);
-        const auto name = hook->size >= sizeof(cmfm_hook_t) && hook->name ? plugin_text(hook->name, 128)
+        const auto name = hook->size >= sizeof(al_hook_t) && hook->name ? plugin_text(hook->name, 128)
                                                                             : std::string("a game function");
         if (handle) {
             const auto state = self->state->hooks.state(client, handle);
-            note(*self, "INFO", "cmfm.hooks: hooked " + name + " (handle " + std::to_string(handle) + ", " +
-                                    (state == CMFM_HOOK_ACTIVE ? "active" : "active when PRE_MAIN ends") + ")");
+            note(*self, "INFO", "al.hooks: hooked " + name + " (handle " + std::to_string(handle) + ", " +
+                                    (state == AL_HOOK_ACTIVE ? "active" : "active when PRE_MAIN ends") + ")");
         } else {
-            note(*self, "WARN", "cmfm.hooks: cannot hook " + name + ": " + problem);
+            note(*self, "WARN", "al.hooks: cannot hook " + name + ": " + problem);
         }
         return handle;
     } catch (...) {
@@ -351,50 +351,50 @@ std::uint32_t CMFM_CALL hooks_hook(cmfm_plugin_t* self, const cmfm_hook_t* hook)
     }
 }
 
-cmfm_result_t CMFM_CALL hooks_set_enabled(cmfm_plugin_t* self, std::uint32_t handle, std::uint32_t enabled) noexcept {
-    if (!self || !self->state) return CMFM_ERROR;
+al_result_t AL_CALL hooks_set_enabled(al_plugin_t* self, std::uint32_t handle, std::uint32_t enabled) noexcept {
+    if (!self || !self->state) return AL_ERROR;
     try {
         const auto problem = self->state->hooks.set_enabled(graphics_client(*self), handle, enabled != 0);
-        if (!problem.empty()) note(*self, "WARN", "cmfm.hooks: cannot switch handle " + std::to_string(handle) + ": " + problem);
-        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+        if (!problem.empty()) note(*self, "WARN", "al.hooks: cannot switch handle " + std::to_string(handle) + ": " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
 }
 
-cmfm_hook_state_t CMFM_CALL hooks_state(cmfm_plugin_t* self, std::uint32_t handle) noexcept {
-    if (!self || !self->state) return CMFM_HOOK_FAILED;
+al_hook_state_t AL_CALL hooks_state(al_plugin_t* self, std::uint32_t handle) noexcept {
+    if (!self || !self->state) return AL_HOOK_FAILED;
     try {
         return self->state->hooks.state(graphics_client(*self), handle);
     } catch (...) {
-        return CMFM_HOOK_FAILED;
+        return AL_HOOK_FAILED;
     }
 }
 
-const cmfm_hooks_t kHooks{sizeof(cmfm_hooks_t), CMFM_HOOKS_VERSION, hooks_hook, hooks_set_enabled, hooks_state};
+const al_hooks_t kHooks{sizeof(al_hooks_t), AL_HOOKS_VERSION, hooks_hook, hooks_set_enabled, hooks_state};
 
-const void* CMFM_CALL api_get_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version) noexcept {
+const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::uint32_t version) noexcept {
     if (!self || !self->state || !name) return nullptr;
     try {
         const auto wanted = plugin_text(name, 129);
         auto& state = *self->state;
-        if (wanted == CMFM_GAME_INTERFACE) return compatible(CMFM_GAME_VERSION, version) ? state.game.table() : nullptr;
-        if (wanted == CMFM_SCANNER_INTERFACE) return compatible(CMFM_SCANNER_VERSION, version) ? &kScanner : nullptr;
-        if (wanted == CMFM_D3D12_INTERFACE) return compatible(CMFM_D3D12_VERSION, version) ? &kD3d12 : nullptr;
-        if (wanted == CMFM_HOOKS_INTERFACE) return compatible(CMFM_HOOKS_VERSION, version) ? &kHooks : nullptr;
+        if (wanted == AL_GAME_INTERFACE) return compatible(AL_GAME_VERSION, version) ? state.game.table() : nullptr;
+        if (wanted == AL_SCANNER_INTERFACE) return compatible(AL_SCANNER_VERSION, version) ? &kScanner : nullptr;
+        if (wanted == AL_D3D12_INTERFACE) return compatible(AL_D3D12_VERSION, version) ? &kD3d12 : nullptr;
+        if (wanted == AL_HOOKS_INTERFACE) return compatible(AL_HOOKS_VERSION, version) ? &kHooks : nullptr;
         std::lock_guard lock(state.mutex);
         const auto found = state.interfaces.find(wanted);
         if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
         std::lock_guard owner(found->second.owner->mutex);
-        return found->second.owner->status == CMFM_STATUS_DISABLED ? nullptr : found->second.table;
+        return found->second.owner->status == AL_STATUS_DISABLED ? nullptr : found->second.table;
     } catch (...) {
         return nullptr;
     }
 }
 
-cmfm_result_t CMFM_CALL api_publish_interface(cmfm_plugin_t* self, const char* name, std::uint32_t version,
+al_result_t AL_CALL api_publish_interface(al_plugin_t* self, const char* name, std::uint32_t version,
                                               const void* table) noexcept {
-    if (!self || !self->state) return CMFM_ERROR;
+    if (!self || !self->state) return AL_ERROR;
     try {
         const auto text = plugin_text(name, 129);
         const auto prefix = self->manifest.name + ".";
@@ -413,26 +413,26 @@ cmfm_result_t CMFM_CALL api_publish_interface(cmfm_plugin_t* self, const char* n
                 problem = "the name is taken";
             }
         }
-        const auto shown = text + " " + std::to_string(CMFM_VERSION_MAJOR(version)) + "." +
-                           std::to_string(CMFM_VERSION_MINOR(version));
+        const auto shown = text + " " + std::to_string(AL_VERSION_MAJOR(version)) + "." +
+                           std::to_string(AL_VERSION_MINOR(version));
         note(*self, problem.empty() ? "INFO" : "WARN",
              problem.empty() ? "published interface " + shown : "cannot publish interface " + shown + ": " + problem);
-        return problem.empty() ? CMFM_OK : CMFM_ERROR;
+        return problem.empty() ? AL_OK : AL_ERROR;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
 }
 
-const cmfm_api_t kApi{sizeof(cmfm_api_t), CMFM_API_VERSION, api_log, api_set_status, api_get_interface,
+const al_api_t kApi{sizeof(al_api_t), AL_API_VERSION, api_log, api_set_status, api_get_interface,
                       api_publish_interface};
 
-void refuse(cmfm_plugin_t& plugin, std::string reason) {
+void refuse(al_plugin_t& plugin, std::string reason) {
     if (plugin.module && !plugin.initialised) {
         FreeLibrary(plugin.module);
         plugin.module = nullptr;
     }
     std::lock_guard lock(plugin.mutex);
-    plugin.status = CMFM_STATUS_DISABLED;
+    plugin.status = AL_STATUS_DISABLED;
     plugin.reason = std::move(reason);
     plugin.stopped = true;
 }
@@ -440,11 +440,11 @@ void refuse(cmfm_plugin_t& plugin, std::string reason) {
 // Loads the plugin DLL by its real path, resolved through a file handle, so
 // loading does not depend on how MO2 maps the folder. The plugin's folder is
 // searched for its own DLLs; the process DLL search path is left alone.
-bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view exe_sha256, std::string& reason) {
-    // Do not bind a CMFM plugin to a DLL name already owned by the process.
+bool load(al_plugin_t& plugin, const Candidate& candidate, std::wstring_view exe_sha256, std::string& reason) {
+    // Do not bind an AL plugin to a DLL name already owned by the process.
     // Reserve proxy/framework names even if that module has not loaded yet.
     const auto base_name = candidate.name + L".dll";
-    for (const auto reserved : {L"cmfm", L"loader", L"dinput8", L"winmm", L"dxgi", L"d3d12",
+    for (const auto reserved : {L"astera", L"loader", L"dinput8", L"winmm", L"dxgi", L"d3d12",
                                L"kernel32", L"kernelbase", L"ntdll", L"steam_api64", L"steamclient64", L"usvfs_x64"}) {
         if (iequals(candidate.name, reserved)) {
             reason = "its DLL name is reserved for the game, Windows or another loader";
@@ -483,15 +483,15 @@ bool load(cmfm_plugin_t& plugin, const Candidate& candidate, std::wstring_view e
         reason = "Windows could not load it: " + to_utf8(win32_error_text(load_error));
         return false;
     }
-    const auto info = std::bit_cast<cmfm_plugin_info_fn>(GetProcAddress(plugin.module, CMFM_PLUGIN_INFO_EXPORT));
-    plugin.init = std::bit_cast<cmfm_plugin_init_fn>(GetProcAddress(plugin.module, CMFM_PLUGIN_INIT_EXPORT));
+    const auto info = std::bit_cast<al_plugin_info_fn>(GetProcAddress(plugin.module, AL_PLUGIN_INFO_EXPORT));
+    plugin.init = std::bit_cast<al_plugin_init_fn>(GetProcAddress(plugin.module, AL_PLUGIN_INIT_EXPORT));
     if (!info || !plugin.init) {
-        reason = "it is not a CMFM plugin (no cmfm_plugin_info and cmfm_plugin_init exports)";
+        reason = "it is not an Astera Loader plugin (no al_plugin_info and al_plugin_init exports)";
         return false;
     }
     unsigned long fault = 0;
     const auto valid = guarded_manifest(info, plugin.name, exe_sha256, plugin.manifest, reason, fault);
-    if (fault) reason = "cmfm_plugin_info or its metadata raised exception " + std::to_string(fault);
+    if (fault) reason = "al_plugin_info or its metadata raised exception " + std::to_string(fault);
     return valid;
 }
 
@@ -503,20 +503,20 @@ const wchar_t* make_data_folder(const std::wstring& folder) {
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) ? folder.c_str() : nullptr;
 }
 
-void initialise(cmfm_plugin_t& plugin) {
+void initialise(al_plugin_t& plugin) {
     // Only plugins built for 1.1 or later can see data_folder; others get no folder.
-    const bool sees_data_folder = plugin.manifest.api_version >= CMFM_MAKE_VERSION(1, 1);
-    plugin.init_block = {sizeof(cmfm_init_t), 0, &plugin, plugin.folder.c_str(), plugin.folder_real.c_str(),
+    const bool sees_data_folder = plugin.manifest.api_version >= AL_MAKE_VERSION(1, 1);
+    plugin.init_block = {sizeof(al_init_t), 0, &plugin, plugin.folder.c_str(), plugin.folder_real.c_str(),
                          sees_data_folder ? make_data_folder(plugin.data_folder) : nullptr};
     {
         std::lock_guard lock(plugin.mutex);
-        plugin.status = CMFM_STATUS_ACTIVE;
+        plugin.status = AL_STATUS_ACTIVE;
         plugin.reason.clear();
         plugin.stopped = false;
     }
-    // From here on CMFM never unloads the plugin, whatever init returns.
+    // From here on AL never unloads the plugin, whatever init returns.
     plugin.initialised = true;
-    cmfm_result_t result = CMFM_ERROR;
+    al_result_t result = AL_ERROR;
     unsigned long fault = 0;
     LARGE_INTEGER start{};
     QueryPerformanceCounter(&start);
@@ -524,21 +524,21 @@ void initialise(cmfm_plugin_t& plugin) {
     plugin.init_us = microseconds_since(start);
     if (!returned) {
         std::lock_guard lock(plugin.mutex);
-        plugin.status = CMFM_STATUS_DISABLED;
-        plugin.reason = "cmfm_plugin_init raised exception " + std::to_string(fault);
+        plugin.status = AL_STATUS_DISABLED;
+        plugin.reason = "al_plugin_init raised exception " + std::to_string(fault);
         plugin.stopped = true;
         return;
     }
-    if (result == CMFM_OK) return;
+    if (result == AL_OK) return;
     std::lock_guard lock(plugin.mutex);
-    plugin.status = CMFM_STATUS_DISABLED;
+    plugin.status = AL_STATUS_DISABLED;
     plugin.stopped = true;
-    if (plugin.reason.empty()) plugin.reason = "cmfm_plugin_init returned " + std::to_string(result);
+    if (plugin.reason.empty()) plugin.reason = "al_plugin_init returned " + std::to_string(result);
 }
 
-bool running(const cmfm_plugin_t& plugin) {
+bool running(const al_plugin_t& plugin) {
     std::lock_guard lock(plugin.mutex);
-    return plugin.initialised && plugin.status != CMFM_STATUS_DISABLED;
+    return plugin.initialised && plugin.status != AL_STATUS_DISABLED;
 }
 }  // namespace
 
@@ -547,18 +547,18 @@ Host::~Host() = default;
 
 void Host::load_all(const HostOptions& options) {
     state_ = std::make_unique<HostState>(options);
-    state_->hub.set_phase_dispatch([this](cmfm_phase_t phase, const void* data) { dispatch(phase, data); });
+    state_->hub.set_phase_dispatch([this](al_phase_t phase, const void* data) { dispatch(phase, data); });
     const auto logs = strip_extended_prefix(options.logs_folder);
-    state_->crash = {logs, join_path(directory_of(options.plugins_root), L"cmfm.ini"),
-                     to_utf8(std::wstring(CMFM_VERSION) + L" " + CMFM_GIT_COMMIT), to_utf8(options.exe_sha256)};
+    state_->crash = {logs, join_path(directory_of(options.plugins_root), L"astera.ini"),
+                     to_utf8(std::wstring(AL_BUILD_VERSION) + L" " + AL_GIT_COMMIT), to_utf8(options.exe_sha256)};
     state_->previous_crash = crash::take_previous(logs);
-    // Plain paths for plugins: CMFM's own folders may carry the long-path
+    // Plain paths for plugins: AL's own folders may carry the long-path
     // prefix of a resolved file path (\\?\D:\...), which plugins should not see.
     const auto data_root = strip_extended_prefix(
         options.data_root.empty() ? join_path(directory_of(options.logs_folder), L"data") : options.data_root);
     const auto found = discover(options.plugins_root);
     const auto make = [&](const std::wstring& name) {
-        auto plugin = std::make_unique<cmfm_plugin_t>();
+        auto plugin = std::make_unique<al_plugin_t>();
         plugin->name = name;
         plugin->folder = join_path(options.plugins_root, name);
         plugin->data_folder = join_path(data_root, name);
@@ -568,7 +568,7 @@ void Host::load_all(const HostOptions& options) {
         return plugin;
     };
 
-    std::vector<std::unique_ptr<cmfm_plugin_t>> loaded, not_loaded;
+    std::vector<std::unique_ptr<al_plugin_t>> loaded, not_loaded;
     for (const auto& candidate : found.candidates) {
         auto plugin = make(candidate.name);
         std::string reason;
@@ -611,7 +611,7 @@ void Host::load_all(const HostOptions& options) {
     // Start in order. Dependencies come earlier in the order, so one that is
     // not running by now failed to start or was refused for its order.
     const auto order = resolve_load_order(ordered);
-    std::map<std::string, const cmfm_plugin_t*> started;
+    std::map<std::string, const al_plugin_t*> started;
     for (const auto k : order.sequence) {
         auto& plugin = *loaded[remaining[k]];
         std::string missing;
@@ -642,23 +642,23 @@ void Host::load_all(const HostOptions& options) {
     for (auto& plugin : not_loaded) plugins_.push_back(std::move(plugin));
 }
 
-void Host::dispatch(cmfm_phase_t phase, const void* data) {
-    if (phase >= CMFM_PHASE_COUNT) return;
+void Host::dispatch(al_phase_t phase, const void* data) {
+    if (phase >= AL_PHASE_COUNT) return;
     crash::note_phase(phase);
-    // The game's C runtime has set its own top-level filter by now; CMFM's
+    // The game's C runtime has set its own top-level filter by now; AL's
     // goes in front of it and passes every crash on to it.
-    if (phase == CMFM_PHASE_WIN_MAIN && state_) crash::install(state_->crash);
+    if (phase == AL_PHASE_WIN_MAIN && state_) crash::install(state_->crash);
     // The device reaches the hub first, so detours are in place before
     // plugins hear of it.
-    if (phase == CMFM_PHASE_DEVICE_CREATED && data && state_) {
-        const auto* device = static_cast<const cmfm_phase_device_t*>(data);
-        if (device->size >= offsetof(cmfm_phase_device_t, riid)) state_->hub.device_created(device->device);
+    if (phase == AL_PHASE_DEVICE_CREATED && data && state_) {
+        const auto* device = static_cast<const al_phase_device_t*>(data);
+        if (device->size >= offsetof(al_phase_device_t, riid)) state_->hub.device_created(device->device);
     }
     for (const auto& plugin : plugins_) {
-        if (!plugin->initialised || !(plugin->manifest.phases & CMFM_PHASE_BIT(phase))) continue;
+        if (!plugin->initialised || !(plugin->manifest.phases & AL_PHASE_BIT(phase))) continue;
         {
             std::lock_guard lock(plugin->mutex);
-            if (plugin->status == CMFM_STATUS_DISABLED) continue;
+            if (plugin->status == AL_STATUS_DISABLED) continue;
         }
         unsigned long fault = 0;
         LARGE_INTEGER start{};
@@ -668,15 +668,15 @@ void Host::dispatch(cmfm_phase_t phase, const void* data) {
         { std::lock_guard lock(plugin->mutex); plugin->phase_us[phase] += elapsed; }
         if (!returned) {
             std::lock_guard lock(plugin->mutex);
-            plugin->status = CMFM_STATUS_DISABLED;
+            plugin->status = AL_STATUS_DISABLED;
             plugin->reason = "on_phase raised exception " + std::to_string(fault);
             plugin->stopped = true;
         }
     }
-    if (phase == CMFM_PHASE_PRE_MAIN && state_) close_graphics();
+    if (phase == AL_PHASE_PRE_MAIN && state_) close_graphics();
 }
 
-// Ends cmfm.d3d12 registration once PRE_MAIN has run.
+// Ends al.d3d12 registration once PRE_MAIN has run.
 void Host::close_graphics() {
     std::uint32_t phases = 0;
     for (const auto& plugin : plugins_) {
@@ -684,7 +684,7 @@ void Host::close_graphics() {
     }
     auto& hub = state_->hub;
     hub.close(phases);
-    if (!hub.chains().empty() && state_->game.table()->graphics == CMFM_GRAPHICS_DX11) {
+    if (!hub.chains().empty() && state_->game.table()->graphics == AL_GRAPHICS_DX11) {
         hub.set_unavailable("the game runs DirectX 11 (graphics_option.ini)");
     }
 }
@@ -694,11 +694,11 @@ std::vector<std::wstring> Host::notices() const {
     return {state_->previous_crash};
 }
 
-::cmfm::game_hooks::Registry& Host::game_hooks() {
+::al::game_hooks::Registry& Host::game_hooks() {
     return state_->hooks;
 }
 
-::cmfm::graphics::Hub& Host::graphics() {
+::al::graphics::Hub& Host::graphics() {
     return state_->hub;
 }
 
@@ -725,4 +725,4 @@ std::vector<PluginReport> Host::report() const {
     return lines;
 }
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

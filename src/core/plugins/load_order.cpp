@@ -4,7 +4,7 @@
 #include <map>
 #include <set>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
 std::string lower(std::string value) {
     for (auto& c : value) {
@@ -191,4 +191,4 @@ LoadOrder resolve_load_order(const std::vector<Manifest>& plugins) {
     return result;
 }
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

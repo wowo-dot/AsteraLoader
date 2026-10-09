@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace cmfm {
+namespace al {
 namespace {
 constexpr std::size_t kMaxPatternBytes = 256;
 
@@ -128,4 +128,4 @@ void find_all(std::span<const std::uint8_t> data, const Pattern& pattern, std::s
     }
 }
 
-}  // namespace cmfm
+}  // namespace al

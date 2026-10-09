@@ -13,7 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
 bool read_small_file(const std::wstring& path, std::string& out, std::size_t limit) {
     Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -61,8 +61,8 @@ double milliseconds_since(const LARGE_INTEGER& start) {
 }
 }  // namespace
 
-cmfm_graphics_t graphics_from_ini(std::string_view text) {
-    cmfm_graphics_t graphics = CMFM_GRAPHICS_UNKNOWN;
+al_graphics_t graphics_from_ini(std::string_view text) {
+    al_graphics_t graphics = AL_GRAPHICS_UNKNOWN;
     while (!text.empty()) {
         const auto end = text.find('\n');
         const auto line = text.substr(0, end);
@@ -70,8 +70,8 @@ cmfm_graphics_t graphics_from_ini(std::string_view text) {
         const auto equals = line.find('=');
         if (equals == std::string_view::npos || !same_ascii(trim(line.substr(0, equals)), "DirectX12Enable")) continue;
         const auto value = trim(line.substr(equals + 1));
-        graphics = same_ascii(value, "On") ? CMFM_GRAPHICS_DX12 : same_ascii(value, "Off") ? CMFM_GRAPHICS_DX11
-                                                                                             : CMFM_GRAPHICS_UNKNOWN;
+        graphics = same_ascii(value, "On") ? AL_GRAPHICS_DX12 : same_ascii(value, "Off") ? AL_GRAPHICS_DX11
+                                                                                             : AL_GRAPHICS_UNKNOWN;
     }
     return graphics;
 }
@@ -79,7 +79,7 @@ cmfm_graphics_t graphics_from_ini(std::string_view text) {
 GameService::GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder, Scanner* scanner)
     : image_(image), scanner_(scanner), exe_sha256_(to_utf8(exe_sha256)), game_folder_(std::move(game_folder)) {}
 
-const cmfm_game_t* GameService::table() {
+const al_game_t* GameService::table() {
     std::call_once(once_, [this] { fill(); });
     return &table_;
 }
@@ -90,7 +90,7 @@ void GameService::fill() {
     // The version code is code: a code-section search is quick (1.8 ms in the
     // game, against about 12 ms for the whole image) and cached per exe hash.
     if (scanner_) {
-        const auto found = scanner_->find(parse_bits(kVersionPattern), CMFM_SCAN_CODE);
+        const auto found = scanner_->find(parse_bits(kVersionPattern), AL_SCAN_CODE);
         if (found.matches.size() == 1) {
             const auto offset = static_cast<std::size_t>(static_cast<const std::uint8_t*>(found.matches[0]) -
                                                          static_cast<const std::uint8_t*>(image_));
@@ -102,9 +102,9 @@ void GameService::fill() {
     std::string ini;
     const auto graphics = read_small_file(join_path(game_folder_, L"graphics_option.ini"), ini, 1 << 16)
                               ? graphics_from_ini(ini)
-                              : CMFM_GRAPHICS_UNKNOWN;
-    table_ = {sizeof(cmfm_game_t),
-              CMFM_GAME_VERSION,
+                              : AL_GRAPHICS_UNKNOWN;
+    table_ = {sizeof(al_game_t),
+              AL_GAME_VERSION,
               exe_sha256_.empty() ? nullptr : exe_sha256_.c_str(),
               version_.empty() ? nullptr : version_.c_str(),
               exe_path_.c_str(),
@@ -122,7 +122,7 @@ std::vector<std::pair<const std::uint8_t*, std::size_t>> Scanner::ranges(std::ui
     std::vector<std::pair<const std::uint8_t*, std::size_t>> out;
     const auto* nt = nt_headers(base_);
     if (!nt) return out;
-    if (where == CMFM_SCAN_IMAGE) {
+    if (where == AL_SCAN_IMAGE) {
         out.emplace_back(base_, size_);
         return out;
     }
@@ -173,7 +173,7 @@ void Scanner::load_cache() {
             if (ok) rvas.push_back(static_cast<std::uint32_t>(value));
             list = comma == std::string_view::npos ? std::string_view() : list.substr(comma + 1);
         }
-        if (ok && !rvas.empty() && rvas.size() <= CMFM_SCAN_MAX_MATCHES) cache_[std::string(line.substr(0, second))] = rvas;
+        if (ok && !rvas.empty() && rvas.size() <= AL_SCAN_MAX_MATCHES) cache_[std::string(line.substr(0, second))] = rvas;
     }
 }
 
@@ -197,7 +197,7 @@ Scanner::Result Scanner::find(const Pattern& pattern, std::uint32_t where) {
     std::vector<std::size_t> found;
     for (const auto& [begin, length] : ranges(where)) {
         // Only readable regions, as VirtualQuery splits them.
-        for (std::size_t offset = 0; offset < length && found.size() < CMFM_SCAN_MAX_MATCHES;) {
+        for (std::size_t offset = 0; offset < length && found.size() < AL_SCAN_MAX_MATCHES;) {
             MEMORY_BASIC_INFORMATION info{};
             if (!VirtualQuery(begin + offset, &info, sizeof(info))) break;
             const auto region_end = std::min<std::size_t>(
@@ -206,7 +206,7 @@ Scanner::Result Scanner::find(const Pattern& pattern, std::uint32_t where) {
             if (region_end <= offset) break;
             if (readable(begin + offset, region_end - offset)) {
                 find_all({begin + offset, region_end - offset}, pattern,
-                         static_cast<std::size_t>(begin - base_) + offset, found, CMFM_SCAN_MAX_MATCHES);
+                         static_cast<std::size_t>(begin - base_) + offset, found, AL_SCAN_MAX_MATCHES);
             }
             offset = region_end;
         }
@@ -245,4 +245,4 @@ void* rip_target(const void* instruction, std::uint32_t offset, std::uint32_t le
     return const_cast<std::uint8_t*>(bytes + length + displacement);
 }
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

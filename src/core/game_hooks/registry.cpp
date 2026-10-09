@@ -9,7 +9,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace cmfm::game_hooks {
+namespace al::game_hooks {
 namespace {
 constexpr std::size_t kMinimumPattern = 5;  // an inline hook overwrites at least five bytes
 
@@ -41,7 +41,7 @@ struct Registry::Chain {
     void* target = nullptr;
     void* head = nullptr;      // the hook's entry jumps through this
     void* original = nullptr;  // runs the target's original code
-    cmfm_hook_state_t state = CMFM_HOOK_PENDING;
+    al_hook_state_t state = AL_HOOK_PENDING;
     std::string problem;
     std::vector<Layer> layers;  // call order
     // MinHook 1.3.4 changes five entry bytes, or five above + two at entry
@@ -80,7 +80,7 @@ bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const 
     std::vector<std::uint8_t> bytes(at, at + pattern.bytes.size());
     const auto begin = reinterpret_cast<std::uintptr_t>(at);
     for (const auto& chain : chains_) {
-        if (chain->state != CMFM_HOOK_ACTIVE || !chain->saved_size) continue;
+        if (chain->state != AL_HOOK_ACTIVE || !chain->saved_size) continue;
         const auto saved = reinterpret_cast<std::uintptr_t>(chain->saved_at);
         const auto first = (std::max)(begin, saved);
         const auto last = (std::min)(begin + bytes.size(), saved + chain->saved_size);
@@ -96,10 +96,10 @@ bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const 
     return true;
 }
 
-std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::string& problem) {
+std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string& problem) {
     problem.clear();
-    if (hook.size < sizeof(cmfm_hook_t)) {
-        problem = "the hook struct is smaller than cmfm_hook_t";
+    if (hook.size < sizeof(al_hook_t)) {
+        problem = "the hook struct is smaller than al_hook_t";
         return 0;
     }
     if (!hook.detour || !hook.next) {
@@ -113,7 +113,7 @@ std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::strin
     }
     const auto& pattern = *parsed;
     // Resolution, signature checks and patching share the same lock, so a
-    // concurrent registration never scans a half-written CMFM entry patch.
+    // concurrent registration never scans a half-written AL entry patch.
     std::lock_guard lock(mutex_);
     const std::uint8_t* target = nullptr;
     if (hook.address) {
@@ -152,7 +152,7 @@ std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::strin
             problem = "this plugin already hooks that function";
             return 0;
         }
-        if (chain->state == CMFM_HOOK_FAILED) {
+        if (chain->state == AL_HOOK_FAILED) {
             problem = "that function could not be hooked: " + chain->problem;
             return 0;
         }
@@ -178,11 +178,11 @@ std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::strin
     const auto handle = layer.handle;
     chain->layers.insert(position, std::move(layer));
 
-    if (chain->state == CMFM_HOOK_ACTIVE) {
+    if (chain->state == AL_HOOK_ACTIVE) {
         link(*chain);
     } else if (installer_) {
         install(*chain);
-        if (chain->state == CMFM_HOOK_FAILED) problem = "that function could not be hooked: " + chain->problem;
+        if (chain->state == AL_HOOK_FAILED) problem = "that function could not be hooked: " + chain->problem;
     }
     return problem.empty() ? handle : 0;
 }
@@ -229,15 +229,15 @@ void Registry::install(Chain& chain) {
                 }
             }
         }
-        chain.state = CMFM_HOOK_ACTIVE;
+        chain.state = AL_HOOK_ACTIVE;
         return;
     }
-    chain.state = CMFM_HOOK_FAILED;
+    chain.state = AL_HOOK_FAILED;
     chain.problem = problem;
     for (const auto& layer : chain.layers) {
         publish(layer.next, nullptr);
         if (layer.client->log) {
-            layer.client->log("WARN", "cmfm.hooks: " + (layer.name.empty() ? std::string("a hook") : layer.name) +
+            layer.client->log("WARN", "al.hooks: " + (layer.name.empty() ? std::string("a hook") : layer.name) +
                                           " failed: " + problem);
         }
     }
@@ -248,7 +248,7 @@ void Registry::set_installer(Installer* installer) {
     installer_ = installer;
     if (!installer_) return;
     for (auto& chain : chains_) {
-        if (chain->state == CMFM_HOOK_PENDING) install(*chain);
+        if (chain->state == AL_HOOK_PENDING) install(*chain);
     }
 }
 
@@ -258,25 +258,25 @@ std::string Registry::set_enabled(const Client& client, std::uint32_t handle, bo
         for (auto& layer : chain->layers) {
             if (layer.handle != handle) continue;
             if (layer.client != &client) return "the handle belongs to another plugin";
-            if (chain->state == CMFM_HOOK_FAILED) return "the hook failed";
+            if (chain->state == AL_HOOK_FAILED) return "the hook failed";
             layer.enabled = enabled;
-            if (chain->state == CMFM_HOOK_ACTIVE) link(*chain);
+            if (chain->state == AL_HOOK_ACTIVE) link(*chain);
             return {};
         }
     }
     return "unknown handle";
 }
 
-cmfm_hook_state_t Registry::state(const Client& client, std::uint32_t handle) const {
+al_hook_state_t Registry::state(const Client& client, std::uint32_t handle) const {
     std::lock_guard lock(mutex_);
     for (const auto& chain : chains_) {
         for (const auto& layer : chain->layers) {
             if (layer.handle != handle || layer.client != &client) continue;
-            if (chain->state != CMFM_HOOK_ACTIVE) return chain->state;
-            return layer.enabled ? CMFM_HOOK_ACTIVE : CMFM_HOOK_DISABLED;
+            if (chain->state != AL_HOOK_ACTIVE) return chain->state;
+            return layer.enabled ? AL_HOOK_ACTIVE : AL_HOOK_DISABLED;
         }
     }
-    return CMFM_HOOK_FAILED;
+    return AL_HOOK_FAILED;
 }
 
 std::vector<std::string> Registry::summary() const {
@@ -294,18 +294,18 @@ std::vector<std::string> Registry::summary() const {
             }
         }
         std::string line = "game_hook target=" + std::string(rva) + " name=" + (name.empty() ? "-" : name) + " state=" +
-                           (chain->state == CMFM_HOOK_ACTIVE    ? "active"
-                            : chain->state == CMFM_HOOK_PENDING ? "pending"
+                           (chain->state == AL_HOOK_ACTIVE    ? "active"
+                            : chain->state == AL_HOOK_PENDING ? "pending"
                                                                 : "failed") +
                            " layers=";
         for (std::size_t k = 0; k < chain->layers.size(); ++k) {
             const auto& layer = chain->layers[k];
             line += (k ? "," : "") + layer.client->name + (layer.enabled ? "" : "(off)");
         }
-        if (chain->state == CMFM_HOOK_FAILED) line += " reason=" + chain->problem;
+        if (chain->state == AL_HOOK_FAILED) line += " reason=" + chain->problem;
         lines.push_back(std::move(line));
     }
     return lines;
 }
 
-}  // namespace cmfm::game_hooks
+}  // namespace al::game_hooks

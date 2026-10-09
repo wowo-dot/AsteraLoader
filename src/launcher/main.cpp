@@ -21,23 +21,23 @@ constexpr DWORD kThreadTimeoutMs = 15000;
 struct Failure { std::wstring message; };
 
 [[noreturn]] void fail(std::wstring_view action, DWORD code = GetLastError()) {
-    throw Failure{std::wstring(action) + L": " + cmfm::win32_error_text(code)};
+    throw Failure{std::wstring(action) + L": " + al::win32_error_text(code)};
 }
 
-void notify(cmfm::LogFile& log, const std::wstring& message, UINT icon) {
+void notify(al::LogFile& log, const std::wstring& message, UINT icon) {
     log.line(message);
-#ifndef CMFM_TEST_NO_DIALOGS
-    MessageBoxW(nullptr, message.c_str(), L"CMFM Launcher", MB_OK | icon);
+#ifndef AL_TEST_NO_DIALOGS
+    MessageBoxW(nullptr, message.c_str(), L"Astera Loader Launcher", MB_OK | icon);
 #else
     (void)icon;
 #endif
 }
 
-void log_exe_hash(cmfm::LogFile& log, const std::wstring& exe) noexcept {
+void log_exe_hash(al::LogFile& log, const std::wstring& exe) noexcept {
     // This is diagnostic data. Once the game is resumed, neither a read
     // failure nor a logging/allocation exception may end the launcher early.
     try {
-        const auto hash = cmfm::sha256_file(exe);
+        const auto hash = al::sha256_file(exe);
         log.line(hash.empty() ? L"warning: exe SHA-256 unavailable; game continues" :
                                L"exe_sha256=" + hash);
     } catch (...) {
@@ -48,9 +48,9 @@ void log_exe_hash(cmfm::LogFile& log, const std::wstring& exe) noexcept {
 }
 
 struct CreatedGame {
-    cmfm::Handle process;
-    cmfm::Handle thread;
-    cmfm::LogFile& log;
+    al::Handle process;
+    al::Handle thread;
+    al::LogFile& log;
     bool resumed = false;
     bool terminated = false;
     void stop_before_resume() {
@@ -64,7 +64,7 @@ struct CreatedGame {
                                                   L"suspended_child_termination_wait_failed");
             } else {
                 log.line(L"suspended_child_termination_failed: " +
-                         cmfm::win32_error_text(GetLastError()));
+                         al::win32_error_text(GetLastError()));
             }
         }
     }
@@ -94,7 +94,7 @@ public:
     }
     DWORD invoke(std::uintptr_t entry) {
         const auto routine = std::bit_cast<LPTHREAD_START_ROUTINE>(entry);
-        cmfm::Handle thread(CreateRemoteThread(process_, nullptr, 0, routine, address_, 0, nullptr));
+        al::Handle thread(CreateRemoteThread(process_, nullptr, 0, routine, address_, 0, nullptr));
         if (!thread) fail(L"Start DLL-loading thread");
         safe_to_free_ = false;
         const DWORD wait = WaitForSingleObject(thread.get(), kThreadTimeoutMs);
@@ -137,7 +137,7 @@ std::uintptr_t remote_image(HANDLE process, const std::wstring& native_name) {
         if (info.Type == MEM_IMAGE && info.AllocationBase != previous) {
             previous = info.AllocationBase;
             const auto name = mapped_name(process, info.AllocationBase);
-            if (!name.empty() && cmfm::iequals(name, native_name)) {
+            if (!name.empty() && al::iequals(name, native_name)) {
                 return reinterpret_cast<std::uintptr_t>(info.AllocationBase);
             }
         }
@@ -198,21 +198,21 @@ class CoreImage {
 public:
     explicit CoreImage(HANDLE file) {
         mapping_.reset(CreateFileMappingW(file, nullptr, PAGE_READONLY | SEC_IMAGE_NO_EXECUTE, 0, 0, nullptr));
-        if (!mapping_) fail(L"Map CMFM image for export validation");
+        if (!mapping_) fail(L"Map Astera Loader image for export validation");
         view_ = static_cast<const std::byte*>(MapViewOfFile(mapping_.get(), FILE_MAP_READ, 0, 0, 0));
-        if (!view_) fail(L"Read CMFM image");
+        if (!view_) fail(L"Read Astera Loader image");
     }
     ~CoreImage() { if (view_) UnmapViewOfFile(view_); }
     CoreImage(const CoreImage&) = delete;
     CoreImage& operator=(const CoreImage&) = delete;
 
     DWORD bootstrap_rva() const {
-        if (!readable(0, sizeof(IMAGE_DOS_HEADER))) fail(L"Read CMFM DOS header", ERROR_BAD_EXE_FORMAT);
+        if (!readable(0, sizeof(IMAGE_DOS_HEADER))) fail(L"Read Astera Loader DOS header", ERROR_BAD_EXE_FORMAT);
         const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(view_);
         if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < sizeof(IMAGE_DOS_HEADER) ||
-            dos->e_lfanew > 0x100000) fail(L"Validate CMFM DOS header", ERROR_BAD_EXE_FORMAT);
+            dos->e_lfanew > 0x100000) fail(L"Validate Astera Loader DOS header", ERROR_BAD_EXE_FORMAT);
         if (!readable(static_cast<DWORD>(dos->e_lfanew), sizeof(IMAGE_NT_HEADERS64))) {
-            fail(L"Validate CMFM PE header mapping", ERROR_BAD_EXE_FORMAT);
+            fail(L"Validate Astera Loader PE header mapping", ERROR_BAD_EXE_FORMAT);
         }
         const auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS64*>(view_ + dos->e_lfanew);
         if (pe->Signature != IMAGE_NT_SIGNATURE || pe->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
@@ -220,7 +220,7 @@ public:
             pe->FileHeader.SizeOfOptionalHeader != sizeof(IMAGE_OPTIONAL_HEADER64) ||
             pe->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
             pe->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXPORT) {
-            fail(L"Validate CMFM x64 DLL", ERROR_BAD_EXE_FORMAT);
+            fail(L"Validate Astera Loader x64 DLL", ERROR_BAD_EXE_FORMAT);
         }
         const auto size = pe->OptionalHeader.SizeOfImage;
         const auto& directory = pe->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
@@ -228,20 +228,20 @@ public:
             return offset != 0 && offset < size && length <= size - offset && readable(offset, length);
         };
         if (!within(directory.VirtualAddress, directory.Size) || directory.Size < sizeof(IMAGE_EXPORT_DIRECTORY)) {
-            fail(L"CMFM has no bootstrap export", ERROR_PROC_NOT_FOUND);
+            fail(L"Astera Loader has no bootstrap export", ERROR_PROC_NOT_FOUND);
         }
         const auto* exports = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY*>(view_ + directory.VirtualAddress);
         if (!within(exports->AddressOfNames, std::uint64_t{exports->NumberOfNames} * sizeof(DWORD)) ||
             !within(exports->AddressOfNameOrdinals, std::uint64_t{exports->NumberOfNames} * sizeof(WORD)) ||
             !within(exports->AddressOfFunctions, std::uint64_t{exports->NumberOfFunctions} * sizeof(DWORD))) {
-            fail(L"Validate CMFM export table", ERROR_BAD_EXE_FORMAT);
+            fail(L"Validate Astera Loader export table", ERROR_BAD_EXE_FORMAT);
         }
         const auto* names = reinterpret_cast<const DWORD*>(view_ + exports->AddressOfNames);
         const auto* ordinals = reinterpret_cast<const WORD*>(view_ + exports->AddressOfNameOrdinals);
         const auto* functions = reinterpret_cast<const DWORD*>(view_ + exports->AddressOfFunctions);
         for (DWORD i = 0; i < exports->NumberOfNames; ++i) {
-            constexpr auto length = sizeof(cmfm::kBootstrapExport);
-            if (!within(names[i], length) || std::memcmp(view_ + names[i], cmfm::kBootstrapExport, length)) continue;
+            constexpr auto length = sizeof(al::kBootstrapExport);
+            if (!within(names[i], length) || std::memcmp(view_ + names[i], al::kBootstrapExport, length)) continue;
             if (ordinals[i] >= exports->NumberOfFunctions) break;
             const DWORD rva = functions[ordinals[i]];
             if (!within(rva, 1) || (rva >= directory.VirtualAddress &&
@@ -258,7 +258,7 @@ public:
             }
             break;
         }
-        fail(L"CMFM has no executable bootstrap export", ERROR_PROC_NOT_FOUND);
+        fail(L"Astera Loader has no executable bootstrap export", ERROR_PROC_NOT_FOUND);
     }
 
 private:
@@ -278,31 +278,31 @@ private:
         }
         return true;
     }
-    cmfm::Handle mapping_;
+    al::Handle mapping_;
     const std::byte* view_ = nullptr;
 };
 
 DWORD launch() {
-    cmfm::LogFile log;
+    al::LogFile log;
     CreatedGame child{{}, {}, log};
     try {
         LARGE_INTEGER launcher_qpc{};
         QueryPerformanceCounter(&launcher_qpc);
-        const auto launcher_path = cmfm::module_path();
-        cmfm::Handle launcher_file(CreateFileW(launcher_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        const auto launcher_path = al::module_path();
+        al::Handle launcher_file(CreateFileW(launcher_path.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
         if (!launcher_file) fail(L"Open launcher path");
-        const auto launcher_real = cmfm::final_path(launcher_file.get());
+        const auto launcher_real = al::final_path(launcher_file.get());
         if (launcher_real.empty()) fail(L"Resolve launcher file's real path");
-        const auto own_folder = cmfm::join_path(cmfm::directory_of(launcher_real), L"cmfm");
+        const auto own_folder = al::join_path(al::directory_of(launcher_real), L"astera");
         if (!CreateDirectoryW(own_folder.c_str(), nullptr) && GetLastError() != ERROR_ALREADY_EXISTS) {
-            fail(L"Create CMFM log parent folder");
+            fail(L"Create Astera Loader log parent folder");
         }
-        const auto log_path = cmfm::join_path(cmfm::join_path(own_folder, L"logs"),
+        const auto log_path = al::join_path(al::join_path(own_folder, L"logs"),
                              L"launcher." + std::to_wstring(GetCurrentProcessId()) + L".log");
         if (!log.open(log_path)) fail(L"Open launcher log");
-        log.line(L"CMFM launcher " CMFM_VERSION L" commit=" CMFM_GIT_COMMIT);
-        const auto profile = cmfm::environment(L"USERPROFILE");
+        log.line(L"Astera Loader launcher " AL_BUILD_VERSION L" commit=" AL_GIT_COMMIT);
+        const auto profile = al::environment(L"USERPROFILE");
         int argc = 0;
         auto argv = CommandLineToArgvW(GetCommandLineW(), &argc);
         if (!argv) fail(L"Parse launcher arguments");
@@ -318,27 +318,27 @@ DWORD launch() {
         const DWORD length = GetCurrentDirectoryW(static_cast<DWORD>(cwd.size()), cwd.data());
         if (!length || length >= cwd.size()) fail(L"Read current directory");
         cwd.resize(length);
-        cmfm::LaunchPlan plan;
+        al::LaunchPlan plan;
         std::wstring error;
-        if (!cmfm::plan_launch(arguments, cmfm::directory_of(launcher_path), cwd,
-                               cmfm::regular_file, plan, error)) throw Failure{error};
+        if (!al::plan_launch(arguments, al::directory_of(launcher_path), cwd,
+                               al::regular_file, plan, error)) throw Failure{error};
         if (plan.command_line.size() >= 32767) fail(L"Game command line is too long", ERROR_INVALID_PARAMETER);
 
         // Resolve from the launcher's visible folder, then keep the file open
         // and use its real path for injection. usvfs need not be ready in the child.
-        const auto visible_core = cmfm::join_path(cmfm::directory_of(launcher_path), L"cmfm\\cmfm.dll");
-        cmfm::Handle core_file(CreateFileW(visible_core.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        const auto visible_core = al::join_path(al::directory_of(launcher_path), L"astera\\astera.dll");
+        al::Handle core_file(CreateFileW(visible_core.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                          nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-        if (!core_file) fail(L"Open cmfm\\cmfm.dll beside the launcher");
-        const auto core_real = cmfm::final_path(core_file.get());
-        const auto core_native = cmfm::final_path(core_file.get(), VOLUME_NAME_NT);
-        if (core_real.empty() || core_native.empty()) fail(L"Resolve CMFM DLL file's real path");
+        if (!core_file) fail(L"Open astera\\astera.dll beside the launcher");
+        const auto core_real = al::final_path(core_file.get());
+        const auto core_native = al::final_path(core_file.get(), VOLUME_NAME_NT);
+        if (core_real.empty() || core_native.empty()) fail(L"Resolve Astera Loader DLL file's real path");
         const CoreImage image(core_file.get());
         const auto bootstrap_rva = image.bootstrap_rva();
-        const auto dll_hash = cmfm::sha256_file(core_real);
-        if (dll_hash.empty()) fail(L"Hash CMFM DLL", ERROR_READ_FAULT);
-        log.line(L"exe=" + cmfm::redact_profile(plan.exe, profile));
-        log.line(L"dll=" + cmfm::redact_profile(core_real, profile));
+        const auto dll_hash = al::sha256_file(core_real);
+        if (dll_hash.empty()) fail(L"Hash Astera Loader DLL", ERROR_READ_FAULT);
+        log.line(L"exe=" + al::redact_profile(plan.exe, profile));
+        log.line(L"dll=" + al::redact_profile(core_real, profile));
         log.line(L"dll_sha256=" + dll_hash);
         log.line(L"game_path_source=" + plan.source);
         log.line(L"MO2 profile and force-load: record in the run manifest; not inferred here");
@@ -383,10 +383,10 @@ DWORD launch() {
         const auto core_base = remote_image(child.process.get(), core_native);
         bool confirmed = false;
         if (core_base) {
-            cmfm::StartupRequest request;
+            al::StartupRequest request;
             request.launcher_qpc = static_cast<std::uint64_t>(before_create_qpc.QuadPart);
             const auto status = invoke_remote(child.process.get(), core_base + bootstrap_rva, &request, sizeof(request));
-            confirmed = status == cmfm::kStartupOk;
+            confirmed = status == al::kStartupOk;
             log.line(L"bootstrap_status=" + std::to_wstring(status));
         }
         log.line(confirmed ? L"core_confirmed_before_resume" : L"core_not_confirmed_before_resume");
@@ -402,8 +402,8 @@ DWORD launch() {
         log.line(L"game_resumed");
         log_exe_hash(log, plan.exe);
         if (!confirmed) {
-            notify(log, L"CMFM did not confirm startup. The game has been resumed without active CMFM.\n"
-                        L"See the logs in the launcher's cmfm\\logs folder.", MB_ICONWARNING);
+            notify(log, L"Astera Loader did not confirm startup. The game has been resumed without active Astera Loader.\n"
+                        L"See the logs in the launcher's astera\\logs folder.", MB_ICONWARNING);
         }
         if (WaitForSingleObject(child.process.get(), INFINITE) != WAIT_OBJECT_0) fail(L"Wait for game exit");
         DWORD exit_code = 0;
@@ -416,13 +416,13 @@ DWORD launch() {
                MB_ICONERROR);
     } catch (...) {
         child.stop_before_resume();
-        notify(log, L"CMFM launcher encountered an unexpected error. See cmfm\\logs.", MB_ICONERROR);
+        notify(log, L"Astera Loader launcher encountered an unexpected error. See astera\\logs.", MB_ICONERROR);
     }
     return 1;
 }
 }  // namespace
 
-#ifdef CMFM_TEST_NO_DIALOGS
+#ifdef AL_TEST_NO_DIALOGS
 int wmain() { return static_cast<int>(launch()); }
 #else
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) { return static_cast<int>(launch()); }

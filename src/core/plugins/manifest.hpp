@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 
 #include <cstdint>
 #include <optional>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 
 // A plugin this one requires (API 1.1).
 struct Dependency {
@@ -16,7 +16,7 @@ struct Dependency {
     std::string min_version;  // empty: any version
 };
 
-// A plugin's declaration, copied out of its cmfm_plugin_info_t.
+// A plugin's declaration, copied out of its al_plugin_info_t.
 struct Manifest {
     std::string name;
     std::string display_name;
@@ -27,7 +27,7 @@ struct Manifest {
     std::vector<std::string> load_after;
     std::vector<std::string> load_before;
     std::vector<std::string> exe_sha256;  // empty: any exe
-    cmfm_phase_fn on_phase = nullptr;
+    al_phase_fn on_phase = nullptr;
     std::vector<Dependency> dependencies;  // API 1.1
 };
 
@@ -39,14 +39,14 @@ std::optional<std::vector<std::uint32_t>> parse_version(std::string_view text);
 // missing parts count as 0 ("1.2" equals "1.2.0").
 int compare_versions(const std::vector<std::uint32_t>& a, const std::vector<std::uint32_t>& b);
 
-// The plugin-name rule from cmfm_plugin.h.
+// The plugin-name rule from al_plugin.h.
 bool valid_name(std::string_view name);
 bool valid_name(std::wstring_view name);
 
-// Copies `info` into `out`, or sets `reason` to why CMFM cannot run the
+// Copies `info` into `out`, or sets `reason` to why AL cannot run the
 // plugin. `folder_name` is the folder the DLL was found in. `exe_sha256` is
 // the running exe's lower-case hex SHA-256, or empty if it is unknown.
-bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name,
+bool read_manifest(const al_plugin_info_t* info, std::wstring_view folder_name,
                    std::wstring_view exe_sha256, Manifest& out, std::string& reason);
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

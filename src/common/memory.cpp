@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace cmfm {
+namespace al {
 
 bool readable(const void* address, std::size_t size) noexcept {
     auto cursor = reinterpret_cast<std::uintptr_t>(address);
@@ -25,4 +25,4 @@ bool readable(const void* address, std::size_t size) noexcept {
     return true;
 }
 
-}  // namespace cmfm
+}  // namespace al

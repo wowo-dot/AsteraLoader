@@ -3,7 +3,7 @@
 #include <dxgi1_6.h>
 #include "core/graphics/installer.hpp"
 
-namespace cmfm::graphics::detail {
+namespace al::graphics::detail {
 namespace {
 template<class T> constexpr std::uint32_t slots = sizeof(T) / sizeof(void*);
 template<std::size_t N>
@@ -33,11 +33,11 @@ int interface_version(std::uint32_t family, std::uint32_t slot) noexcept {
         slots<ID3D12GraphicsCommandList10Vtbl>};
     static constexpr std::uint32_t queue[]{slots<ID3D12CommandQueueVtbl>};
     switch (family) {
-    case CMFM_D3D12_FACTORY: return version(factory, slot);
-    case CMFM_D3D12_SWAPCHAIN: return version(swapchain, slot);
-    case CMFM_D3D12_DEVICE: return version(device, slot);
-    case CMFM_D3D12_QUEUE: return version(queue, slot);
-    case CMFM_D3D12_COMMAND_LIST: return version(list, slot);
+    case AL_D3D12_FACTORY: return version(factory, slot);
+    case AL_D3D12_SWAPCHAIN: return version(swapchain, slot);
+    case AL_D3D12_DEVICE: return version(device, slot);
+    case AL_D3D12_QUEUE: return version(queue, slot);
+    case AL_D3D12_COMMAND_LIST: return version(list, slot);
     default: return -1;
     }
 }

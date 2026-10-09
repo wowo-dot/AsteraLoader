@@ -1,6 +1,6 @@
 #include "core/crash/report.hpp"
 
-namespace cmfm::crash {
+namespace al::crash {
 namespace {
 wchar_t lower(wchar_t c) noexcept {
     return c >= L'A' && c <= L'Z' ? static_cast<wchar_t>(c - L'A' + L'a') : c;
@@ -45,7 +45,7 @@ Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept {
     const auto name = file_name(path);
     if (is_core) return {OwnerKind::core, name};
     if (is_game) return {OwnerKind::game, name};
-    constexpr std::wstring_view plugins = L"\\cmfm\\plugins\\";
+    constexpr std::wstring_view plugins = L"\\astera\\plugins\\";
     if (const auto at = find_folded(path, plugins); at != std::wstring_view::npos) {
         auto rest = path.substr(at + plugins.size());
         const auto end = rest.find_first_of(L"\\/");
@@ -62,7 +62,7 @@ Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept {
 const char* owner_label(OwnerKind kind) noexcept {
     switch (kind) {
     case OwnerKind::game: return "the game";
-    case OwnerKind::core: return "CMFM";
+    case OwnerKind::core: return "Astera Loader";
     case OwnerKind::plugin: return "plugin";
     case OwnerKind::stracker_plugin: return "Stracker plugin";
     case OwnerKind::windows: return "Windows";
@@ -128,4 +128,4 @@ Minidump minidump_setting(std::string_view text) noexcept {
     return setting;
 }
 
-}  // namespace cmfm::crash
+}  // namespace al::crash

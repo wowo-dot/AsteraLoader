@@ -1,8 +1,8 @@
 #pragma once
 
-// CMFM's built-in services (API 1.1): "cmfm.game" and "cmfm.scanner".
+// AL's built-in services (API 1.1): "al.game" and "al.scanner".
 
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 #include "common/pattern.hpp"
 
 #include <cstdint>
@@ -11,11 +11,11 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 
 class Scanner;
 
-// "cmfm.game": filled once, on first use, and kept for the process.
+// "al.game": filled once, on first use, and kept for the process.
 class GameService {
 public:
     // `image` is the game exe module; `game_folder` holds graphics_option.ini
@@ -25,7 +25,7 @@ public:
     // Stracker does.
     GameService(const void* image, std::wstring exe_sha256, std::wstring game_folder = {},
                 Scanner* scanner = nullptr);
-    const cmfm_game_t* table();
+    const al_game_t* table();
 
 private:
     void fill();
@@ -37,13 +37,13 @@ private:
     std::string version_;
     std::wstring exe_path_;
     std::wstring game_folder_;
-    cmfm_game_t table_{};
+    al_game_t table_{};
 };
 
 // Reads "DirectX12Enable=On|Off" from graphics_option.ini text.
-cmfm_graphics_t graphics_from_ini(std::string_view text);
+al_graphics_t graphics_from_ini(std::string_view text);
 
-// "cmfm.scanner": pattern search in the game exe, cached per exe hash in a
+// "al.scanner": pattern search in the game exe, cached per exe hash in a
 // text file. A cached result is used only after its matches are checked in
 // memory; patterns without a match are not cached, so a function another
 // hook has patched for a moment cannot poison the cache.
@@ -53,7 +53,7 @@ public:
     Scanner(const void* image, std::wstring cache_file);
 
     struct Result {
-        std::vector<const void*> matches;  // address order, at most CMFM_SCAN_MAX_MATCHES
+        std::vector<const void*> matches;  // address order, at most AL_SCAN_MAX_MATCHES
         bool cached = false;
         double milliseconds = 0;
     };
@@ -75,4 +75,4 @@ private:
 // instruction + length + the int32 at instruction + offset; null if unreadable.
 void* rip_target(const void* instruction, std::uint32_t offset, std::uint32_t length) noexcept;
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace cmfm::game_hooks {
+namespace al::game_hooks {
 namespace {
 bool executable(const void* pointer) noexcept {
     MEMORY_BASIC_INFORMATION info{};
@@ -87,7 +87,7 @@ std::string NativeInstaller::create(void* target, void* const* head, void** orig
         if (!head || !original || reinterpret_cast<std::uintptr_t>(head) % alignof(void*) || !readable(head, sizeof(*head)))
             return "missing or invalid head/original storage";
         if (std::any_of(state_->entries.begin(), state_->entries.end(), [&](const auto& e) { return e.target == target; }))
-            return "this target already has a CMFM game hook";
+            return "this target already has an Astera Loader game hook";
         if (auto destination = jump_destination(target)) {
             std::array<void*, 9> seen{target}; unsigned count = 1;
             while (count < seen.size() && std::find(seen.begin(), seen.begin() + count, destination) == seen.begin() + count) {
@@ -113,10 +113,10 @@ std::string NativeInstaller::create(void* target, void* const* head, void** orig
 }
 std::string NativeInstaller::enable(void* target) {
     const auto found = std::find_if(state_->entries.begin(), state_->entries.end(), [&](const auto& e) { return e.target == target; });
-    if (found == state_->entries.end()) return "no inactive CMFM game hook for this target";
+    if (found == state_->entries.end()) return "no inactive Astera Loader game hook for this target";
     void* head{};
     if (!copy(found->head, &head, sizeof(head)) || !head || !executable(head)) return "the registry has not published an executable chain head";
     const auto result = MH_EnableHook(target);
     return result == MH_OK || result == MH_ERROR_ENABLED ? std::string() : failure("enable", result);
 }
-}  // namespace cmfm::game_hooks
+}  // namespace al::game_hooks

@@ -1,4 +1,4 @@
-// "cmfm.hooks" core side without patching: target checks, chain order, late
+// "al.hooks" core side without patching: target checks, chain order, late
 // joins, switching detours off and on, pending hooks before the hook layer
 // exists, and failures. Functions in this exe stand in for game code; a
 // stand-in installer records each hook's entry pointer, and the test calls
@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace hooks = cmfm::game_hooks;
+namespace hooks = al::game_hooks;
 
 namespace {
 int failures = 0;
@@ -100,7 +100,7 @@ struct FakeClient {
     std::vector<std::string> log;
     hooks::Client client;
     FakeClient(const char* name, std::size_t load_index) {
-        client.self = reinterpret_cast<cmfm_plugin_t*>(this);
+        client.self = reinterpret_cast<al_plugin_t*>(this);
         client.name = name;
         client.load_index = load_index;
         client.stopped = &stopped;
@@ -125,9 +125,9 @@ std::string bytes_of(const void* function, std::size_t count) {
 // Literals and the named signature strings below outlive each registry call.
 // A const std::string& here would convert literals to temporary strings and
 // return a dangling c_str() before the hook was registered.
-cmfm_hook_t hook_of(const char* name, std::string_view pattern, void* address, void* detour, void** next,
+al_hook_t hook_of(const char* name, std::string_view pattern, void* address, void* detour, void** next,
                     std::int32_t order = 0) {
-    return {sizeof(cmfm_hook_t), order, name, pattern.data(), 0, 0, address, detour, next};
+    return {sizeof(al_hook_t), order, name, pattern.data(), 0, 0, address, detour, next};
 }
 
 int call_damage(StandInInstaller& installer, int a, int b) {
@@ -138,9 +138,9 @@ int call_damage(StandInInstaller& installer, int a, int b) {
 }  // namespace
 
 int main() {
-    cmfm::plugins::Scanner scanner(GetModuleHandleW(nullptr), L"");
-    hooks::Registry registry(GetModuleHandleW(nullptr), [&](const cmfm::Pattern& pattern) {
-        return scanner.find(pattern, CMFM_SCAN_CODE).matches;
+    al::plugins::Scanner scanner(GetModuleHandleW(nullptr), L"");
+    hooks::Registry registry(GetModuleHandleW(nullptr), [&](const al::Pattern& pattern) {
+        return scanner.find(pattern, AL_SCAN_CODE).matches;
     });
     FakeClient a("alpha", 0), b("beta", 1), c("gamma", 2);
     const auto damage_bytes = bytes_of(reinterpret_cast<const void*>(&game_damage), 16);
@@ -164,7 +164,7 @@ int main() {
     bad = hook_of("no next", damage_bytes, damage, reinterpret_cast<void*>(&detour_a), nullptr);
     check(!registry.hook(a.client, bad, problem) && problem == "no detour or no next", "no next refused");
     bad = hook_of("small", damage_bytes, damage, reinterpret_cast<void*>(&detour_a), &g_next_unused);
-    bad.size = sizeof(cmfm_hook_t) - 8;
+    bad.size = sizeof(al_hook_t) - 8;
     check(!registry.hook(a.client, bad, problem), "a struct smaller than 1.0's refused");
 
     // Before the hook layer: pending, next still null.
@@ -174,7 +174,7 @@ int main() {
     const auto hook_b = hook_of(nullptr, damage_bytes, nullptr, reinterpret_cast<void*>(&detour_b), &g_next_b, -5);
     const auto handle_b = registry.hook(b.client, hook_b, problem);
     check(handle_a && handle_b && handle_a != handle_b, "handles");
-    check(registry.state(a.client, handle_a) == CMFM_HOOK_PENDING && g_next_a == nullptr && g_next_b == nullptr,
+    check(registry.state(a.client, handle_a) == AL_HOOK_PENDING && g_next_a == nullptr && g_next_b == nullptr,
           "pending before the hook layer, next cleared");
     check(registry.hook(a.client, hook_a, problem) == 0 && problem == "this plugin already hooks that function",
           "the same function twice refused");
@@ -182,7 +182,7 @@ int main() {
     StandInInstaller installer;
     registry.set_installer(&installer);
     check(installer.calls == std::vector<std::string>{"create", "enable"}, "one hook per function");
-    check(registry.state(a.client, handle_a) == CMFM_HOOK_ACTIVE, "active once the hook layer is in");
+    check(registry.state(a.client, handle_a) == AL_HOOK_ACTIVE, "active once the hook layer is in");
     const auto expected = game_damage(2, 3);
     check(call_damage(installer, 2, 3) == expected + 1 &&
               g_trace == std::vector<std::string>{"b", "a", "original"}, "order: beta (order -5), alpha, original");
@@ -190,14 +190,14 @@ int main() {
     // A late detour joins a running chain; alpha and gamma tie on order.
     const auto hook_c = hook_of("Damage", damage_bytes, damage, reinterpret_cast<void*>(&detour_c), &g_next_c, 0);
     const auto handle_c = registry.hook(c.client, hook_c, problem);
-    check(handle_c && registry.state(c.client, handle_c) == CMFM_HOOK_ACTIVE && installer.calls.size() == 2,
+    check(handle_c && registry.state(c.client, handle_c) == AL_HOOK_ACTIVE && installer.calls.size() == 2,
           "late join without a second hook");
     call_damage(installer, 1, 1);
     check(g_trace == std::vector<std::string>{"b", "a", "c", "original"}, "ties in load order");
 
     // Off and on again.
     check(registry.set_enabled(b.client, handle_b, false).empty() &&
-              registry.state(b.client, handle_b) == CMFM_HOOK_DISABLED, "switched off");
+              registry.state(b.client, handle_b) == AL_HOOK_DISABLED, "switched off");
     check(call_damage(installer, 2, 3) == expected && g_trace == std::vector<std::string>{"a", "c", "original"},
           "the entry skips a detour that is off");
     check(registry.set_enabled(a.client, handle_b, true) == "the handle belongs to another plugin",
@@ -217,7 +217,7 @@ int main() {
               g_trace == std::vector<std::string>{"quest", "original quest"}, "found by pattern, active at once");
 
     // The hook layer refuses a function.
-    installer.refuse = "the target is already patched by something CMFM cannot relocate";
+    installer.refuse = "the target is already patched by something Astera Loader cannot relocate";
     const auto other_bytes = bytes_of(reinterpret_cast<const void*>(&game_other), 16);
     void* next_other = reinterpret_cast<void*>(1);
     const auto hook_o = hook_of("Other", other_bytes, reinterpret_cast<void*>(&game_other),
@@ -225,7 +225,7 @@ int main() {
     check(!registry.hook(c.client, hook_o, problem) && problem.find("could not be hooked: the target is already") !=
                                                             std::string::npos && next_other == nullptr,
           "refused by the hook layer");
-    check(!c.log.empty() && c.log.back().find("WARN cmfm.hooks: Other failed:") == 0, "the plugin is told");
+    check(!c.log.empty() && c.log.back().find("WARN al.hooks: Other failed:") == 0, "the plugin is told");
     void* next_late = nullptr;
     const auto hook_late = hook_of("Other", other_bytes, reinterpret_cast<void*>(&game_other),
                                    reinterpret_cast<void*>(&detour_quest), &next_late);
@@ -243,9 +243,9 @@ int main() {
     check(chain_line && failed_line, "summary");
     if (failures) {
         for (const auto& line : lines) std::cerr << line << '\n';
-        std::cerr << failures << " cmfm.hooks check(s) failed\n";
+        std::cerr << failures << " al.hooks check(s) failed\n";
         return 1;
     }
-    std::cout << "cmfm.hooks checks targets, orders and relinks chains, and reports failures\n";
+    std::cout << "al.hooks checks targets, orders and relinks chains, and reports failures\n";
     return 0;
 }

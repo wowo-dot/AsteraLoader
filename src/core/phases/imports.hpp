@@ -1,7 +1,7 @@
 #pragma once
 
 // The game's own import slots: the pointers its code calls through for an
-// imported function. CMFM observes a call by swapping one such pointer, a
+// imported function. AL observes a call by swapping one such pointer, a
 // data change in the game's import table that chains through whatever the
 // function itself is (hooked by another mod or not) instead of stacking a
 // second inline patch on it.
@@ -10,7 +10,7 @@
 #include <optional>
 #include <string_view>
 
-namespace cmfm::phases {
+namespace al::phases {
 
 struct ImportSlot {
     void** slot = nullptr;  // the pointer the game's code calls through
@@ -31,4 +31,4 @@ std::optional<ImportSlot> find_import(const void* image, std::string_view dll, s
 // the protection could not be changed.
 bool swap_slot(void** slot, void* expected, void* value) noexcept;
 
-}  // namespace cmfm::phases
+}  // namespace al::phases

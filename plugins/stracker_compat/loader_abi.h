@@ -1,7 +1,7 @@
 #pragma once
 
 // Stracker's Loader ABI, reproduced exactly so existing Stracker plugins bind
-// to CMFM's loader.dll unchanged.
+// to AL's loader.dll unchanged.
 //
 // Forked from MHWLoader/loader.h of Stracker's Loader
 // (https://github.com/Strackeror/MHW-QuestLoader, commit 9770302), MIT,
@@ -20,10 +20,10 @@
 
 #include <sstream>
 
-#ifdef CMFM_STRACKER_SHIM
-#define CMFM_STRACKER_API __declspec(dllexport)
+#ifdef AL_STRACKER_SHIM
+#define AL_STRACKER_API __declspec(dllexport)
 #else
-#define CMFM_STRACKER_API __declspec(dllimport)
+#define AL_STRACKER_API __declspec(dllimport)
 #endif
 
 #pragma warning(push)
@@ -32,10 +32,10 @@
 namespace loader {
 enum LogLevel { DEBUG = 0, INFO = 1, WARN = 2, ERR = 3 };
 
-CMFM_STRACKER_API extern const char* GameVersion;
-CMFM_STRACKER_API extern LogLevel MinLogLevel;
+AL_STRACKER_API extern const char* GameVersion;
+AL_STRACKER_API extern LogLevel MinLogLevel;
 
-class CMFM_STRACKER_API LOG {
+class AL_STRACKER_API LOG {
 private:
     std::stringstream stream;
     LogLevel logLevel;

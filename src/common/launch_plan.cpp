@@ -2,7 +2,7 @@
 
 #include "common/paths.hpp"
 
-namespace cmfm {
+namespace al {
 
 std::wstring quote_argument(std::wstring_view argument) {
     if (!argument.empty() && argument.find_first_of(L" \t\n\v\"") == std::wstring_view::npos) {
@@ -75,7 +75,7 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
                     std::wstring(launcher_dir) + L") or in the current folder (" +
                     std::wstring(current_dir) +
                     L").\nPass the game's path as the first argument, for example as Steam "
-                    L"launch options: \"<path>\\cmfm_launcher.exe\" %command%";
+                    L"launch options: \"<path>\\astera_launcher.exe\" %command%";
             return false;
         }
     }
@@ -89,4 +89,4 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
     return true;
 }
 
-}  // namespace cmfm
+}  // namespace al

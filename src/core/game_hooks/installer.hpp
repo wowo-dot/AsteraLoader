@@ -2,7 +2,7 @@
 
 #include "core/game_hooks/registry.hpp"
 
-namespace cmfm::game_hooks {
+namespace al::game_hooks {
 
 // Calls are serialized by Registry. The registry, its head slots, and the
 // successfully created entry stubs/trampolines live until process exit.
@@ -18,4 +18,4 @@ private:
     struct State;
     State* state_; // Pinned; no destruction while callers may be in a hook.
 };
-}  // namespace cmfm::game_hooks
+}  // namespace al::game_hooks

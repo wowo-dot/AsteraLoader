@@ -2,8 +2,8 @@
 
 namespace { HANDLE g_exe_lock = INVALID_HANDLE_VALUE; }
 
-extern "C" __declspec(dllexport) DWORD WINAPI cmfm_bootstrap(void*) noexcept {
-#if CMFM_FIXTURE_MODE == 4
+extern "C" __declspec(dllexport) DWORD WINAPI al_bootstrap(void*) noexcept {
+#if AL_FIXTURE_MODE == 4
     // Hold a read handle denying other read opens until the stand-in exits.
     // This produces a real post-resume checksum read failure without a
     // production fault-injection option or changing any executable on disk.
@@ -20,9 +20,9 @@ extern "C" __declspec(dllexport) DWORD WINAPI cmfm_bootstrap(void*) noexcept {
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
-#if CMFM_FIXTURE_MODE == 2
+#if AL_FIXTURE_MODE == 2
         return FALSE;
-#elif CMFM_FIXTURE_MODE == 3
+#elif AL_FIXTURE_MODE == 3
         Sleep(INFINITE);  // Intentional fault fixture, never part of the distribution.
 #endif
     }

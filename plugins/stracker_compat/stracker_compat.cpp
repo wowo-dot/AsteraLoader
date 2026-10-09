@@ -1,4 +1,4 @@
-// stracker_compat: CMFM's replacement for Stracker's Loader.
+// stracker_compat: AL's replacement for Stracker's Loader.
 //
 // At PRE_MAIN it loads the loader.dll shim from its own folder (by full path,
 // so it is the first module named loader.dll), then has it run Stracker's
@@ -6,7 +6,7 @@
 // import to the shim, and no dinput8.dll or loader.dll is needed in the game
 // folder.
 
-#include "cmfm/cmfm_plugin.h"
+#include "al/al_plugin.h"
 #include "shim.h"
 
 #include <windows.h>
@@ -16,17 +16,17 @@
 #include <vector>
 
 namespace {
-const cmfm_api_t* g_api = nullptr;
-cmfm_plugin_t* g_self = nullptr;
+const al_api_t* g_api = nullptr;
+al_plugin_t* g_self = nullptr;
 std::wstring g_folder_real;
 
-void say(cmfm_log_level_t level, const std::string& text) {
+void say(al_log_level_t level, const std::string& text) {
     g_api->log(g_self, level, text.c_str());
 }
 
 void __cdecl forward(void*, int level, const char* line) {
-    static constexpr cmfm_log_level_t kLevels[] = {CMFM_LOG_DEBUG, CMFM_LOG_INFO, CMFM_LOG_WARNING, CMFM_LOG_ERROR};
-    g_api->log(g_self, level >= 0 && level <= 3 ? kLevels[level] : CMFM_LOG_INFO, line);
+    static constexpr al_log_level_t kLevels[] = {AL_LOG_DEBUG, AL_LOG_INFO, AL_LOG_WARNING, AL_LOG_ERROR};
+    g_api->log(g_self, level >= 0 && level <= 3 ? kLevels[level] : AL_LOG_INFO, line);
 }
 
 // The folder with the game exe as the game sees it (under MO2: the virtual
@@ -46,8 +46,8 @@ bool file_exists(const std::wstring& path) {
 }
 
 void disable(const std::string& reason) {
-    say(CMFM_LOG_ERROR, reason);
-    g_api->set_status(g_self, CMFM_STATUS_DISABLED, reason.c_str());
+    say(AL_LOG_ERROR, reason);
+    g_api->set_status(g_self, AL_STATUS_DISABLED, reason.c_str());
 }
 
 void start() {
@@ -62,7 +62,7 @@ void start() {
     const bool old_loader = file_exists(game + L"\\loader.dll");
     if (old_dinput8 && old_loader) {
         problems.push_back("Stracker's Loader files are still in the game folder (dinput8.dll, loader.dll); "
-                           "CMFM replaces them, so disable or remove them");
+                           "Astera Loader replaces them, so disable or remove them");
     } else if (old_dinput8) {
         problems.push_back("a dinput8.dll is in the game folder; if it is Stracker's, remove it");
     } else if (old_loader) {
@@ -76,28 +76,28 @@ void start() {
     const auto shim_path = g_folder_real + L"\\loader.dll";
     const HMODULE shim = LoadLibraryExW(shim_path.c_str(), nullptr, 0);
     if (!shim) return disable("cannot load its loader.dll (Windows error " + std::to_string(GetLastError()) + ")");
-    const auto start_shim = reinterpret_cast<cmfm_stracker_start_fn>(GetProcAddress(shim, CMFM_STRACKER_START_EXPORT));
-    if (!start_shim) return disable("its loader.dll is not CMFM's (no " CMFM_STRACKER_START_EXPORT ")");
+    const auto start_shim = reinterpret_cast<al_stracker_start_fn>(GetProcAddress(shim, AL_STRACKER_START_EXPORT));
+    if (!start_shim) return disable("its loader.dll is not Astera Loader's (no " AL_STRACKER_START_EXPORT ")");
 
-    // CMFM's game identity (API 1.1) already has the version; the shim then skips its search.
-    const auto* identity = static_cast<const cmfm_game_t*>(
-        g_api->size > offsetof(cmfm_api_t, get_interface) ? g_api->get_interface(g_self, CMFM_GAME_INTERFACE, CMFM_GAME_VERSION)
+    // AL's game identity (API 1.1) already has the version; the shim then skips its search.
+    const auto* identity = static_cast<const al_game_t*>(
+        g_api->size > offsetof(al_api_t, get_interface) ? g_api->get_interface(g_self, AL_GAME_INTERFACE, AL_GAME_VERSION)
                                                           : nullptr);
-    const cmfm_stracker_host host{sizeof(host), CMFM_STRACKER_HOST_VERSION, forward, nullptr, game.c_str(),
+    const al_stracker_host host{sizeof(host), AL_STRACKER_HOST_VERSION, forward, nullptr, game.c_str(),
                                   GetModuleHandleW(nullptr), identity ? identity->game_version : nullptr};
-    cmfm_stracker_result result{};
+    al_stracker_result result{};
     result.size = sizeof(result);
     const auto code = start_shim(&host, &result);
     if (code == 2) return disable("its loader.dll refused the start request");
     if (code == 1) problems.push_back("Stracker start-up had already run");
 
     static const char* const kConfig[] = {"found", "missing (defaults used)", "not valid JSON (defaults used)"};
-    say(CMFM_LOG_INFO, "Stracker plugins: " + std::to_string(result.plugins_found) + " found, " +
+    say(AL_LOG_INFO, "Stracker plugins: " + std::to_string(result.plugins_found) + " found, " +
                            std::to_string(result.plugins_loaded) + " loaded, " +
                            std::to_string(result.plugins_failed) + " failed; game version " +
                            (result.version_found ? std::string(result.game_version) : std::string("not found")) +
                            "; loader-config.json " + kConfig[result.config_state <= 2 ? result.config_state : 2]);
-    if (!result.plugin_loader_enabled) say(CMFM_LOG_INFO, "enablePluginLoader is false: no Stracker plugins loaded");
+    if (!result.plugin_loader_enabled) say(AL_LOG_INFO, "enablePluginLoader is false: no Stracker plugins loaded");
 
     if (result.plugins_failed) {
         problems.push_back(std::to_string(result.plugins_failed) + " Stracker plugin(s) failed to load (first: " +
@@ -106,7 +106,7 @@ void start() {
     if (!result.version_found) {
         problems.push_back("the game version was not found; plugins see loader::GameVersion as \"???\"");
     }
-    if (result.config_state == CMFM_STRACKER_CONFIG_INVALID) {
+    if (result.config_state == AL_STRACKER_CONFIG_INVALID) {
         problems.push_back("loader-config.json is not valid JSON, so Stracker's defaults are used");
     }
     if (result.config_problems) {
@@ -114,32 +114,32 @@ void start() {
                            " unexpected value(s); see the log");
     }
     if (problems.empty()) {
-        g_api->set_status(g_self, CMFM_STATUS_ACTIVE, nullptr);
+        g_api->set_status(g_self, AL_STATUS_ACTIVE, nullptr);
         return;
     }
     std::string reason;
     for (const auto& problem : problems) reason += (reason.empty() ? "" : "; ") + problem;
-    say(CMFM_LOG_WARNING, reason);
-    g_api->set_status(g_self, CMFM_STATUS_DEGRADED, reason.c_str());
+    say(AL_LOG_WARNING, reason);
+    g_api->set_status(g_self, AL_STATUS_DEGRADED, reason.c_str());
 }
 
-void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
-    if (phase != CMFM_PHASE_PRE_MAIN) return;
+void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void*) {
+    if (phase != AL_PHASE_PRE_MAIN) return;
     try {
         start();
     } catch (...) {
-        g_api->set_status(g_self, CMFM_STATUS_DISABLED, "unexpected error while starting Stracker plugins");
+        g_api->set_status(g_self, AL_STATUS_DISABLED, "unexpected error while starting Stracker plugins");
     }
 }
 
-const cmfm_plugin_info_t kInfo = {
-    sizeof(cmfm_plugin_info_t),
-    CMFM_API_VERSION,
+const al_plugin_info_t kInfo = {
+    sizeof(al_plugin_info_t),
+    AL_API_VERSION,
     "stracker_compat",
     "Stracker's Loader compatibility",
     "0.1.0",
-    CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN),
-    100,  // after native CMFM plugins; Stracker plugins used to load late
+    AL_PHASE_BIT(AL_PHASE_PRE_MAIN),
+    100,  // after native AL plugins; Stracker plugins used to load late
     nullptr,
     nullptr,
     nullptr,
@@ -147,19 +147,19 @@ const cmfm_plugin_info_t kInfo = {
 };
 }  // namespace
 
-extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
+extern "C" AL_PLUGIN_EXPORT const al_plugin_info_t* AL_CALL al_plugin_info(void) {
     return &kInfo;
 }
 
-extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmfm_api_t* api,
-                                                                      const cmfm_init_t* init) {
+extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* api,
+                                                                      const al_init_t* init) {
     g_api = api;
     g_self = init->self;
     try {
         g_folder_real = init->folder_real;
     } catch (...) {
-        return CMFM_ERROR;
+        return AL_ERROR;
     }
-    say(CMFM_LOG_INFO, "ready; Stracker plugins load at PRE_MAIN");
-    return CMFM_OK;
+    say(AL_LOG_INFO, "ready; Stracker plugins load at PRE_MAIN");
+    return AL_OK;
 }

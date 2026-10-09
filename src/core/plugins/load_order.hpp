@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 
 struct LoadOrder {
     // Indexes into the input, in the order to initialise them.
@@ -38,4 +38,4 @@ std::vector<LoadOrder::Refusal> check_dependencies(const std::vector<Manifest>& 
 // and the rest are ordered without them. A repeated name is refused.
 LoadOrder resolve_load_order(const std::vector<Manifest>& plugins);
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

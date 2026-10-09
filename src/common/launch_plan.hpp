@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace cmfm {
+namespace al {
 
 inline constexpr std::wstring_view kGameExeName = L"MonsterHunterWorld.exe";
 
@@ -33,4 +33,4 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
                  const std::function<bool(const std::wstring&)>& file_exists, LaunchPlan& plan,
                  std::wstring& error);
 
-}  // namespace cmfm
+}  // namespace al

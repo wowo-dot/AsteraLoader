@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace cmfm::startup {
+namespace al::startup {
 
 using Log = void (*)(std::wstring_view);
 
@@ -15,4 +15,4 @@ void initialise_hash_result(std::wstring_view logs_folder, Log log);
 void publish_hash_result(std::wstring hash) noexcept;
 void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexcept;
 
-}  // namespace cmfm::startup
+}  // namespace al::startup

@@ -12,7 +12,7 @@
 #include <mutex>
 #include <set>
 
-namespace cmfm::graphics {
+namespace al::graphics {
 namespace {
 using Microsoft::WRL::ComPtr;
 struct Internal {
@@ -127,37 +127,37 @@ std::string owner_of(void* target) {
 
 REFIID interface_id(std::uint32_t family, int version) {
     switch (family) {
-#define CMFM_IID(n, type) case n: return __uuidof(type)
-    case CMFM_D3D12_FACTORY: switch (version) {
-        CMFM_IID(0, IDXGIFactory); CMFM_IID(1, IDXGIFactory1); CMFM_IID(2, IDXGIFactory2); CMFM_IID(3, IDXGIFactory3);
-        CMFM_IID(4, IDXGIFactory4); CMFM_IID(5, IDXGIFactory5); CMFM_IID(6, IDXGIFactory6); CMFM_IID(7, IDXGIFactory7);
+#define AL_IID(n, type) case n: return __uuidof(type)
+    case AL_D3D12_FACTORY: switch (version) {
+        AL_IID(0, IDXGIFactory); AL_IID(1, IDXGIFactory1); AL_IID(2, IDXGIFactory2); AL_IID(3, IDXGIFactory3);
+        AL_IID(4, IDXGIFactory4); AL_IID(5, IDXGIFactory5); AL_IID(6, IDXGIFactory6); AL_IID(7, IDXGIFactory7);
     } break;
-    case CMFM_D3D12_SWAPCHAIN: switch (version) {
-        CMFM_IID(0, IDXGISwapChain); CMFM_IID(1, IDXGISwapChain1); CMFM_IID(2, IDXGISwapChain2);
-        CMFM_IID(3, IDXGISwapChain3); CMFM_IID(4, IDXGISwapChain4);
+    case AL_D3D12_SWAPCHAIN: switch (version) {
+        AL_IID(0, IDXGISwapChain); AL_IID(1, IDXGISwapChain1); AL_IID(2, IDXGISwapChain2);
+        AL_IID(3, IDXGISwapChain3); AL_IID(4, IDXGISwapChain4);
     } break;
-    case CMFM_D3D12_DEVICE: switch (version) {
-        CMFM_IID(0, ID3D12Device); CMFM_IID(1, ID3D12Device1); CMFM_IID(2, ID3D12Device2); CMFM_IID(3, ID3D12Device3);
-        CMFM_IID(4, ID3D12Device4); CMFM_IID(5, ID3D12Device5); CMFM_IID(6, ID3D12Device6); CMFM_IID(7, ID3D12Device7);
-        CMFM_IID(8, ID3D12Device8); CMFM_IID(9, ID3D12Device9); CMFM_IID(10, ID3D12Device10); CMFM_IID(11, ID3D12Device11);
-        CMFM_IID(12, ID3D12Device12); CMFM_IID(13, ID3D12Device13); CMFM_IID(14, ID3D12Device14);
+    case AL_D3D12_DEVICE: switch (version) {
+        AL_IID(0, ID3D12Device); AL_IID(1, ID3D12Device1); AL_IID(2, ID3D12Device2); AL_IID(3, ID3D12Device3);
+        AL_IID(4, ID3D12Device4); AL_IID(5, ID3D12Device5); AL_IID(6, ID3D12Device6); AL_IID(7, ID3D12Device7);
+        AL_IID(8, ID3D12Device8); AL_IID(9, ID3D12Device9); AL_IID(10, ID3D12Device10); AL_IID(11, ID3D12Device11);
+        AL_IID(12, ID3D12Device12); AL_IID(13, ID3D12Device13); AL_IID(14, ID3D12Device14);
     } break;
-    case CMFM_D3D12_QUEUE: return __uuidof(ID3D12CommandQueue);
-    case CMFM_D3D12_COMMAND_LIST: switch (version) {
-        CMFM_IID(0, ID3D12GraphicsCommandList); CMFM_IID(1, ID3D12GraphicsCommandList1); CMFM_IID(2, ID3D12GraphicsCommandList2);
-        CMFM_IID(3, ID3D12GraphicsCommandList3); CMFM_IID(4, ID3D12GraphicsCommandList4); CMFM_IID(5, ID3D12GraphicsCommandList5);
-        CMFM_IID(6, ID3D12GraphicsCommandList6); CMFM_IID(7, ID3D12GraphicsCommandList7); CMFM_IID(8, ID3D12GraphicsCommandList8);
-        CMFM_IID(9, ID3D12GraphicsCommandList9); CMFM_IID(10, ID3D12GraphicsCommandList10);
+    case AL_D3D12_QUEUE: return __uuidof(ID3D12CommandQueue);
+    case AL_D3D12_COMMAND_LIST: switch (version) {
+        AL_IID(0, ID3D12GraphicsCommandList); AL_IID(1, ID3D12GraphicsCommandList1); AL_IID(2, ID3D12GraphicsCommandList2);
+        AL_IID(3, ID3D12GraphicsCommandList3); AL_IID(4, ID3D12GraphicsCommandList4); AL_IID(5, ID3D12GraphicsCommandList5);
+        AL_IID(6, ID3D12GraphicsCommandList6); AL_IID(7, ID3D12GraphicsCommandList7); AL_IID(8, ID3D12GraphicsCommandList8);
+        AL_IID(9, ID3D12GraphicsCommandList9); AL_IID(10, ID3D12GraphicsCommandList10);
     } break;
-#undef CMFM_IID
+#undef AL_IID
     }
     return __uuidof(IUnknown); // Only called with an SDK-validated version.
 }
 std::string make_object(std::uint32_t family, void* object, ComPtr<IUnknown>& out) {
-    if (family == CMFM_D3D12_DEVICE || family == CMFM_D3D12_SWAPCHAIN) {
+    if (family == AL_D3D12_DEVICE || family == AL_D3D12_SWAPCHAIN) {
         out = static_cast<IUnknown*>(object); return {};
     }
-    if (family == CMFM_D3D12_FACTORY) {
+    if (family == AL_D3D12_FACTORY) {
         // Only COM calls and dynamic exports in the core: no DXGI/D3D12 imports.
         const auto module = LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         using Create = HRESULT (WINAPI*)(UINT, REFIID, void**);
@@ -169,13 +169,13 @@ std::string make_object(std::uint32_t family, void* object, ComPtr<IUnknown>& ou
     }
     ComPtr<ID3D12Device> device;
     if (FAILED(static_cast<IUnknown*>(object)->QueryInterface(IID_PPV_ARGS(&device)))) return "object is not a D3D12 device";
-    if (family == CMFM_D3D12_QUEUE) {
+    if (family == AL_D3D12_QUEUE) {
         D3D12_COMMAND_QUEUE_DESC desc{};
         desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         return SUCCEEDED(device->CreateCommandQueue(&desc, __uuidof(ID3D12CommandQueue),
             reinterpret_cast<void**>(out.GetAddressOf()))) && out ? "" : "cannot create a direct queue";
     }
-    if (family == CMFM_D3D12_COMMAND_LIST) {
+    if (family == AL_D3D12_COMMAND_LIST) {
         ComPtr<ID3D12CommandAllocator> allocator;
         ComPtr<ID3D12GraphicsCommandList> list;
         if (FAILED(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator))) ||
@@ -269,8 +269,8 @@ std::string NativeInstaller::install(std::uint32_t family, void* object, const s
         std::set<void**> storages;
         std::vector<std::unique_ptr<State::Entry>> pending;
         for (const auto* chain : chains) {
-            if (!chain || chain->layers.empty() || CMFM_D3D12_METHOD_FAMILY(chain->method) != family) return "invalid chain";
-            const auto slot = CMFM_D3D12_METHOD_SLOT(chain->method);
+            if (!chain || chain->layers.empty() || AL_D3D12_METHOD_FAMILY(chain->method) != family) return "invalid chain";
+            const auto slot = AL_D3D12_METHOD_SLOT(chain->method);
             const auto version = detail::interface_version(family, slot);
             if (version < 0) return "slot " + std::to_string(slot) + " exceeds the SDK interface";
             ComPtr<IUnknown> typed;
@@ -336,8 +336,8 @@ std::string NativeInstaller::install(std::uint32_t family, void* object, const s
 }
 void NativeInstaller::report(const Hub& hub) noexcept {
     try {
-        cmfm_d3d12_status_t status{}; status.size = sizeof(status); hub.status(status);
-        if (status.state == CMFM_D3D12_UNAVAILABLE) {
+        al_d3d12_status_t status{}; status.size = sizeof(status); hub.status(status);
+        if (status.state == AL_D3D12_UNAVAILABLE) {
             state_->unavailable.store(true, std::memory_order_relaxed);
             if (!state_->warned.exchange(true)) {
                 try { if (state_->warning) state_->warning(status.reason ? status.reason : "graphics installation failed"); } catch (...) {}
@@ -346,4 +346,4 @@ void NativeInstaller::report(const Hub& hub) noexcept {
         for (const auto& line : hub.summary()) state_->note(line);
     } catch (...) {}
 }
-}  // namespace cmfm::graphics
+}  // namespace al::graphics

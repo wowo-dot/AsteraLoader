@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-#ifdef CMFM_FAKE_PHASES
+#ifdef AL_FAKE_PHASES
 extern "C" void WinMainCRTStartup();
 #define wWinMainCRTStartup WinMainCRTStartup
 #else
@@ -34,7 +34,7 @@ bool wait_for_cache() {
     // Test-only synchronization, using plain Win32 before this exe's CRT.
     // Production detours never wait for the hash/cache thread.
     wchar_t path[2048]{};
-    auto length = GetEnvironmentVariableW(L"CMFM_FAKE_CACHE_LOG_FOLDER", path, 2048);
+    auto length = GetEnvironmentVariableW(L"AL_FAKE_CACHE_LOG_FOLDER", path, 2048);
     if (!length) return true;
     if (length > 2000) return false;
     path[length++] = L'\\';
@@ -66,11 +66,11 @@ bool wait_for_cache() {
 }
 }  // namespace
 
-extern "C" __declspec(dllexport) BOOL cmfm_test_cookie_unchanged() {
+extern "C" __declspec(dllexport) BOOL al_test_cookie_unchanged() {
     return g_cookie_before != 0 && g_cookie_before != 0x2b992ddfa232ull && cookie() == g_cookie_before;
 }
 
-extern "C" __declspec(dllexport) BOOL cmfm_test_common_unchanged() {
+extern "C" __declspec(dllexport) BOOL al_test_common_unchanged() {
     if (!g_common) return FALSE;
     for (unsigned i = 0; i < sizeof(g_common_before); ++i) {
         if (g_common[i] != g_common_before[i]) return FALSE;
@@ -78,7 +78,7 @@ extern "C" __declspec(dllexport) BOOL cmfm_test_common_unchanged() {
     return TRUE;
 }
 
-extern "C" __declspec(dllexport) BOOL cmfm_test_startup_restored() {
+extern "C" __declspec(dllexport) BOOL al_test_startup_restored() {
     const auto* entry = reinterpret_cast<const std::uint8_t*>(&wWinMainCRTStartup);
     return entry[0] == 0x48 && entry[1] == 0x83 && entry[2] == 0xec && entry[3] == 0x28 && entry[4] == 0xe8;
 }
@@ -92,7 +92,7 @@ __declspec(noinline) BOOL helper_transition(void* text, SIZE_T size) {
 }
 
 #pragma code_seg(push, ".bind")
-extern "C" void cmfm_test_packed_entry() {
+extern "C" void al_test_packed_entry() {
     if (!wait_for_cache()) ExitProcess(99);
     const auto* base = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
     const auto* pe = headers();
@@ -103,9 +103,9 @@ extern "C" void cmfm_test_packed_entry() {
     g_common = entry + 18 + delta;
     for (unsigned i = 0; i < sizeof(g_common_before); ++i) g_common_before[i] = g_common[i];
     wchar_t skip[2]{};
-    const bool skip_transition = GetEnvironmentVariableW(L"CMFM_FAKE_SKIP_TRANSITION", skip, 2) != 0;
+    const bool skip_transition = GetEnvironmentVariableW(L"AL_FAKE_SKIP_TRANSITION", skip, 2) != 0;
     wchar_t helper[2]{};
-    const bool use_helper = GetEnvironmentVariableW(L"CMFM_FAKE_HELPER_TRANSITION", helper, 2) != 0;
+    const bool use_helper = GetEnvironmentVariableW(L"AL_FAKE_HELPER_TRANSITION", helper, 2) != 0;
     DWORD invalid_old = 0x12345678;
     if (VirtualProtect(nullptr, 0, PAGE_READONLY, &invalid_old) || invalid_old != 0x12345678) ExitProcess(96);
     const auto invalid_error = GetLastError();
@@ -113,7 +113,7 @@ extern "C" void cmfm_test_packed_entry() {
     // Overflow the diagnostic cap with rejected calls in the timeout case.
     // The game must still start and the caller's output must remain untouched.
     wchar_t overflow[2]{};
-    if (skip_transition || GetEnvironmentVariableW(L"CMFM_FAKE_TRACE_OVERFLOW", overflow, 2) != 0) {
+    if (skip_transition || GetEnvironmentVariableW(L"AL_FAKE_TRACE_OVERFLOW", overflow, 2) != 0) {
         for (unsigned i = 0; i < 300; ++i) {
             DWORD output = 0x12345678;
             SetLastError(0);

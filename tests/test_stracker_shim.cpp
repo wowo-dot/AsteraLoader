@@ -1,4 +1,4 @@
-// Runs CMFM's loader.dll shim against a fake game folder:
+// Runs AL's loader.dll shim against a fake game folder:
 // argv[1] the shim, argv[2] the stand-in Stracker plugin, argv[3] a work folder.
 #include "work_dir.hpp"
 #include "shim.h"
@@ -44,22 +44,22 @@ bool logged(int level, const std::string& text) {
     for (const auto& [line_level, line] : g_lines) {
         if (line_level == level && line == text) return true;
     }
-    std::cerr << "  not sent to CMFM at level " << level << ": " << text << '\n';
+    std::cerr << "  not sent to Astera Loader at level " << level << ": " << text << '\n';
     return false;
 }
 
 constexpr const char* kExports[] = {"??0LOG@loader@@QEAA@W4LogLevel@1@@Z", "??1LOG@loader@@QEAA@XZ",
                                     "?MinLogLevel@loader@@3W4LogLevel@1@A", "?GameVersion@loader@@3PEBDEB",
-                                    "Initialize", CMFM_STRACKER_START_EXPORT};
+                                    "Initialize", AL_STRACKER_START_EXPORT};
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
-    // argv[4] "known": CMFM passes the game version (host version 2) instead of the shim searching.
+    // argv[4] "known": AL passes the game version (host version 2) instead of the shim searching.
     if (argc != 4 && argc != 5) return 2;
     const bool known = argc == 5 && std::wstring(argv[4]) == L"known";
     const std::string version_text = known ? "known-7" : "test-421";
     const fs::path shim_path = argv[1], fixture = argv[2];
-    const auto work = cmfm_test::fresh_work_dir(argv[3]);
+    const auto work = al_test::fresh_work_dir(argv[3]);
     const auto game = work / L"game";
     const auto plugins = game / L"nativePC" / L"plugins";
     fs::create_directories(plugins / L"folder.dll");
@@ -70,7 +70,7 @@ int wmain(int argc, wchar_t** argv) {
     std::ofstream(plugins / L"broken.dll") << "not a DLL";
     std::ofstream(plugins / L"readme.txt") << "text";
     const auto record = work / L"record.txt";
-    SetEnvironmentVariableW(L"CMFM_TEST_STRACKER_RECORD", record.c_str());
+    SetEnvironmentVariableW(L"AL_TEST_STRACKER_RECORD", record.c_str());
     // The shim loads nativePC\plugins\<name> by Stracker's relative path. In the
     // game Windows finds it through the exe's folder; this test exe lives
     // elsewhere, so the current folder stands in for it.
@@ -83,16 +83,16 @@ int wmain(int argc, wchar_t** argv) {
     const HMODULE shim = LoadLibraryW(shim_path.c_str());
     if (!shim) return 3;
     for (const auto name : kExports) check(GetProcAddress(shim, name) != nullptr, std::string("export ") + name);
-    const auto start = reinterpret_cast<cmfm_stracker_start_fn>(GetProcAddress(shim, CMFM_STRACKER_START_EXPORT));
+    const auto start = reinterpret_cast<al_stracker_start_fn>(GetProcAddress(shim, AL_STRACKER_START_EXPORT));
     if (!start) return 4;
 
     const auto game_text = game.wstring();
-    cmfm_stracker_host host{sizeof(host), CMFM_STRACKER_HOST_VERSION, collect, &g_lines, game_text.c_str(),
+    al_stracker_host host{sizeof(host), AL_STRACKER_HOST_VERSION, collect, &g_lines, game_text.c_str(),
                             GetModuleHandleW(nullptr), known ? "known-7" : nullptr};
-    cmfm_stracker_result result{};
+    al_stracker_result result{};
     result.size = sizeof(result);
     check(start(&host, &result) == 0, "start");
-    check(result.config_state == CMFM_STRACKER_CONFIG_FOUND && result.config_problems == 0 &&
+    check(result.config_state == AL_STRACKER_CONFIG_FOUND && result.config_problems == 0 &&
           result.plugin_loader_enabled, "config read, SPL object ignored");
     check(result.plugins_found == 4 && result.plugins_loaded == 3 && result.plugins_failed == 1 &&
           std::string(result.first_failure) == "broken.dll", "four *.dll files found, three loaded, broken.dll failed");
@@ -117,7 +117,7 @@ int wmain(int argc, wchar_t** argv) {
               std::string(version()) == version_text, "plugin import bound to the shim");
     }
 
-    // Stracker's log texts, in loader.log and in CMFM's log.
+    // Stracker's log texts, in loader.log and in AL's log.
     const auto log = read_file(game / L"loader.log");
     for (const auto& text : std::vector<std::string>{"Found config file", "Found old dlls in game folder.",
                                                     "Game version " + version_text,
@@ -127,14 +127,14 @@ int wmain(int argc, wchar_t** argv) {
         const auto line = std::string(" ] ") + text + "\r\n";
         check(log.find(line) != std::string::npos, std::string("loader.log has: ") + text);
     }
-    // Load times go to CMFM only, so loader.log stays as Stracker writes it.
+    // Load times go to AL only, so loader.log stays as Stracker writes it.
     bool timed = false;
     for (const auto& [level, line] : g_lines) timed = timed || (level == 1 && line.rfind("loaded alpha.dll in ", 0) == 0);
-    check(timed && log.find("loaded alpha.dll in ") == std::string::npos, "load time for CMFM only");
+    check(timed && log.find("loaded alpha.dll in ") == std::string::npos, "load time for Astera Loader only");
     check(log.rfind("[ ", 0) == 0 && log.find("\n[ ") != std::string::npos, "loader.log lines start with \"[ \"");
     check(logged(1, "Found config file") && logged(3, "Found old dlls in game folder.") &&
           logged(3, "fixture alpha.dll sees game version " + version_text) && logged(0, "fixture debug line 42") &&
-          logged(3, R"(Failed to load "nativePC\\plugins\\broken.dll")"), "lines sent to CMFM with levels");
+          logged(3, R"(Failed to load "nativePC\\plugins\\broken.dll")"), "lines sent to Astera Loader with levels");
 
     // A leftover Stracker loader asks for the same relative path later: it
     // must get the module already loaded, not a second copy.
@@ -144,7 +144,7 @@ int wmain(int argc, wchar_t** argv) {
     if (again_alpha) FreeLibrary(again_alpha);
 
     // It runs once; Stracker's Initialize does nothing afterwards.
-    cmfm_stracker_result again{};
+    al_stracker_result again{};
     again.size = sizeof(again);
     check(start(&host, &again) == 1 && again.already_started, "second start refused");
     const auto initialize = reinterpret_cast<void (*)()>(GetProcAddress(shim, "Initialize"));

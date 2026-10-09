@@ -18,7 +18,7 @@ std::array<Entry, 256> trace{};
 unsigned used{};
 bool invalid{};
 struct Dump {
-    cmfm::LogFile& log;
+    al::LogFile& log;
     ~Dump() {
         for (unsigned i = 0; i < used; ++i) log.line(L"trace=" + std::to_wstring(trace[i].token) + L" object=" +
             std::to_wstring(reinterpret_cast<std::uintptr_t>(trace[i].object)) + L" a=" + std::to_wstring(trace[i].a) + L" b=" + std::to_wstring(trace[i].b));
@@ -27,7 +27,7 @@ struct Dump {
 };
 bool expect(unsigned begin, std::initializer_list<unsigned> tokens) {
     // Native DXGI can signal its queue inside Present. That still reaches
-    // the pre-existing external patch while CMFM's internal region bypasses
+    // the pre-existing external patch while AL's internal region bypasses
     // its own Signal layer. ResizeBuffers1 also queries GetNodeCount; those
     // calls are allowed between the ordered resize events being compared.
     for (const auto token : tokens) {
@@ -39,22 +39,22 @@ bool expect(unsigned begin, std::initializer_list<unsigned> tokens) {
     return begin == used;
 }
 bool wait(ID3D12CommandQueue* queue, ID3D12Fence* fence, UINT64 value) {
-    cmfm::Handle done(CreateEventW(nullptr, FALSE, FALSE, nullptr));
+    al::Handle done(CreateEventW(nullptr, FALSE, FALSE, nullptr));
     return done && SUCCEEDED(queue->Signal(fence, value)) && SUCCEEDED(fence->SetEventOnCompletion(value, done.get())) &&
         WaitForSingleObject(done.get(), 5000) == WAIT_OBJECT_0;
 }
 }
-extern "C" __declspec(dllexport) void cmfm_test_graphics_record(unsigned token, void* object, std::uintptr_t a, std::uintptr_t b) {
+extern "C" __declspec(dllexport) void al_test_graphics_record(unsigned token, void* object, std::uintptr_t a, std::uintptr_t b) {
     if (token == Invalid || used >= trace.size()) { invalid = true; return; }
     trace[used++] = {token, object, a, b};
 }
-extern "C" BOOL cmfm_test_startup_restored();
-extern "C" BOOL cmfm_test_cookie_unchanged();
+extern "C" BOOL al_test_startup_restored();
+extern "C" BOOL al_test_cookie_unchanged();
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, char*, int) {
-    cmfm::LogFile log;
-    if (!log.open(cmfm::environment(L"CMFM_FAKE_OUTPUT"))) return 90;
+    al::LogFile log;
+    if (!log.open(al::environment(L"AL_FAKE_OUTPUT"))) return 90;
     Dump dump{log};
-    if (!cmfm_test_startup_restored() || !cmfm_test_cookie_unchanged()) return 91;
+    if (!al_test_startup_restored() || !al_test_cookie_unchanged()) return 91;
     ComPtr<IDXGIFactory4> factory; ComPtr<IUnknown> adapter; ComPtr<ID3D12Device> device;
     if (FAILED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory))) || FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter))) ||
         FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device)))) return 92;
@@ -76,9 +76,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, char*, int) {
     if (!expect(queue_begin, {ProbeQueue, OwnerQueue}) || trace[queue_begin].object != queue.Get() ||
         trace[queue_begin].a != 1 || trace[queue_begin].b != reinterpret_cast<std::uintptr_t>(lists)) return 96;
     if (!wait(queue.Get(), fence.Get(), 1)) return 97;
-    const WNDCLASSW wc{0, DefWindowProcW, 0, 0, instance, nullptr, nullptr, nullptr, nullptr, L"CMFM hidden graphics test"};
+    const WNDCLASSW wc{0, DefWindowProcW, 0, 0, instance, nullptr, nullptr, nullptr, nullptr, L"Astera Loader hidden graphics test"};
     if (!RegisterClassW(&wc)) return 98;
-    const auto window = CreateWindowExW(0, wc.lpszClassName, L"CMFM WARP fixture", WS_OVERLAPPEDWINDOW, 0, 0, 320, 240,
+    const auto window = CreateWindowExW(0, wc.lpszClassName, L"Astera Loader WARP fixture", WS_OVERLAPPEDWINDOW, 0, 0, 320, 240,
         nullptr, nullptr, instance, nullptr);
     if (!window || IsWindowVisible(window)) return 99;
     DXGI_SWAP_CHAIN_DESC1 desc{};

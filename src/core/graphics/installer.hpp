@@ -2,7 +2,7 @@
 
 #include "core/graphics/hub.hpp"
 
-namespace cmfm::graphics {
+namespace al::graphics {
 
 // The core and its installer live until exit. Successfully created hooks,
 // trampolines and entry contexts are pinned, including a failed activation:
@@ -30,4 +30,4 @@ int interface_version(std::uint32_t family, std::uint32_t slot) noexcept;
 // contract can also be exercised with mixed floating-point arguments.
 void* entry_stub(void* context, void* (*select)(void*) noexcept);
 }
-}  // namespace cmfm::graphics
+}  // namespace al::graphics

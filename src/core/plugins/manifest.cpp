@@ -7,15 +7,15 @@
 #include <cstring>
 #include <type_traits>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
 // Upper bounds for data read out of a plugin, so a missing terminator in its
-// static data cannot make CMFM read without end.
+// static data cannot make AL read without end.
 constexpr std::size_t kMaxText = 256;
 constexpr std::size_t kMaxList = 64;
 // API 1.0 plugins have the info struct up to on_phase; dependencies is 1.1.
-constexpr std::size_t kInfoSize10 = offsetof(cmfm_plugin_info_t, dependencies);
-constexpr std::size_t kInfoSize11 = offsetof(cmfm_plugin_info_t, dependencies) + sizeof(void*);
+constexpr std::size_t kInfoSize10 = offsetof(al_plugin_info_t, dependencies);
+constexpr std::size_t kInfoSize11 = offsetof(al_plugin_info_t, dependencies) + sizeof(void*);
 
 bool name_char(unsigned c) {
     return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
@@ -23,7 +23,7 @@ bool name_char(unsigned c) {
 
 template <typename Char>
 bool valid_name_of(std::basic_string_view<Char> name) {
-    if (name.empty() || name.size() > CMFM_NAME_MAX || name.front() == Char('.')) return false;
+    if (name.empty() || name.size() > AL_NAME_MAX || name.front() == Char('.')) return false;
     for (const auto c : name) {
         if (!name_char(static_cast<unsigned>(static_cast<std::make_unsigned_t<Char>>(c)))) return false;
     }
@@ -58,7 +58,7 @@ bool sha256_hex(std::string& value) {
 }
 
 std::string version_text(std::uint32_t version) {
-    return std::to_string(CMFM_VERSION_MAJOR(version)) + "." + std::to_string(CMFM_VERSION_MINOR(version));
+    return std::to_string(AL_VERSION_MAJOR(version)) + "." + std::to_string(AL_VERSION_MINOR(version));
 }
 }  // namespace
 
@@ -95,11 +95,11 @@ int compare_versions(const std::vector<std::uint32_t>& a, const std::vector<std:
 bool valid_name(std::string_view name) { return valid_name_of(name); }
 bool valid_name(std::wstring_view name) { return valid_name_of(name); }
 
-bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name,
+bool read_manifest(const al_plugin_info_t* info, std::wstring_view folder_name,
                    std::wstring_view exe_sha256, Manifest& out, std::string& reason) {
     out = {};
     if (!info) {
-        reason = "cmfm_plugin_info returned nothing";
+        reason = "al_plugin_info returned nothing";
         return false;
     }
     if (info->size < kInfoSize10) {
@@ -108,17 +108,17 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
         return false;
     }
     const auto api = info->api_version;
-    if (CMFM_VERSION_MAJOR(api) < CMFM_API_VERSION_MAJOR) {
-        reason = "it was built for CMFM API " + version_text(api) + ", which this CMFM no longer supports";
+    if (AL_VERSION_MAJOR(api) < AL_API_VERSION_MAJOR) {
+        reason = "it was built for Astera Loader API " + version_text(api) + ", which this Astera Loader no longer supports";
         return false;
     }
-    if (CMFM_VERSION_MAJOR(api) > CMFM_API_VERSION_MAJOR || CMFM_VERSION_MINOR(api) > CMFM_API_VERSION_MINOR) {
-        reason = "it needs CMFM API " + version_text(api) + "; this CMFM provides " +
-                 version_text(CMFM_API_VERSION) + ". Update CMFM.";
+    if (AL_VERSION_MAJOR(api) > AL_API_VERSION_MAJOR || AL_VERSION_MINOR(api) > AL_API_VERSION_MINOR) {
+        reason = "it needs Astera Loader API " + version_text(api) + "; this Astera Loader provides " +
+                 version_text(AL_API_VERSION) + ". Update Astera Loader.";
         return false;
     }
 
-    out.name = text(info->name, CMFM_NAME_MAX + 1);
+    out.name = text(info->name, AL_NAME_MAX + 1);
     if (!valid_name(out.name)) {
         reason = "its name is not a valid plugin name";
         return false;
@@ -137,8 +137,8 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
 
     out.phases = info->phases;
     out.on_phase = info->on_phase;
-    if (out.phases & ~((1u << CMFM_PHASE_COUNT) - 1)) {
-        reason = "it asks for phases this CMFM does not know";
+    if (out.phases & ~((1u << AL_PHASE_COUNT) - 1)) {
+        reason = "it asks for phases this Astera Loader does not know";
         return false;
     }
     if (out.phases && !out.on_phase) {
@@ -160,7 +160,7 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
                 reason = "its dependency list has no end within " + std::to_string(kMaxList) + " entries";
                 return false;
             }
-            Dependency dependency{text(entry->name, CMFM_NAME_MAX + 1), text(entry->min_version)};
+            Dependency dependency{text(entry->name, AL_NAME_MAX + 1), text(entry->min_version)};
             if (!valid_name(dependency.name)) {
                 reason = "it depends on a plugin with an invalid name";
                 return false;
@@ -197,4 +197,4 @@ bool read_manifest(const cmfm_plugin_info_t* info, std::wstring_view folder_name
     return true;
 }
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

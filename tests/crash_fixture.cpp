@@ -1,5 +1,5 @@
 // Crashes on purpose, for the crash handler test. It is copied to plugin
-// paths (a CMFM plugin folder, a Stracker plugin folder) before it loads.
+// paths (an AL plugin folder, a Stracker plugin folder) before it loads.
 #include <windows.h>
 
 namespace {

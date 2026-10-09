@@ -15,35 +15,35 @@ bool contains(const std::string& text, const char* part) {
     return text.find(part) != std::string::npos;
 }
 
-void CMFM_CALL no_phase(cmfm_plugin_t*, cmfm_phase_t, const void*) {}
+void AL_CALL no_phase(al_plugin_t*, al_phase_t, const void*) {}
 
 const std::wstring kExe(64, L'a');
 
-cmfm_plugin_info_t info_named(const char* name) {
-    cmfm_plugin_info_t info{};
+al_plugin_info_t info_named(const char* name) {
+    al_plugin_info_t info{};
     info.size = sizeof(info);
-    info.api_version = CMFM_API_VERSION;
+    info.api_version = AL_API_VERSION;
     info.name = name;
     info.version = "1.2.3";
     return info;
 }
 
-bool accepted(const cmfm_plugin_info_t& info, std::wstring_view folder = L"sample",
+bool accepted(const al_plugin_info_t& info, std::wstring_view folder = L"sample",
               std::wstring_view exe = kExe) {
-    cmfm::plugins::Manifest manifest;
+    al::plugins::Manifest manifest;
     std::string reason;
-    return cmfm::plugins::read_manifest(&info, folder, exe, manifest, reason);
+    return al::plugins::read_manifest(&info, folder, exe, manifest, reason);
 }
 
-std::string refusal(const cmfm_plugin_info_t* info, std::wstring_view folder = L"sample",
+std::string refusal(const al_plugin_info_t* info, std::wstring_view folder = L"sample",
                     std::wstring_view exe = kExe) {
-    cmfm::plugins::Manifest manifest;
+    al::plugins::Manifest manifest;
     std::string reason;
-    return cmfm::plugins::read_manifest(info, folder, exe, manifest, reason) ? std::string() : reason;
+    return al::plugins::read_manifest(info, folder, exe, manifest, reason) ? std::string() : reason;
 }
 
 void names() {
-    using cmfm::plugins::valid_name;
+    using al::plugins::valid_name;
     check(valid_name("mhw_dlss") && valid_name("a") && valid_name("a.b-c_d9"), "valid names");
     check(valid_name(std::string(64, 'x')) && !valid_name(std::string(65, 'x')), "name length");
     check(!valid_name("") && !valid_name(".hidden") && !valid_name("Upper") && !valid_name("a b") &&
@@ -53,9 +53,9 @@ void names() {
 
 void manifests() {
     auto info = info_named("sample");
-    cmfm::plugins::Manifest manifest;
+    al::plugins::Manifest manifest;
     std::string reason;
-    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason), "minimal plugin accepted");
+    check(al::plugins::read_manifest(&info, L"sample", kExe, manifest, reason), "minimal plugin accepted");
     check(manifest.name == "sample" && manifest.display_name == "sample" && manifest.version == "1.2.3" &&
           manifest.load_after.empty() && manifest.exe_sha256.empty(), "minimal plugin copied");
     check(accepted(info, L"SAMPLE"), "folder name case does not matter");
@@ -65,25 +65,25 @@ void manifests() {
     check(contains(refusal(&info), "bytes"), "short info refused");
     info.size = sizeof(info);
 
-    info.api_version = CMFM_MAKE_VERSION(2, 0);
-    check(contains(refusal(&info), "needs CMFM API 2.0; this CMFM provides 1.4. Update CMFM."), "newer major");
-    info.api_version = CMFM_MAKE_VERSION(1, 5);
-    check(contains(refusal(&info), "needs CMFM API 1.5"), "newer minor refused");
-    info.api_version = CMFM_MAKE_VERSION(0, 9);
+    info.api_version = AL_MAKE_VERSION(2, 0);
+    check(contains(refusal(&info), "needs Astera Loader API 2.0; this Astera Loader provides 1.4. Update Astera Loader."), "newer major");
+    info.api_version = AL_MAKE_VERSION(1, 5);
+    check(contains(refusal(&info), "needs Astera Loader API 1.5"), "newer minor refused");
+    info.api_version = AL_MAKE_VERSION(0, 9);
     check(contains(refusal(&info), "no longer supports"), "older major refused");
-    info.api_version = CMFM_API_VERSION;
+    info.api_version = AL_API_VERSION;
 
     check(contains(refusal(&info, L"other"), "does not match its folder 'other'"), "name must match folder");
     auto bad = info_named("Bad Name");
     check(contains(refusal(&bad, L"Bad Name"), "not a valid plugin name"), "invalid name refused");
 
     info.display_name = "Sample Plugin";
-    info.phases = CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN);
+    info.phases = AL_PHASE_BIT(AL_PHASE_PRE_MAIN);
     check(contains(refusal(&info), "no on_phase"), "phases need on_phase");
     info.on_phase = no_phase;
-    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
+    check(al::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
           manifest.display_name == "Sample Plugin" && manifest.on_phase == no_phase, "phases accepted");
-    info.phases = CMFM_PHASE_BIT(CMFM_PHASE_COUNT);
+    info.phases = AL_PHASE_BIT(AL_PHASE_COUNT);
     check(contains(refusal(&info), "does not know"), "unknown phase refused");
     info.phases = 0;
 
@@ -92,7 +92,7 @@ void manifests() {
     check(contains(refusal(&info), "no NULL end"), "unterminated list refused");
     const char* const after[] = {"gamma", "beta", nullptr};
     info.load_after = after;
-    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
+    check(al::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) &&
           manifest.load_after == std::vector<std::string>{"gamma", "beta"}, "load_after copied");
 }
 
@@ -112,9 +112,9 @@ void exe_hashes() {
     check(accepted(info, L"sample", L""), "any exe when no hashes listed");
 }
 
-cmfm::plugins::Manifest plugin(std::string name, int order = 0, std::vector<std::string> after = {},
+al::plugins::Manifest plugin(std::string name, int order = 0, std::vector<std::string> after = {},
                                std::vector<std::string> before = {}) {
-    cmfm::plugins::Manifest manifest;
+    al::plugins::Manifest manifest;
     manifest.name = std::move(name);
     manifest.order = order;
     manifest.load_after = std::move(after);
@@ -122,15 +122,15 @@ cmfm::plugins::Manifest plugin(std::string name, int order = 0, std::vector<std:
     return manifest;
 }
 
-std::vector<std::string> sequence(const std::vector<cmfm::plugins::Manifest>& plugins) {
+std::vector<std::string> sequence(const std::vector<al::plugins::Manifest>& plugins) {
     std::vector<std::string> names;
-    for (const auto i : cmfm::plugins::resolve_load_order(plugins).sequence) names.push_back(plugins[i].name);
+    for (const auto i : al::plugins::resolve_load_order(plugins).sequence) names.push_back(plugins[i].name);
     return names;
 }
 
 void versions() {
-    using cmfm::plugins::compare_versions;
-    using cmfm::plugins::parse_version;
+    using al::plugins::compare_versions;
+    using al::plugins::parse_version;
     using V = std::vector<std::uint32_t>;
     check(parse_version("0.14.0") == V{0, 14, 0} && parse_version("v1.2") == V{1, 2} &&
           parse_version("0.14.0-beta") == V{0, 14, 0} && parse_version("2+build 7") == V{2} &&
@@ -145,34 +145,34 @@ void versions() {
 void dependencies() {
     // A plugin built for API 1.0 ends before `dependencies`: still accepted.
     auto info = info_named("sample");
-    info.api_version = CMFM_MAKE_VERSION(1, 0);
+    info.api_version = AL_MAKE_VERSION(1, 0);
     info.size = 72;
-    const cmfm_dependency_t never_read[] = {{"invalid name!", nullptr}, {nullptr, nullptr}};
+    const al_dependency_t never_read[] = {{"invalid name!", nullptr}, {nullptr, nullptr}};
     info.dependencies = never_read;
-    cmfm::plugins::Manifest manifest;
+    al::plugins::Manifest manifest;
     std::string reason;
-    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.empty(),
+    check(al::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.empty(),
           "API 1.0 plugin accepted, dependencies not read");
 
     info = info_named("sample");
-    const cmfm_dependency_t needs[] = {{"provider", "0.2"}, {"other", nullptr}, {nullptr, nullptr}};
+    const al_dependency_t needs[] = {{"provider", "0.2"}, {"other", nullptr}, {nullptr, nullptr}};
     info.dependencies = needs;
-    check(cmfm::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.size() == 2 &&
+    check(al::plugins::read_manifest(&info, L"sample", kExe, manifest, reason) && manifest.dependencies.size() == 2 &&
           manifest.dependencies[0].name == "provider" && manifest.dependencies[0].min_version == "0.2" &&
           manifest.dependencies[1].min_version.empty(), "dependencies read");
-    const cmfm_dependency_t bad_name[] = {{"Bad Name", nullptr}, {nullptr, nullptr}};
+    const al_dependency_t bad_name[] = {{"Bad Name", nullptr}, {nullptr, nullptr}};
     info.dependencies = bad_name;
     check(contains(refusal(&info), "invalid name"), "dependency name checked");
-    const cmfm_dependency_t bad_version[] = {{"provider", "latest"}, {nullptr, nullptr}};
+    const al_dependency_t bad_version[] = {{"provider", "latest"}, {nullptr, nullptr}};
     info.dependencies = bad_version;
     check(contains(refusal(&info), "unreadable version \"latest\""), "dependency version checked");
-    std::vector<cmfm_dependency_t> endless(65, cmfm_dependency_t{"x", nullptr});
+    std::vector<al_dependency_t> endless(65, al_dependency_t{"x", nullptr});
     info.dependencies = endless.data();
     check(contains(refusal(&info), "dependency list has no end"), "unterminated dependency list");
 }
 
-cmfm::plugins::Manifest needing(std::string name, std::string version, std::vector<cmfm::plugins::Dependency> deps) {
-    cmfm::plugins::Manifest manifest;
+al::plugins::Manifest needing(std::string name, std::string version, std::vector<al::plugins::Dependency> deps) {
+    al::plugins::Manifest manifest;
     manifest.name = std::move(name);
     manifest.version = std::move(version);
     manifest.dependencies = std::move(deps);
@@ -180,8 +180,8 @@ cmfm::plugins::Manifest needing(std::string name, std::string version, std::vect
 }
 
 void dependency_checks() {
-    using cmfm::plugins::check_dependencies;
-    const std::vector<cmfm::plugins::Manifest> plugins{
+    using al::plugins::check_dependencies;
+    const std::vector<al::plugins::Manifest> plugins{
         needing("provider", "0.3.1", {}),
         needing("ok", "1", {{"provider", "0.3"}, {"ok", ""}}),
         needing("too_old", "1", {{"provider", "0.4"}}),
@@ -203,14 +203,14 @@ void dependency_checks() {
     check(refusals.size() == 5, "five refusals");
 
     // Dependencies also order the start: provider before ok, though ok sorts first.
-    const auto order = cmfm::plugins::resolve_load_order({needing("ok", "1", {{"zprovider", ""}}),
+    const auto order = al::plugins::resolve_load_order({needing("ok", "1", {{"zprovider", ""}}),
                                                           needing("zprovider", "1", {})});
     check(order.sequence == std::vector<std::size_t>{1, 0}, "dependency starts first");
 }
 
 void load_order() {
     using Names = std::vector<std::string>;
-    std::vector<cmfm::plugins::Manifest> plugins{
+    std::vector<al::plugins::Manifest> plugins{
         plugin("beta", 0, {"GAMMA"}), plugin("delta", 10, {}, {"beta"}), plugin("alpha"), plugin("gamma", 5)};
     check(sequence(plugins) == Names{"alpha", "gamma", "delta", "beta"}, "constraints before order numbers");
     std::sort(plugins.begin(), plugins.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
@@ -224,10 +224,10 @@ void load_order() {
     check(sequence({plugin("late", 1), plugin("early", -1), plugin("mid")}) == Names{"early", "mid", "late"},
           "order numbers, negative first");
 
-    const std::vector<cmfm::plugins::Manifest> cyclic{
+    const std::vector<al::plugins::Manifest> cyclic{
         plugin("x", 0, {"y"}), plugin("y", 0, {"x"}), plugin("z", 0, {"x"}), plugin("a", 0, {}, {"b"}),
         plugin("b", 0, {}, {"c"}), plugin("c", 0, {}, {"a"}), plugin("free")};
-    const auto result = cmfm::plugins::resolve_load_order(cyclic);
+    const auto result = al::plugins::resolve_load_order(cyclic);
     Names loaded;
     for (const auto i : result.sequence) loaded.push_back(cyclic[i].name);
     check(loaded == Names{"free", "z"}, "cycles refused, the rest still load");
@@ -239,7 +239,7 @@ void load_order() {
         }
     }
 
-    const auto duplicate = cmfm::plugins::resolve_load_order({plugin("same"), plugin("same", -5)});
+    const auto duplicate = al::plugins::resolve_load_order({plugin("same"), plugin("same", -5)});
     check(duplicate.sequence == std::vector<std::size_t>{0} && duplicate.refused.size() == 1 &&
           duplicate.refused[0].index == 1, "repeated name refused");
 }

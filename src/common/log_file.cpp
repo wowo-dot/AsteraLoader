@@ -4,7 +4,7 @@
 
 #include <windows.h>
 
-namespace cmfm {
+namespace al {
 
 std::string to_utf8(std::wstring_view text) {
     if (text.empty()) {
@@ -80,4 +80,4 @@ void LogFile::close() {
     good_ = false;
 }
 
-}  // namespace cmfm
+}  // namespace al

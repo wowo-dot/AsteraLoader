@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace cmfm {
+namespace al {
 
 class Handle {
 public:
@@ -56,4 +56,4 @@ inline bool regular_file(const std::wstring& path) {
     return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-}  // namespace cmfm
+}  // namespace al

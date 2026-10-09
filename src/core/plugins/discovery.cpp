@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace cmfm::plugins {
+namespace al::plugins {
 namespace {
 bool ends_with_dll(std::wstring_view name) {
     return name.size() > 4 && iequals(name.substr(name.size() - 4), L".dll");
@@ -59,4 +59,4 @@ Discovery discover(const std::wstring& root) {
     return result;
 }
 
-}  // namespace cmfm::plugins
+}  // namespace al::plugins

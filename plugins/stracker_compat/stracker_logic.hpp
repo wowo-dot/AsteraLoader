@@ -3,13 +3,13 @@
 // Pure logic of the Stracker's Loader replacement, kept out of the DLLs so it
 // can be unit-tested: loader-config.json and the order Stracker loads
 // nativePC\plugins in. The game-version pattern lives in
-// src/common/game_version.hpp, shared with CMFM's game-identity service.
+// src/common/game_version.hpp, shared with AL's game-identity service.
 
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace cmfm::stracker {
+namespace al::stracker {
 
 // Stracker's loader.dll levels: DEBUG 0, INFO 1, WARN 2, ERR 3.
 inline constexpr int kLevelError = 3;
@@ -40,4 +40,4 @@ struct DirectoryEntry {
 // still comes first.
 std::vector<std::wstring> plugin_files(std::vector<DirectoryEntry> entries);
 
-}  // namespace cmfm::stracker
+}  // namespace al::stracker

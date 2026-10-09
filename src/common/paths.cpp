@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace cmfm {
+namespace al {
 
 namespace {
 
@@ -93,4 +93,4 @@ std::wstring redact_profile(std::wstring_view path, std::wstring_view profile) {
     return L"%USERPROFILE%" + plain_path.substr(profile.size());
 }
 
-}  // namespace cmfm
+}  // namespace al

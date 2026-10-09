@@ -6,7 +6,7 @@
 #include <map>
 #include <utility>
 
-namespace cmfm::stracker {
+namespace al::stracker {
 namespace {
 enum class Kind { string, boolean, number, null, object, array };
 
@@ -255,4 +255,4 @@ std::vector<std::wstring> plugin_files(std::vector<DirectoryEntry> entries) {
     return files;
 }
 
-}  // namespace cmfm::stracker
+}  // namespace al::stracker

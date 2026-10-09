@@ -5,7 +5,7 @@
 #include <thread>
 
 int main() {
-    using namespace cmfm::startup;
+    using namespace al::startup;
     ProtectTrace trace;
     if (trace.claim() != ProtectTrace::ignored) return 1;
     trace.start();

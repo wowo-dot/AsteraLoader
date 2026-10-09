@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace cmfm::startup {
+namespace al::startup {
 // Bump when wrapper/common-main/cookie verification rules change.
 inline constexpr std::string_view kCrtCachePrefix = "startup crt-entry-1 ";
 std::uint32_t cached_crt_rva(std::string_view text) noexcept;

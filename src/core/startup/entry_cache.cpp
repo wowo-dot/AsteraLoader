@@ -6,7 +6,7 @@
 #include <charconv>
 #include <cstdio>
 
-namespace cmfm::startup {
+namespace al::startup {
 std::uint32_t cached_crt_rva(std::string_view text) noexcept {
     std::uint32_t result = 0;
     while (!text.empty()) {

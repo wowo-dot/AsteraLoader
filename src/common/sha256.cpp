@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace cmfm {
+namespace al {
 
 namespace {
 
@@ -153,4 +153,4 @@ std::wstring sha256_file(const std::wstring& path) {
     return ok ? Sha256::hex(sha.finish()) : std::wstring{};
 }
 
-}  // namespace cmfm
+}  // namespace al
