@@ -6,10 +6,20 @@
 // on, the call stack down to WinMain with each function's extent and first
 // bytes, how many frames ran, and how long before WinMain returned the last
 // one came. It changes nothing in the game: the detour only records.
+//
+// 0.2 looks for the "game exiting" site. hooks-mo2-1 showed frames stop
+// 1.5 s before WinMain returns, so it also records:
+// - every thread that ends (DllMain's DLL_THREAD_DETACH) with its start
+//   routine, so the report shows whether and when the game's main thread
+//   leaves its frame loop;
+// - the end of each frame, not just its start;
+// - the code of that thread's start routine and of Main:Update, as hex, to
+//   find the loop's exit condition offline.
 #include "cmfm/cmfm_plugin.h"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
@@ -41,6 +51,23 @@ USHORT g_first_count = 0;
 std::atomic<std::int64_t> g_first_qpc{0};
 std::atomic<std::int64_t> g_last_qpc{0};
 std::atomic<std::uint64_t> g_other_threads{0};
+std::atomic<std::int64_t> g_last_end_qpc{0};
+void* g_update_start = nullptr;  // the frame thread's start routine
+
+// NtQueryInformationThread, looked up at init so the probe imports only KERNEL32.
+using QueryThread = LONG(NTAPI*)(HANDLE, int, void*, ULONG, ULONG*);
+QueryThread g_query_thread = nullptr;
+constexpr int kThreadStartAddress = 9;  // ThreadQuerySetWin32StartAddress
+
+// The latest thread exits; written under the loader lock, so nothing but stores.
+struct Exit {
+    std::atomic<std::int64_t> qpc{0};  // stored last; 0 = slot never written
+    DWORD thread = 0;
+    void* start = nullptr;
+};
+constexpr unsigned kExits = 512;
+Exit g_exits[kExits];
+std::atomic<unsigned> g_exit_count{0};
 
 void say(cmfm_log_level_t level, const char* format, ...) {
     char text[2048];
@@ -72,20 +99,30 @@ std::uintptr_t rva(const void* address) {
     return static_cast<std::uintptr_t>(static_cast<const std::uint8_t*>(address) - g_image);
 }
 
+// "exe+0x.." or "module.dll+0x..".
+void where(const void* address, char* out, std::size_t size) {
+    if (in_exe(address)) {
+        std::snprintf(out, size, "exe+0x%llx", static_cast<unsigned long long>(rva(address)));
+        return;
+    }
+    HMODULE module = nullptr;
+    char name[MAX_PATH] = "?";
+    if (address && GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                      static_cast<LPCWSTR>(address), &module)) {
+        GetModuleFileNameA(module, name, MAX_PATH);
+    }
+    const char* file = std::strrchr(name, '\\');
+    std::snprintf(out, size, "%s+0x%llx", file ? file + 1 : name,
+                  static_cast<unsigned long long>(static_cast<const std::uint8_t*>(address) -
+                                                  reinterpret_cast<const std::uint8_t*>(module)));
+}
+
 // "rva=0x.. function=0x..-0x.. (+0x..) bytes=.." for an address in the exe.
 void describe(const char* label, const void* address) {
     if (!in_exe(address)) {
-        HMODULE module = nullptr;
-        char name[MAX_PATH] = "?";
-        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                               static_cast<LPCWSTR>(address), &module)) {
-            GetModuleFileNameA(module, name, MAX_PATH);
-        }
-        const char* file = std::strrchr(name, '\\');
-        say(CMFM_LOG_INFO, "%s %p outside the exe (%s+0x%llx)", label, address, file ? file + 1 : name,
-            module ? static_cast<unsigned long long>(static_cast<const std::uint8_t*>(address) -
-                                                     reinterpret_cast<const std::uint8_t*>(module))
-                   : 0ull);
+        char text[MAX_PATH + 32];
+        where(address, text, sizeof(text));
+        say(CMFM_LOG_INFO, "%s %p outside the exe (%s)", label, address, text);
         return;
     }
     DWORD64 image = 0;
@@ -103,6 +140,57 @@ void describe(const char* label, const void* address) {
     }
 }
 
+void* current_thread_start() {
+    void* start = nullptr;
+    if (g_query_thread) g_query_thread(GetCurrentThread(), kThreadStartAddress, &start, sizeof(start), nullptr);
+    return start;
+}
+
+// Follows chained unwind info (UNW_FLAG_CHAININFO) back to the function's
+// primary entry; a split function's cold parts point at it.
+const RUNTIME_FUNCTION* primary_entry(const RUNTIME_FUNCTION* entry) {
+    for (int guard = 0; entry && guard < 16; ++guard) {
+        const std::uint8_t* info = g_image + entry->UnwindData;
+        if (!((info[0] >> 3) & 0x4)) return entry;
+        const unsigned codes = (info[2] + 1u) & ~1u;  // CountOfCodes, padded to even
+        entry = reinterpret_cast<const RUNTIME_FUNCTION*>(info + 4 + 2 * codes);
+    }
+    return entry;
+}
+
+// Hex lines of exe code [begin, end), 32 bytes each, at most 0x600 bytes.
+void dump(const char* label, std::uint32_t begin, std::uint32_t end) {
+    end = (std::min)(end, begin + 0x600u);
+    say(CMFM_LOG_INFO, "%s code exe+0x%x-0x%x", label, begin, end);
+    for (std::uint32_t at = begin; at < end; at += 32) {
+        char hex[3 * 32 + 1] = {};
+        const auto count = (std::min)(32u, end - at);
+        for (std::uint32_t k = 0; k < count; ++k) std::snprintf(hex + 3 * k, 4, "%02X ", g_image[at + k]);
+        say(CMFM_LOG_INFO, "code %x: %s", at, hex);
+    }
+}
+
+// The function holding `address`: its unwind ranges and its code, once per function.
+void dump_function(const char* label, const void* address) {
+    static std::uint32_t dumped[8];
+    static unsigned dumped_count = 0;
+    if (!in_exe(address)) return describe(label, address);
+    DWORD64 image = 0;
+    const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(address), &image, nullptr);
+    if (!entry) return describe(label, address);
+    const auto* primary = primary_entry(entry);
+    say(CMFM_LOG_INFO, "%s at exe+0x%llx: fragment 0x%lx-0x%lx, primary 0x%lx-0x%lx", label,
+        static_cast<unsigned long long>(rva(address)), entry->BeginAddress, entry->EndAddress,
+        primary->BeginAddress, primary->EndAddress);
+    for (const auto* part : {primary, entry}) {
+        bool seen = false;
+        for (unsigned k = 0; k < dumped_count; ++k) seen = seen || dumped[k] == part->BeginAddress;
+        if (seen || dumped_count == 8) continue;
+        dumped[dumped_count++] = part->BeginAddress;
+        dump(label, part->BeginAddress, part->EndAddress);
+    }
+}
+
 // The record does not give Main:Update's signature (sMain arrives in rcx).
 // Passing on all four integer argument registers and the return value keeps
 // the detour transparent whatever the real arity is.
@@ -113,13 +201,45 @@ std::uintptr_t probe_update(void* main, void* a2, void* a3, void* a4) {
     const auto now = qpc();
     if (call == 0) {
         g_update_thread = GetCurrentThreadId();
+        g_update_start = current_thread_start();
         g_first_qpc.store(now, std::memory_order_relaxed);
         g_first_count = RtlCaptureStackBackTrace(0, 40, g_first_stack, nullptr);
     } else if (GetCurrentThreadId() != g_update_thread) {
         g_other_threads.fetch_add(1, std::memory_order_relaxed);
     }
     g_last_qpc.store(now, std::memory_order_relaxed);
-    return reinterpret_cast<UpdateFn>(g_next)(main, a2, a3, a4);
+    const auto result = reinterpret_cast<UpdateFn>(g_next)(main, a2, a3, a4);
+    g_last_end_qpc.store(qpc(), std::memory_order_relaxed);
+    return result;
+}
+
+// Thread exits from 3 s before the last frame on, oldest first, at most 80.
+void report_exits(std::int64_t shutdown) {
+    const auto total = g_exit_count.load();
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    const auto since = g_last_qpc.load() - 3 * frequency.QuadPart;
+    unsigned listed = 0, first = total > kExits ? total - kExits : 0;
+    std::int64_t frame_thread_exit = 0;
+    for (unsigned k = first; k < total; ++k) {
+        const auto& slot = g_exits[k % kExits];
+        const auto at = slot.qpc.load(std::memory_order_acquire);
+        if (slot.thread == g_update_thread && at) frame_thread_exit = at;
+        if (!at || at < since) continue;
+        if (++listed > 80) continue;
+        char start[MAX_PATH + 32];
+        where(slot.start, start, sizeof(start));
+        say(CMFM_LOG_INFO, "thread exit %+.1f ms from SHUTDOWN: thread %lu start %s%s", -ms_between(at, shutdown),
+            slot.thread, start, slot.thread == g_update_thread ? "  <- the frame thread" : "");
+    }
+    say(CMFM_LOG_INFO, "thread exits: %u in total, %u in the window (%u listed)", total, listed,
+        listed > 80 ? 80u : listed);
+    if (frame_thread_exit) {
+        say(CMFM_LOG_INFO, "frame thread %lu ended %.1f ms after its last frame ended, %.1f ms before SHUTDOWN",
+            g_update_thread, ms_between(g_last_end_qpc.load(), frame_thread_exit), ms_between(frame_thread_exit, shutdown));
+    } else {
+        say(CMFM_LOG_INFO, "frame thread %lu had not ended by SHUTDOWN", g_update_thread);
+    }
 }
 
 void find_and_hook() {
@@ -146,14 +266,20 @@ void report() {
     if (g_hooks && g_handle) say(CMFM_LOG_INFO, "hook state %u", g_hooks->state(g_self, g_handle));
     const auto now = qpc();
     if (g_calls.load()) {
-        say(CMFM_LOG_INFO, "frames ran for %.1f s; the last one %.1f ms before SHUTDOWN",
-            ms_between(g_first_qpc.load(), g_last_qpc.load()) / 1000.0, ms_between(g_last_qpc.load(), now));
+        say(CMFM_LOG_INFO, "frames ran for %.1f s; the last one started %.1f ms and ended %.1f ms before SHUTDOWN",
+            ms_between(g_first_qpc.load(), g_last_qpc.load()) / 1000.0, ms_between(g_last_qpc.load(), now),
+            ms_between(g_last_end_qpc.load(), now));
     }
+    report_exits(now);
     for (USHORT k = 0; k < g_first_count; ++k) {
         char label[32];
         std::snprintf(label, sizeof(label), "stack[%u]", k);
         describe(label, g_first_stack[k]);
     }
+    describe("frame thread start routine", g_update_start);
+    dump_function("start routine", g_update_start);
+    if (g_first_count > 1) dump_function("frame loop", g_first_stack[1]);
+    dump_function("Main:Update", g_update);
 }
 
 void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
@@ -168,11 +294,22 @@ void CMFM_CALL on_phase(cmfm_plugin_t*, cmfm_phase_t phase, const void*) {
 }
 
 const cmfm_plugin_info_t kInfo = {
-    sizeof(cmfm_plugin_info_t), CMFM_API_VERSION, "site_probe", "CMFM site probe (diagnostic)", "0.1.0",
+    sizeof(cmfm_plugin_info_t), CMFM_API_VERSION, "site_probe", "CMFM site probe (diagnostic)", "0.2.0",
     CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_WIN_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN),
     0, nullptr, nullptr, nullptr, on_phase, nullptr,
 };
 }  // namespace
+
+// Records each thread that ends. The loader lock is held here: only stores.
+extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+    if (reason == DLL_THREAD_DETACH) {
+        auto& slot = g_exits[g_exit_count.fetch_add(1, std::memory_order_relaxed) % kExits];
+        slot.thread = GetCurrentThreadId();
+        slot.start = current_thread_start();
+        slot.qpc.store(qpc(), std::memory_order_release);
+    }
+    return TRUE;
+}
 
 extern "C" CMFM_PLUGIN_EXPORT const cmfm_plugin_info_t* CMFM_CALL cmfm_plugin_info(void) {
     return &kInfo;
@@ -182,6 +319,8 @@ extern "C" CMFM_PLUGIN_EXPORT cmfm_result_t CMFM_CALL cmfm_plugin_init(const cmf
     g_api = api;
     g_self = init->self;
     g_image = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
+    g_query_thread = reinterpret_cast<QueryThread>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
     g_scanner = static_cast<const cmfm_scanner_t*>(
         api->get_interface(init->self, CMFM_SCANNER_INTERFACE, CMFM_SCANNER_VERSION));
     g_hooks = static_cast<const cmfm_hooks_t*>(api->get_interface(init->self, CMFM_HOOKS_INTERFACE, CMFM_HOOKS_VERSION));
