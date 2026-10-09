@@ -9,9 +9,11 @@ Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
                             local/stage/<version>-<commit>[-dirty] and
                             local/stage/examples-<commit>[-dirty]; print hashes and
                             check that the DLLs import only KERNEL32
-  install-mo2 RUN           back up the installed CMFM and example mods into
+  install-mo2 RUN [--stage COMMIT]
+                            back up the installed CMFM and example mods into
                             local/runs/RUN/installed-backup, install the staged
-                            build, write RUN/manifest.json and RUN/logs-before.txt
+                            build (HEAD's, or an earlier COMMIT's), write
+                            RUN/manifest.json and RUN/logs-before.txt
   baseline RUN              write RUN/manifest.json for a run without CMFM, started
                             from MO2's plain game entry; installs nothing
   watch RUN [--launch N]    run tools/modwatch.py (read-only) into RUN or RUN/launch-N
@@ -127,8 +129,8 @@ def game_running() -> bool:
     return "MonsterHunterWorld.exe" in output
 
 
-def stage_dirs() -> tuple[Path, Path]:
-    label = commit_label()
+def stage_dirs(label: str | None = None) -> tuple[Path, Path]:
+    label = label or commit_label()
     return LOCAL / "stage" / f"{project_version()}-{label}", LOCAL / "stage" / f"examples-{label}"
 
 
@@ -218,9 +220,10 @@ def install_mo2(args: argparse.Namespace) -> None:
     config = settings()
     if game_running():
         fail("the game is running; close it first")
-    package, examples = stage_dirs()
+    label = args.stage or commit_label()
+    package, examples = stage_dirs(label)
     if not package.exists() or not examples.exists():
-        fail(f"nothing staged for {commit_label()}; run 'stage' first")
+        fail(f"nothing staged for {label}; run 'stage' first")
     run_folder = LOCAL / "runs" / args.run
     if (run_folder / "installed-backup").exists():
         fail(f"{run_folder} already has an installed-backup; pick a new run name")
@@ -244,7 +247,7 @@ def install_mo2(args: argparse.Namespace) -> None:
             shutil.copy2(path, target)
             installed[f"{mod.name}/{path.relative_to(source).as_posix()}"] = sha256(target)
         (mod / "meta.ini").write_text(f"[General]\r\nversion={project_version()}\r\ncomments=CMFM local dev build "
-                                      f"{commit_label()}, installed by tools/dev.py for run {args.run}\r\n",
+                                      f"{label}, installed by tools/dev.py for run {args.run}\r\n",
                                       encoding="utf-8", newline="")
         for extra in sorted(extras):
             print(f"note: {mod.name}/{extra.as_posix()} is installed but not part of this build")
@@ -260,7 +263,7 @@ def install_mo2(args: argparse.Namespace) -> None:
     manifest = {
         "run": args.run,
         "date": datetime.date.today().isoformat(),
-        "source_commit": commit_label(),
+        "source_commit": label,
         "cmfm_version": project_version(),
         "exe_sha256": sha256(Path(config["game_exe"])),
         "installed": installed,
@@ -274,7 +277,7 @@ def install_mo2(args: argparse.Namespace) -> None:
     }
     (run_folder / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
                                               encoding="utf-8")
-    print(f"\ninstalled {commit_label()} for run {args.run}; profile {profile}, "
+    print(f"\ninstalled {label} for run {args.run}; profile {profile}, "
           f"{len(manifest['mo2_enabled_mods'])} mods enabled, force-load {manifest['force_load']}")
     print(f"backup and manifest: {run_folder.relative_to(ROOT)}")
 
@@ -405,6 +408,7 @@ def main() -> None:
         commands.add_parser(name).set_defaults(function=function)
     install = commands.add_parser("install-mo2")
     install.add_argument("run")
+    install.add_argument("--stage", metavar="COMMIT", help="install local/stage/*-COMMIT instead of HEAD's build")
     install.set_defaults(function=install_mo2)
     plain = commands.add_parser("baseline")
     plain.add_argument("run")
