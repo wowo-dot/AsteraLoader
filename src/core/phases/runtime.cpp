@@ -2,6 +2,7 @@
 #include "core/phases/imports.hpp"
 #include "core/phases/sites.hpp"
 #include "core/phases/debug_slot.hpp"
+#include "core/graphics/installer.hpp"
 #include "common/memory.hpp"
 #include "common/windows.hpp"
 #include <windows.h>
@@ -50,6 +51,7 @@ struct State {
     plugins::Host* host{};
     Log log{};
     Warning warning{};
+    graphics::NativeInstaller* graphics{};
     Image image;
     WinMain win_original{};
     std::atomic<bool> win_entered{false}, stopped{false}, device_done{false};
@@ -113,6 +115,7 @@ void dispatch(cmfm_phase_t phase, std::wstring_view name, const void* data) noex
         const auto begin = ticks();
         log(L"phase_" + std::wstring(name) + L"_enter thread_id=" + std::to_wstring(GetCurrentThreadId()));
         g->host->dispatch(phase, data);
+        if (phase == CMFM_PHASE_SHUTDOWN && g->graphics) g->graphics->report(g->host->graphics());
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency);
         if (frequency.QuadPart) log(L"phase_" + std::wstring(name) + L"_complete elapsed_us=" +
             std::to_wstring((ticks()-begin)*1000000/frequency.QuadPart));
@@ -429,6 +432,18 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
     if (g) return;
     try {
         g=new State; g->host=&host; g->log=logger; g->warning=warning;
+        if (!host.graphics().chains().empty()) {
+            const auto widen = [](std::string_view text) {
+                const auto count = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+                std::wstring result(static_cast<std::size_t>(count), L'\0');
+                if (count) MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), count);
+                return result;
+            };
+            g->graphics = new graphics::NativeInstaller(
+                [widen](std::string_view text) { log(widen(text)); },
+                [widen](std::string_view text) { if (g->warning) g->warning(L"CMFM graphics are unavailable: " + widen(text)); });
+            host.graphics().set_installer(g->graphics);
+        }
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency); g->qpc_frequency=frequency.QuadPart;
         g->image=image_of(crt_wrapper);
         std::string reason;

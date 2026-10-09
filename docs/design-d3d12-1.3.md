@@ -1,11 +1,12 @@
 # Design: "cmfm.d3d12", graphics coordination (API 1.3)
 
-Status 2026-10-09: the plugin API, the core side and CMFM's event layer are
-implemented and tested outside the game (`d3d12_hub`, `example_hello`). The
-hook layer that puts the hooks on DXGI/D3D12 methods is not written yet (the
-user's part, spec below). Until it exists, a plugin that registers gets
-`status()` UNAVAILABLE, "this CMFM build cannot hook Direct3D 12 methods yet",
-and SWAPCHAIN_CREATED / FIRST_PRESENT do not fire. Roadmap item 11.
+Status 2026-10-09: the plugin API, hub, event layer and native hook installer
+are implemented and tested outside the game. The real WARP stand-in runs
+through the production launcher and core, installs all five families, fires
+SWAPCHAIN_CREATED / FIRST_PRESENT and verifies Present and resize ordering.
+All 37 CTest cases pass; `cmfm.dll` imports only KERNEL32. Graphics hooks in
+MHW, and coexistence with the actual DLSS mod / SPL / overlay, remain
+unverified. See `handoff-graphics-installer-20261009.md` before a game run.
 
 ## What the DLSS mod actually does
 
@@ -126,9 +127,35 @@ Phases SWAPCHAIN_CREATED and FIRST_PRESENT fire with
   - `example_hello`: the same through the host and a real plugin DLL.
 - `cmfm.dll` still imports only KERNEL32: the DXGI headers add no import.
 
-## The hook layer (the user's part)
+## The hook layer (implemented)
 
-Implement `cmfm::graphics::Installer` (`hub.hpp`) and hand it to the hub
+`src/core/graphics/installer.{hpp,cpp}` implements the contract below.
+`interface_limits.cpp` derives bounds from SDK C vtable sizes and selects
+the oldest interface that contains each requested slot. The installer
+queries that interface, checks executable native image sections and the
+System32 file identity, and retains target modules until exit. Temporary
+objects are created inside an internal-call region and released afterwards.
+
+All targets and pointer-storage locations are checked before creating
+disabled MinHook hooks. Every layer is linked before queued activation;
+unpublished entries forward only to their original. An error restores the
+old `next` values and disables that family's new hooks. Hook records and
+trampolines stay pinned so partial activation cannot leave dangling entries.
+If a later family fails, already-installed entries also bypass CMFM layers.
+
+The entry bridge preserves flags, volatile integer registers and XMM0-5
+around a nonthrowing selector, restores the original caller's stack, then
+tail-jumps using R11. The selector reads TLS and publication flags; it
+allocates nothing and takes no lock. Existing jump patches are logged,
+including bounded relay resolution to the owning DLL, and remain in the
+original/trampoline path.
+
+`phases::arm` registers the installer only for a nonempty registry. The hub
+serializes first installation and calls `Installer::report` after recording
+the result; the phase runtime reports again after SHUTDOWN. No C plugin ABI
+or standalone DLSS code changed.
+
+The installer implements `cmfm::graphics::Installer` (`hub.hpp`) and is handed to the hub
 in `phases::arm`, after PRE_MAIN:
 
 ```cpp
@@ -187,12 +214,12 @@ What `install` must do:
 6. **Log the hub's `summary()` lines** to the core log after each install
    and at SHUTDOWN.
 
-Test plan for the hook layer, in the fake game:
+Verification for the hook layer, in the fake game:
 
 - the game creates a WARP device and a flip-model swap chain on a hidden
   window, presents a few frames, and resizes once;
-- a probe plugin subscribes to every event and detours Present and
-  ExecuteCommandLists;
+- a probe plugin subscribes to every event and detours ExecuteCommandLists;
+  Present detours belong to the presentation owner, as the API requires;
 - a DLSS stand-in holds the presentation role. Its Present detour calls
   native Present again inside `begin_internal`/`end_internal`, as
   Streamline does;
@@ -203,7 +230,20 @@ Test plan for the hook layer, in the fake game:
   - a second plugin's detour on the same method runs in order;
   - `cmfm.dll` still imports only KERNEL32.
 
-The real DLSS mod and SPL in MHW stay unverified until a game run.
+`graphics_native_chains` executes this plan with four presents (Present and
+Present1), ResizeBuffers and eight-argument ResizeBuffers1, two ordered
+queue layers, device and command-list detours, and a pre-existing Signal
+hook in the stand-in's separate MinHook instance. It verifies summaries
+after installation and shutdown. Native DXGI's own queue signals can still
+reach the external patch inside an internal region, while CMFM layers do
+not run twice.
+
+`graphics_installer` checks mixed floating-point / integer / eight-argument
+and variadic bridge calls, SDK slot bounds, unsupported interfaces,
+non-native targets, duplicate targets / storage, read-only storage,
+rollback after a second MinHook creation fails, internal nesting, and
+original-only forwarding after a later-family failure. The real DLSS mod,
+SPL and Steam overlay in MHW stay unverified until a game run.
 
 ## What the DLSS mod would change to use it
 

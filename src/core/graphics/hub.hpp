@@ -48,6 +48,7 @@ struct Chain {
 // layer's next: each layer continues with the following one, the last with
 // the original. Its entry goes straight to the original while internal() is
 // true for the calling thread.
+class Hub;
 class Installer {
 public:
     virtual ~Installer() = default;
@@ -57,6 +58,9 @@ public:
     // makes an object of that family. Returns "" or why it could not; then
     // no layer's next may have been written.
     virtual std::string install(std::uint32_t family, void* object, const std::vector<const Chain*>& chains) = 0;
+    // Called after the hub has recorded an installation's result. No plugin
+    // ABI is involved; pure-logic stand-ins need not produce diagnostics.
+    virtual void report(const Hub&) noexcept {}
 };
 
 // Calls of the game's present thread, as CMFM's layer sees them.
@@ -128,6 +132,7 @@ private:
     bool is_present_thread();
 
     mutable std::mutex mutex_;  // registration and status strings
+    std::mutex install_mutex_;  // serialize first installation from concurrent creation calls
     std::atomic<bool> closed_{false};
     std::vector<std::unique_ptr<Subscription>> subscriptions_;
     std::vector<Layer> pending_;  // plugin detours with their methods, until close
@@ -141,7 +146,7 @@ private:
     std::uint32_t phase_mask_ = 0;
     Installer* installer_ = nullptr;
     std::function<void(cmfm_phase_t, const void*)> dispatch_phase_;
-    std::array<bool, 8> installed_{};  // per family
+    std::array<std::atomic<bool>, 8> installed_{};  // per family, also read by summary
 
     std::atomic<cmfm_d3d12_state_t> state_{CMFM_D3D12_WAITING};
     std::string reason_;  // set once, with state_ UNAVAILABLE

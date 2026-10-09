@@ -264,6 +264,7 @@ void Hub::set_unavailable(std::string reason) {
 }
 
 void Hub::install(std::uint32_t family, void* object) {
+    std::lock_guard install_lock(install_mutex_);
     if (family >= kFamilyCount || installed_[family] || state_ == CMFM_D3D12_UNAVAILABLE || !object) return;
     std::vector<const Chain*> list;
     for (const auto& chain : chains_) {
@@ -277,11 +278,13 @@ void Hub::install(std::uint32_t family, void* object) {
     const auto problem = installer_->install(family, object, list);
     if (!problem.empty()) {
         set_unavailable(std::string("cannot hook ") + family_name(family) + " methods: " + problem);
+        installer_->report(*this);
         return;
     }
     installed_[family] = true;
     auto expected = CMFM_D3D12_WAITING;
     state_.compare_exchange_strong(expected, CMFM_D3D12_RUNNING);
+    installer_->report(*this);
 }
 
 void Hub::device_created(void* device) {

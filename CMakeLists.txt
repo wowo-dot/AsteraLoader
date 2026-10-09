@@ -112,6 +112,9 @@ target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMF
 target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
 
 add_library(cmfm_startup STATIC
+    src/core/graphics/installer.cpp
+    src/core/graphics/installer.hpp
+    src/core/graphics/interface_limits.cpp
     src/core/phases/imports.cpp
     src/core/phases/sites.cpp
     src/core/phases/runtime.cpp
@@ -241,6 +244,12 @@ add_executable(cmfm_d3d12_hub_tests tests/test_d3d12_hub.cpp)
 target_link_libraries(cmfm_d3d12_hub_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_d3d12_hub_tests)
 add_test(NAME d3d12_hub COMMAND cmfm_d3d12_hub_tests)
+
+add_executable(cmfm_graphics_installer_tests tests/test_graphics_installer.cpp)
+target_link_libraries(cmfm_graphics_installer_tests PRIVATE cmfm_startup cmfm_minhook d3d12 dxgi)
+cmfm_project_target(cmfm_graphics_installer_tests)
+add_test(NAME graphics_installer COMMAND cmfm_graphics_installer_tests)
+set_tests_properties(graphics_installer PROPERTIES TIMEOUT 30)
 
 add_executable(cmfm_services_tests tests/test_services.cpp)
 target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
@@ -393,6 +402,29 @@ add_test(NAME remaining_phases_setup_thread
     "-DDEVICE_THREAD=1" "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_setup_thread"
     -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
 set_tests_properties(remaining_phases_setup_thread PROPERTIES TIMEOUT 45)
+
+add_executable(fake_graphics_game WIN32 tests/fake_graphics_game.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_graphics_game PRIVATE cmfm_common d3d12 dxgi delayimp user32)
+target_compile_definitions(fake_graphics_game PRIVATE CMFM_FAKE_PHASES)
+target_link_options(fake_graphics_game PRIVATE /ENTRY:cmfm_test_packed_entry /DELAYLOAD:d3d12.dll)
+cmfm_project_target(fake_graphics_game)
+set_target_properties(fake_graphics_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_graphics_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_graphics_game/$<CONFIG>")
+foreach(role IN ITEMS owner probe)
+    add_library(cmfm_graphics_${role} SHARED tests/graphics_plugin.cpp)
+    target_link_libraries(cmfm_graphics_${role} PRIVATE cmfm_api cmfm_minhook d3d12 dxgi)
+    cmfm_project_target(cmfm_graphics_${role})
+    set_target_properties(cmfm_graphics_${role} PROPERTIES OUTPUT_NAME graphics_${role}
+        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+endforeach()
+target_compile_definitions(cmfm_graphics_owner PRIVATE GRAPHICS_OWNER)
+add_test(NAME graphics_native_chains COMMAND "${CMAKE_COMMAND}"
+    "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>" "-DCORE=$<TARGET_FILE:cmfm>"
+    "-DFAKE_GAME=$<TARGET_FILE:fake_graphics_game>" "-DOWNER=$<TARGET_FILE:cmfm_graphics_owner>"
+    "-DPROBE=$<TARGET_FILE:cmfm_graphics_probe>" "-DWORK=${CMAKE_BINARY_DIR}/graphics_native_chains"
+    -P "${CMAKE_SOURCE_DIR}/tests/graphics.cmake")
+set_tests_properties(graphics_native_chains PROPERTIES TIMEOUT 45)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.

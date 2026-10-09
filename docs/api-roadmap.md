@@ -65,8 +65,9 @@ In this order; the first four are small.
    FIRST_PRESENT, GAME_READY, and a shutdown notice so plugins can save.
    Status 2026-10-09: WIN_MAIN, DEVICE_CREATED and SHUTDOWN done and
    confirmed in the game (phases-mo2-1, phases-timing-1/2, tag
-   v0.1.0-dev.9). SWAPCHAIN_CREATED and FIRST_PRESENT wait for graphics
-   coordination (11); GAME_READY needs a game-side signal.
+    v0.1.0-dev.9). SWAPCHAIN_CREATED and FIRST_PRESENT are implemented with
+    graphics coordination (11) and tested on WARP, pending a game run;
+    GAME_READY needs a game-side signal.
 9. **Per-save plugin data** (SKSE's co-save): each plugin stores its own
    data per save slot, kept in step with saving, loading and deleting.
    Needs hooks into MHW's save and load. Moved up because it is what made
@@ -81,8 +82,9 @@ In this order; the first four are small.
     ordered Present and resize callbacks, the presentation-owner role,
     device, queue and swap-chain access.
     Status 2026-10-09: API 1.3 "cmfm.d3d12" designed and implemented on
-    the core side, tested outside the game (design-d3d12-1.3.md). The hook
-    layer (user) is next; nothing is hooked in the game yet.
+    the core side and native hook layer, tested outside the game on real
+    WARP/DXGI objects (design-d3d12-1.3.md). DLSS detour migration and a
+    game run are next; the installed game build has not been replaced.
 12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.
