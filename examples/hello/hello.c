@@ -94,6 +94,11 @@ static void AL_CALL on_phase(al_plugin_t* self, al_phase_t phase, const void* da
         if (present->size < sizeof(*present)) return;
         say(AL_LOG_INFO, "first present: frame %llu, back buffer %u, sync interval %u",
             (unsigned long long)present->frame, present->back_buffer, present->sync_interval);
+    } else if (phase == AL_PHASE_GAME_READY && data) {
+        const al_phase_game_ready_t* ready = (const al_phase_game_ready_t*)data;
+        if (ready->size < sizeof(*ready)) return;
+        say(AL_LOG_INFO, "game ready (%s), at the end of frame %llu",
+            ready->source == AL_GAME_READY_TITLE ? "title screen" : "other", (unsigned long long)ready->frame);
     } else if (phase == AL_PHASE_SHUTDOWN && data) {
         const al_phase_shutdown_t* shutdown = (const al_phase_shutdown_t*)data;
         if (shutdown->size < sizeof(*shutdown)) return;
@@ -125,10 +130,10 @@ static const al_plugin_info_t info = {
     AL_API_VERSION,
     "hello",      /* name: also the folder and DLL name */
     "Astera Loader Hello", /* display name */
-    "0.4.0",      /* this plugin's version */
+    "0.5.0",      /* this plugin's version */
     AL_PHASE_BIT(AL_PHASE_PRE_MAIN) | AL_PHASE_BIT(AL_PHASE_WIN_MAIN) |
         AL_PHASE_BIT(AL_PHASE_DEVICE_CREATED) | AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED) |
-        AL_PHASE_BIT(AL_PHASE_FIRST_PRESENT) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
+        AL_PHASE_BIT(AL_PHASE_FIRST_PRESENT) | AL_PHASE_BIT(AL_PHASE_GAME_READY) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
     0,    /* order */
     NULL, /* load_after */
     NULL, /* load_before */

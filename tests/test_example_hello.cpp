@@ -99,7 +99,7 @@ int wmain(int argc, wchar_t** argv) {
     host.load_all({(work / L"plugins").wstring(), (work / L"logs").wstring(), L""});
     const auto report = host.report();
     const bool loaded = report.size() == 1 && report[0].name == L"hello" && report[0].initialised &&
-                        report[0].status == AL_STATUS_ACTIVE && report[0].version == "0.4.0" &&
+                        report[0].status == AL_STATUS_ACTIVE && report[0].version == "0.5.0" &&
                         report[0].display_name == "Astera Loader Hello";
     host.dispatch(AL_PHASE_PRE_MAIN, nullptr);  // closes al.d3d12 registration
 
@@ -128,6 +128,8 @@ int wmain(int argc, wchar_t** argv) {
         for (int k = 0; k < 3; ++k) present(reinterpret_cast<IDXGISwapChain*>(created), 1, 0);
         resize(reinterpret_cast<IDXGISwapChain*>(created), 0, 1920, 1080, DXGI_FORMAT_UNKNOWN, 0);
     }
+    const al_phase_game_ready_t ready{sizeof(ready), AL_GAME_READY_TITLE, 42};
+    const bool ready_once = host.raise_game_ready(ready) && !host.raise_game_ready(ready);
     const al_phase_shutdown_t shutdown{sizeof(shutdown), 7};
     host.dispatch(AL_PHASE_SHUTDOWN, &shutdown);
 
@@ -136,7 +138,7 @@ int wmain(int argc, wchar_t** argv) {
     log << file.rdbuf();
     const auto text = log.str();
     bool logged = true;
-    for (const auto part : {" INFO hello 0.4.0 initialised on thread ", "(Astera Loader API 1.7)",
+    for (const auto part : {" INFO hello 0.5.0 initialised on thread ", "(Astera Loader API 1.7)",
                             " INFO folder as the game sees it: ", " INFO folder resolved through a file handle: ",
                             " INFO this DLL: ", " INFO data folder: ",
                             " INFO game version unknown, exe SHA-256 unknown..., graphics ",
@@ -151,6 +153,7 @@ int wmain(int argc, wchar_t** argv) {
                             " INFO phase 3 on thread ", " INFO swap chain 1280x720, format 28, 2 buffers, queue given",
                             " INFO phase 4 on thread ", " INFO first present: frame 0, back buffer 1, sync interval 1",
                             " INFO resized to 1920x1080, result 0x00000000",
+                            " INFO phase 5 on thread ", " INFO game ready (title screen), at the end of frame 42",
                             " INFO phase 6 on thread ", " INFO WinMain returned 7",
                             " INFO presents counted 3; al.d3d12 counted 3, state 1"}) {
         if (text.find(part) == std::string::npos) {
@@ -160,7 +163,8 @@ int wmain(int argc, wchar_t** argv) {
     }
     if (!loaded) std::cerr << "hello was not loaded and initialised as expected\n";
     if (!chained) std::cerr << "the hub built no creation, present or resize chain\n";
-    if (!loaded || !logged || !chained) {
+    if (!ready_once) std::cerr << "GAME_READY was not dispatched exactly once\n";
+    if (!loaded || !logged || !chained || !ready_once) {
         std::cerr << text;
         for (const auto& line : hub.summary()) std::cerr << line << '\n';
         return 1;

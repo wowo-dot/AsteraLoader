@@ -1,6 +1,6 @@
 # Writing an Astera Loader plugin
 
-For plugin API 1.6. The header `include/al/al_plugin.h` is the reference;
+For plugin API 1.7. The header `include/al/al_plugin.h` is the reference;
 this guide explains how its parts fit together. The smallest working plugin
 is `examples/hello/hello.c`.
 
@@ -129,7 +129,7 @@ reading a field a later version added.
 | DEVICE_CREATED | The game's own `D3D12CreateDevice` returned, before the game uses the device. Not under DirectX 11. | the game's render setup thread | `al_phase_device_t` |
 | SWAPCHAIN_CREATED | The game created its first swap chain. | the creating thread | `al_d3d12_swapchain_t` |
 | FIRST_PRESENT | The game's first Present, before PRE_PRESENT callbacks. | the present thread | `al_d3d12_present_t` |
-| GAME_READY | Reserved; does not fire yet. | | |
+| GAME_READY | 1.7: the game finished booting and its title screen started; the game's data and systems are set up. Once, at the end of that frame, after al.frame END. Not on executables AL does not know. | the game's frame thread | `al_phase_game_ready_t` |
 | EXITING | The game started its own quit (Exit Game, or a window close), before it tears anything down. **Stop your threads here.** | usually the WinMain thread | none |
 | SHUTDOWN | WinMain returned, before the C runtime tears down. Last chance to save. | main | `al_phase_shutdown_t` |
 
@@ -390,6 +390,6 @@ A plugin can publish its own service for other plugins with
 
 ## Coming next
 
-- **GAME_READY:** a phase for when the game has finished loading.
-
-The full plan is in `api-roadmap.md`.
+API 1.x is what v1 ships. After v1: game events (quests, areas, loading
+screens) in a separate MHW SDK, and CMFM, the settings menu. The full plan
+is in `api-roadmap.md`.

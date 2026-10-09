@@ -21,6 +21,7 @@ menu: CMFM is a separate track, the first large plugin built on AL.
 | — | rename to Astera Loader | astera-mo2-1 (dev.13), asteraloader-mo2-1 |
 | 1.5 | "al.frame" and AL_PHASE_EXITING | frame-input-1 (dev.15) |
 | 1.6 | "al.input": hotkeys, key and pad state, window messages, capture | input-check-3 (dev.16) |
+| 1.7 | AL_PHASE_GAME_READY: the title screen started | tested outside the game; the run is next (design-game-ready-1.7.md) |
 
 The DLSS mod 0.15.0 runs on 1.3 and 1.4 with frame generation on.
 
@@ -33,8 +34,8 @@ hooks included (the user's call, 2026-10-09); the user runs the game.
 2. ~~**Input**~~ (item 12 below): done (input-check-3, dev.16). Capture
    works at the game's own keyboard, mouse and pad functions
    (design-input-1.6.md), which the Steam overlay does not wrap.
-3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
-   found by reversing.
+3. **GAME_READY** (item 8): when the title screen starts (aTitle's start,
+   found by reversing; design-game-ready-1.7.md). Built; one run.
 4. **Release:** freeze ABI 1.x (reviewed for 1.5: `abi-freeze-review.md`),
    a plugin author guide (drafted for 1.5: `plugin-guide.md`; add input when
    1.6 lands), one archive, a clean-machine install test (both in

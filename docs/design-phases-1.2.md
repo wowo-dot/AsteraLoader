@@ -17,7 +17,7 @@ the standalone DLSS mod's complete game-function hash.
 | DEVICE_CREATED | 1.2 | the game's own `D3D12CreateDevice` call returned a device, before the game uses it | `al_phase_device_t` |
 | SWAPCHAIN_CREATED | Stage 3 | (reserved) | |
 | FIRST_PRESENT | Stage 3 | (reserved) | |
-| GAME_READY | later | (reserved; no game-side signal known) | |
+| GAME_READY | 1.7 | the title screen started (design-game-ready-1.7.md) | `al_phase_game_ready_t` |
 | SHUTDOWN | 1.2 | the game's WinMain returned, before CRT teardown; objects local to WinMain may already be destroyed | `al_phase_shutdown_t` |
 
 The swap-chain and present phases wait for the graphics hub (Stage 3). The

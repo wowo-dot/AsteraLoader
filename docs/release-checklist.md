@@ -66,6 +66,13 @@ LICENSE
    Decided: v1 ships unsigned, signing through SignPath Foundation comes
    later (decisions.md item 12). Uploading builds to an antivirus vendor
    for review is the user's call.
+   **Seen 2026-10-10: a blocker.** Windows Defender flagged the launcher as
+   `Behavior:Win32/DefenseEvasion.A!ml` (severe) while it ran, killed it a
+   second after it resumed the game, and quarantined it (input-check-3);
+   fresh builds in the build folder too. The user's machine now has folder
+   exclusions for the repository and the MO2 dev mod. Players with
+   Defender's defaults would lose the launcher. To decide: a false-positive
+   report to Microsoft, signing earlier, or another way to load the DLL.
 
 ## Install instructions to verify
 
