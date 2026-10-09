@@ -35,7 +35,30 @@ settles the open questions below first.
   menu is open. Better Input Detection patches the game's own input code
   (it imports only `VirtualProtect`).
 
+## Found in frame-input-1 (input_probe 0.1.0)
+
+- **Keyboard and mouse do not come from the game window's messages.**
+  Keeping 29 keyboard messages from the game for 4.5 s changed nothing in
+  play.
+- **They come through DirectInput 8's raw-input path.** The process
+  registers raw input for the mouse (usage page 1, usage 2) and the
+  keyboard (usage 6) with `RIDEV_INPUTSINK`, aimed at a hidden window, not
+  the game window ("MT FRAMEWORK"). That is how DirectInput 8 reads
+  devices on current Windows. Capture must block at DirectInput (or at the
+  game's own input objects), not at the game window.
+- **The game window still gets what ImGui needs:** mouse moves (9922),
+  clicks, `WM_CHAR` (43) and `WM_SETCURSOR`. Its procedure is in the exe and
+  runs on the WinMain thread, so subclassing it serves CMFM's widgets and
+  close detection.
+- **Exit Game:** `WM_CLOSE`, then the window is destroyed, then EXITING
+  from the exit site about 150 ms later.
+- F10 never toggled: it is a system key (`WM_SYSKEYDOWN`). A probe bug.
+
 ## Open questions (one probe run)
+
+Questions 1 and 3 are answered above (DirectInput; raw input through
+DirectInput's own window). Still open: 2 (devices and methods), 4 (pads)
+and 5 (Alt+F4).
 
 1. Where `sMhKeyboard`'s maps come from: DirectInput's keyboard device
    (`GetDeviceState` / `GetDeviceData`), window messages, or Win32 key
