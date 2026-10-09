@@ -62,8 +62,9 @@ LICENSE
    a DLL into it is the kind of thing antivirus heuristics look at, and
    unsigned downloads get SmartScreen's "unknown publisher" prompt. Test
    with Windows Defender on (the default) and note the prompt in the README.
-   Code signing costs money and is the user's call. Uploading builds to an
-   antivirus vendor for review would also be the user's call.
+   Decided: v1 ships unsigned, signing through SignPath Foundation comes
+   later (decisions.md item 12). Uploading builds to an antivirus vendor
+   for review is the user's call.
 
 ## Install instructions to verify
 

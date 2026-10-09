@@ -104,3 +104,18 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
       `<game>\AsteraLoader\plugins\<name>\`. A folder named `astera`
       (the first pass) looked like game content, Astera being the in-game
       hub, so the folder and files carry the full name.
+
+## 2026-10-10
+
+12. **v1 ships unsigned; code signing through SignPath Foundation later**
+    (the user's call, after comparing costs).
+    - Since 2024 no certificate, EV included, skips SmartScreen's prompt for
+      new files; reputation builds per file over downloads. For a niche
+      loader, paying $120 to $220 a year for a certificate or for Azure
+      Artifact Signing would buy little.
+    - MO2 users are likely to never see the prompt (MO2 downloads and
+      unpacks archives itself); manual installs unpacked with Explorer
+      would. The README says so.
+    - Later: apply to SignPath Foundation (free for open-source projects)
+      once the repository is public and builds come from CI. SignPath
+      Foundation is then the publisher named in the signature.
