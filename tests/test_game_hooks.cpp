@@ -12,6 +12,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace hooks = cmfm::game_hooks;
@@ -121,9 +122,12 @@ std::string bytes_of(const void* function, std::size_t count) {
     return text;
 }
 
-cmfm_hook_t hook_of(const char* name, const std::string& pattern, void* address, void* detour, void** next,
+// Literals and the named signature strings below outlive each registry call.
+// A const std::string& here would convert literals to temporary strings and
+// return a dangling c_str() before the hook was registered.
+cmfm_hook_t hook_of(const char* name, std::string_view pattern, void* address, void* detour, void** next,
                     std::int32_t order = 0) {
-    return {sizeof(cmfm_hook_t), order, name, pattern.c_str(), 0, 0, address, detour, next};
+    return {sizeof(cmfm_hook_t), order, name, pattern.data(), 0, 0, address, detour, next};
 }
 
 int call_damage(StandInInstaller& installer, int a, int b) {

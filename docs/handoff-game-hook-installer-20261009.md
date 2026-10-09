@@ -32,6 +32,10 @@ belonging to another chain are not substituted during validation.
 Release build with warnings as errors; `dev.py check`: 41/41 tests pass.
 The core still imports only `KERNEL32.dll`.
 
+The pure registry test's helper now accepts a string view, so literal
+patterns retain their static storage instead of pointing into a destroyed
+temporary `std::string`. This fixes unstable signature-refusal checks.
+
 `game_hooks_native` runs the production launcher/core on an original fake
 game and three plugin DLLs. It checks:
 
