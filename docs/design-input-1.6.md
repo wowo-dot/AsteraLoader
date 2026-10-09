@@ -29,9 +29,13 @@ implemented rules, tests and next run. Roadmap "path to v1" step 2.
 - **Other frameworks:** SPL subclasses the game window
   (`SetWindowLongPtr(GWLP_WNDPROC)`), feeds ImGui, and always passes every
   message on; it finds the window from the swap chain's description, or by
-  its title. Neither SPL nor any surveyed mod blocks game input while a
-  menu is open. Better Input Detection patches the game's own input code
-  (it imports only `VirtualProtect`).
+  its title. ~~Neither SPL nor any surveyed mod blocks game input while a
+  menu is open.~~ Corrected 2026-10-10: SPL does (`Rendering/Renderer.cs`,
+  7be2393). While its ImGui wants the keyboard, it hooks the game's
+  `Keyboard:WriteInput` and clears the keyboard state after it; while an
+  ImGui window has focus, it hooks the mouse update and zeroes the
+  camera delta, clicks and wheel in `sMhMouse`. Better Input Detection
+  patches the game's own input code (it imports only `VirtualProtect`).
 
 ## Found in frame-input-1 (input_probe 0.1.0)
 
@@ -80,6 +84,84 @@ implemented rules, tests and next run. Roadmap "path to v1" step 2.
 - Still unknown: whether the overlay changes `dinput8.dll`'s own method
   tables or hands out wrapper objects, and whether it also patches
   `XInputGetState`. With the overlay off, the methods should be System32's.
+
+## Found by static analysis: the game's own input sites
+
+2026-10-10, IDA on a private copy of the decrypted exe (421810, SHA-256
+c2ebbbd2...), `local/ida/input-20261010/`. RVAs from the image base. The
+game imports DirectInput and XInput delay-loaded (`DINPUT8`
+`DirectInput8Create`; `XINPUT9_1_0` `XInputGetState`, `XInputSetState`,
+`XInputGetCapabilities`), which is why DINPUT8 loads at about 8 s.
+
+- **Keyboard update, `exe+0x22e74f0`**, `void(sMhKeyboard* kb)`, slot 28
+  of the keyboard's vtable (`exe+0x2f86c58`), called once per frame. The
+  state is at `kb+0x138`, eight dwords per map, indexed by virtual-key
+  code: held (`+0x138`), previous (`+0x158`), pressed (`+0x178`), released
+  (`+0x198`), changed (`+0x1B8`), repeat (`+0x1D8`), then per-key repeat
+  timers (`+0x1F8`). It moves held to previous, clears held, calls
+  `Keyboard:WriteInput` to fill held, then computes the other maps.
+  Its prologue is common; the shortest unique pattern (sigscan `make` on
+  the decoded image) is its first 35 bytes.
+- **`Keyboard:WriteInput`, `exe+0x22e7ad0`**, `(kb, held_map)`: SPL's site.
+  Reads DirectInput (device at `kb+0xA10`, `GetDeviceState(256)`) into a
+  local buffer, maps each scan code to a virtual key through the table at
+  `kb+0x38`, ORs the bits into the held map, adds the five mouse buttons
+  (VK 1, 2, 4, 5, 6) from `GetAsyncKeyState`, and derives Shift, Ctrl and
+  Alt from their left and right keys. If the window is not in the
+  foreground it clears the map. Without a DirectInput device it falls back
+  to `GetAsyncKeyState` for all 256 keys.
+- **Mouse read, `exe+0x22e9270`**, `(mouse_device* m, mouse_state* out)`,
+  called from `exe+0x22e89a0`, called from the mouse update `exe+0x489800`
+  (slot 28 of `exe+0x2f86d98`). Reads `GetDeviceState(20)`
+  (`DIMOUSESTATE2`, device at `m+0xD0`) and writes `out`: cursor position
+  scaled (`+0`, `+4`) and in the window (`+8`, `+12`), movement and wheel
+  deltas scaled by the sensitivity at `m+0xBC` (`+20`, `+24`, `+28`), and
+  the buttons as bits 0 to 7 (`+32`). If the window is not in the
+  foreground it clears the buttons. Unique pattern from its first byte.
+- **XInput pads, `exe+0x22a59d0`**, `(pad_slot*)`, per slot and frame:
+  `XInputGetState(slot+0x14 user index)`, then
+  **`exe+0x22a1280(manager, slot, const XINPUT_STATE*)`**, which copies the
+  sticks, triggers and buttons into the slot. Unique pattern from its first
+  byte.
+- **DirectInput pads**: the same slot function reads `GetDeviceState(272)`
+  (`DIJOYSTATE2`) into `slot+0x1A0` and processes it in `exe+0x22a0880`.
+  The game supports non-XInput pads too.
+- All of these run on the frame thread inside Main:Update (input-probe-3).
+
+### Proposal: capture at the game's own input sites
+
+Hook the game's functions through al.hooks instead of DirectInput's and
+XInput's: they are reached the same way with the Steam overlay on or off,
+or anything else wrapping DirectInput (ReShade, SPL), and they are checked
+by their bytes like the frame layer's sites.
+
+Patterns: the shortest unique ones from `sigscan.py make` on the decoded
+image (d78611...), each from the function's first byte:
+
+- keyboard update `0x22e74f0`: `48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 83 EC 20 33 FF 48 8D B1 38 01 00 00`
+- mouse read `0x22e9270`: `40 55 53 56 57 41 56 48 8B EC 48 81 EC 80 00 00 00`
+- pad `0x22a1280`: `48 89 5C 24 08 57 44 8B 9A 60 01 00 00`
+
+| Device | Site | Snapshot (after the original) | Capture |
+|---|---|---|---|
+| keyboard | update `0x22e74f0` | the held map: 256 bits by virtual key, mouse buttons included | clear held, pressed, released, changed and repeat after the original |
+| mouse | read `0x22e9270` | buttons (`out+32`), deltas | clear deltas and buttons in `out` after the original; leave the cursor position |
+| pad | `0x22a1280` | the `XINPUT_STATE` for the slot's user index | pass a copy with `Gamepad` zeroed, packet number kept |
+
+- No site is SPL's: SPL hooks `Keyboard:WriteInput` (below our keyboard
+  site) and the mouse update above our mouse site. Another module that
+  patched one of these first makes al.hooks refuse it by its bytes, and
+  al.input reports which path is unavailable.
+- Snapshots are already in virtual keys, so the scan-code mapping in
+  `native.cpp` goes away. `key_down` reads the copied held map.
+- Clearing the keyboard maps after the original leaves the game nothing
+  pressed or released while captured; the next frame's "previous" is
+  empty, so release edges do not fire late.
+- Open: DirectInput pads (`0x22a0880`) for v1 or later; whether the
+  cursor position should also freeze while the mouse is captured; Steam
+  Input (does the game read pads another way with it on?); exe versions
+  other than 421810 get UNAVAILABLE with the reason.
+- The window subclass stays as it is.
 
 ## Open questions (one probe run)
 
