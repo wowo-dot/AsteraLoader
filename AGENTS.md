@@ -60,7 +60,9 @@ or assume other contributors use them.
   anti-cheat, licensing or platform protections. CMFM Core itself must not
   change gameplay or network behaviour. What plugins do is the user's choice.
   (The CRC-bypass plugin `!CRCBypass.dll` from "Performance Booster and Plugin
-  Extender" is off in every profile and is not a CMFM concern.)
+  Extender", and the crit-chance plugins GRcrit and tcscrit!, were unused and
+  are removed from the user's MO2 setup (2026-10-09). They are not a CMFM
+  concern.)
 - The launcher is the only CMFM component that writes into the game process,
   and only to load `cmfm.dll`:
   - it only creates `MonsterHunterWorld.exe` itself, suspended. It never
