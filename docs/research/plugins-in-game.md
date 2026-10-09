@@ -274,7 +274,7 @@ alt-tabbed, changed window mode and quit through Exit Game.
 - All six target functions were already patched by the Steam overlay
   (`gameoverlayrenderer64.dll`). The installer logged each one with its
   destination module and went on top; the overlay's hooks still run
-  underneath.
+  underneath, and the overlay opened and worked normally (user).
 - SWAPCHAIN_CREATED fired once: 2560x1440, B8G8R8A8_UNORM, 3 buffers, with
   the queue. FIRST_PRESENT fired once at 5.87 s.
 - hello counted 14,467 presents through PRE_PRESENT, exactly CMFM's own
