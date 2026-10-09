@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -18,12 +19,11 @@ void publish(void** slot, void* value) noexcept {
     InterlockedExchangePointer(slot, value);
 }
 
-bool matches_at(const Pattern& pattern, const std::uint8_t* at) {
-    if (!readable(at, pattern.bytes.size())) return false;
-    for (std::size_t k = 0; k < pattern.bytes.size(); ++k) {
-        if ((at[k] & pattern.mask[k]) != (pattern.bytes[k] & pattern.mask[k])) return false;
-    }
-    return true;
+const std::uint8_t* shifted(const void* address, std::int64_t delta) {
+    const auto at = reinterpret_cast<std::uintptr_t>(address);
+    if ((delta >= 0 && static_cast<std::uint64_t>(delta) > UINTPTR_MAX - at) ||
+        (delta < 0 && static_cast<std::uint64_t>(-delta) > at)) return nullptr;
+    return reinterpret_cast<const std::uint8_t*>(at + delta);
 }
 }  // namespace
 
@@ -44,6 +44,11 @@ struct Registry::Chain {
     cmfm_hook_state_t state = CMFM_HOOK_PENDING;
     std::string problem;
     std::vector<Layer> layers;  // call order
+    // MinHook 1.3.4 changes five entry bytes, or five above + two at entry
+    // for its hotpatch form. Retain that entire footprint for late joins.
+    const std::uint8_t* saved_at = nullptr;
+    std::size_t saved_size = 0;
+    std::array<std::uint8_t, 10> before{}, patched{};
 };
 
 Registry::Registry(const void* image, Finder find)
@@ -70,6 +75,27 @@ bool Registry::in_code(const void* address, std::size_t size) const {
     });
 }
 
+bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const {
+    if (!in_code(at, pattern.bytes.size()) || !readable(at, pattern.bytes.size())) return false;
+    std::vector<std::uint8_t> bytes(at, at + pattern.bytes.size());
+    const auto begin = reinterpret_cast<std::uintptr_t>(at);
+    for (const auto& chain : chains_) {
+        if (chain->state != CMFM_HOOK_ACTIVE || !chain->saved_size) continue;
+        const auto saved = reinterpret_cast<std::uintptr_t>(chain->saved_at);
+        const auto first = (std::max)(begin, saved);
+        const auto last = (std::min)(begin + bytes.size(), saved + chain->saved_size);
+        if (first >= last) continue;
+        // Only undo our known patch for validation. Later modifications are
+        // not silently treated as the previously verified original bytes.
+        if (!readable(chain->saved_at, chain->saved_size) ||
+            std::memcmp(chain->saved_at, chain->patched.data(), chain->saved_size)) return false;
+        std::memcpy(bytes.data() + first - begin, chain->before.data() + first - saved, last - first);
+    }
+    for (std::size_t k = 0; k < bytes.size(); ++k)
+        if ((bytes[k] & pattern.mask[k]) != (pattern.bytes[k] & pattern.mask[k])) return false;
+    return true;
+}
+
 std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::string& problem) {
     problem.clear();
     if (hook.size < sizeof(cmfm_hook_t)) {
@@ -86,28 +112,37 @@ std::uint32_t Registry::hook(Client& client, const cmfm_hook_t& hook, std::strin
         return 0;
     }
     const auto& pattern = *parsed;
+    // Resolution, signature checks and patching share the same lock, so a
+    // concurrent registration never scans a half-written CMFM entry patch.
+    std::lock_guard lock(mutex_);
     const std::uint8_t* target = nullptr;
     if (hook.address) {
         target = static_cast<const std::uint8_t*>(hook.address);
-        const auto* start = target - hook.offset;
+        const auto* start = shifted(target, -static_cast<std::int64_t>(hook.offset));
         if (!in_code(start, pattern.bytes.size()) || !matches_at(pattern, start)) {
             problem = "the bytes at the address do not match the pattern, or lie outside the game's code";
             return 0;
         }
     } else {
-        const auto found = find_ ? find_(pattern) : std::vector<const void*>{};
+        auto found = find_ ? find_(pattern) : std::vector<const void*>{};
+        found.erase(std::remove_if(found.begin(), found.end(), [&](const void* at) {
+            return !matches_at(pattern, static_cast<const std::uint8_t*>(at));
+        }), found.end());
+        for (const auto& chain : chains_) {
+            const auto at = shifted(chain->target, -static_cast<std::int64_t>(hook.offset));
+            if (matches_at(pattern, at) && std::find(found.begin(), found.end(), at) == found.end()) found.push_back(at);
+        }
         if (found.size() != 1) {
             problem = "the pattern matches " + std::to_string(found.size()) + " times in the game's code, not once";
             return 0;
         }
-        target = static_cast<const std::uint8_t*>(found[0]) + hook.offset;
+        target = shifted(found[0], hook.offset);
     }
     if (!in_code(target, kMinimumPattern)) {
         problem = "the target lies outside the game's code";
         return 0;
     }
 
-    std::lock_guard lock(mutex_);
     auto found = std::find_if(chains_.begin(), chains_.end(),
                               [&](const auto& chain) { return chain->target == target; });
     Chain* chain = found == chains_.end() ? nullptr : found->get();
@@ -167,6 +202,11 @@ void Registry::link(Chain& chain) {
 }
 
 void Registry::install(Chain& chain) {
+    chain.saved_at = shifted(chain.target, -5);
+    chain.saved_size = 10;
+    if (!in_code(chain.saved_at, chain.saved_size)) { chain.saved_at = static_cast<const std::uint8_t*>(chain.target); chain.saved_size = 5; }
+    if (readable(chain.saved_at, chain.saved_size)) std::memcpy(chain.before.data(), chain.saved_at, chain.saved_size);
+    else chain.saved_size = 0;
     auto problem = installer_->create(chain.target, &chain.head, &chain.original);
     if (problem.empty() && !chain.original) problem = "the hook layer returned no original";
     if (problem.empty()) {
@@ -174,6 +214,21 @@ void Registry::install(Chain& chain) {
         problem = installer_->enable(chain.target);
     }
     if (problem.empty()) {
+        if (chain.saved_size) {
+            std::memcpy(chain.patched.data(), chain.saved_at, chain.saved_size);
+            if (chain.saved_size == 10) {
+                if (std::memcmp(chain.before.data(), chain.patched.data(), 5)) {
+                    chain.saved_size = 7; // MinHook's jump above + short entry jump.
+                } else {
+                    // Retain only our actual patch footprint. The bytes
+                    // preceding this function might belong to another chain.
+                    std::memmove(chain.before.data(), chain.before.data() + 5, 5);
+                    std::memmove(chain.patched.data(), chain.patched.data() + 5, 5);
+                    chain.saved_at += 5;
+                    chain.saved_size = 5;
+                }
+            }
+        }
         chain.state = CMFM_HOOK_ACTIVE;
         return;
     }

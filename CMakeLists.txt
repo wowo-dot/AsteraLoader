@@ -288,6 +288,12 @@ target_link_libraries(cmfm_game_hooks_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_game_hooks_tests)
 add_test(NAME game_hooks COMMAND cmfm_game_hooks_tests)
 
+add_executable(cmfm_game_hook_installer_tests tests/test_game_hook_installer.cpp)
+target_link_libraries(cmfm_game_hook_installer_tests PRIVATE cmfm_startup cmfm_minhook)
+cmfm_project_target(cmfm_game_hook_installer_tests)
+add_test(NAME game_hook_installer COMMAND cmfm_game_hook_installer_tests)
+set_tests_properties(game_hook_installer PROPERTIES TIMEOUT 30)
+
 add_executable(cmfm_services_tests tests/test_services.cpp)
 target_link_libraries(cmfm_services_tests PRIVATE cmfm_plugins)
 cmfm_project_target(cmfm_services_tests)
@@ -462,6 +468,31 @@ add_test(NAME graphics_native_chains COMMAND "${CMAKE_COMMAND}"
     "-DPROBE=$<TARGET_FILE:cmfm_graphics_probe>" "-DWORK=${CMAKE_BINARY_DIR}/graphics_native_chains"
     -P "${CMAKE_SOURCE_DIR}/tests/graphics.cmake")
 set_tests_properties(graphics_native_chains PROPERTIES TIMEOUT 45)
+
+add_executable(fake_game_hooks WIN32 tests/fake_game_hooks.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_game_hooks PRIVATE cmfm_common)
+target_compile_definitions(fake_game_hooks PRIVATE CMFM_FAKE_PHASES)
+target_link_options(fake_game_hooks PRIVATE /ENTRY:cmfm_test_packed_entry)
+cmfm_project_target(fake_game_hooks)
+set_target_properties(fake_game_hooks PROPERTIES OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game_hooks/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_game_hooks/$<CONFIG>")
+set(role_id 0)
+foreach(role IN ITEMS alpha beta gamma)
+    math(EXPR role_id "${role_id} + 1")
+    add_library(cmfm_game_hook_${role} SHARED tests/game_hook_plugin.cpp)
+    target_link_libraries(cmfm_game_hook_${role} PRIVATE cmfm_api cmfm_minhook)
+    target_compile_definitions(cmfm_game_hook_${role} PRIVATE GAME_HOOK_ROLE=${role_id})
+    cmfm_project_target(cmfm_game_hook_${role})
+    set_target_properties(cmfm_game_hook_${role} PROPERTIES OUTPUT_NAME hook_${role}
+        RUNTIME_OUTPUT_DIRECTORY "${CMFM_PLUGIN_FIXTURES}")
+endforeach()
+add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+    "-DCORE=$<TARGET_FILE:cmfm>" "-DFAKE_GAME=$<TARGET_FILE:fake_game_hooks>"
+    "-DPLUGIN_alpha=$<TARGET_FILE:cmfm_game_hook_alpha>" "-DPLUGIN_beta=$<TARGET_FILE:cmfm_game_hook_beta>"
+    "-DPLUGIN_gamma=$<TARGET_FILE:cmfm_game_hook_gamma>" "-DWORK=${CMAKE_BINARY_DIR}/game_hooks_native"
+    -P "${CMAKE_SOURCE_DIR}/tests/game_hooks_native.cmake")
+set_tests_properties(game_hooks_native PROPERTIES TIMEOUT 45)
 
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.

@@ -3,6 +3,7 @@
 #include "core/phases/sites.hpp"
 #include "core/phases/debug_slot.hpp"
 #include "core/graphics/installer.hpp"
+#include "core/game_hooks/installer.hpp"
 #include "common/memory.hpp"
 #include "common/windows.hpp"
 #include <windows.h>
@@ -52,6 +53,7 @@ struct State {
     Log log{};
     Warning warning{};
     graphics::NativeInstaller* graphics{};
+    game_hooks::NativeInstaller* game_hooks{};
     Image image;
     WinMain win_original{};
     std::atomic<bool> win_entered{false}, stopped{false}, device_done{false};
@@ -74,6 +76,13 @@ struct State {
 State* g{}; // Pinned core / host and callback addresses live until exit.
 
 void log(std::wstring_view text) noexcept { try { if (g->log) g->log(text); } catch (...) {} }
+std::wstring widen(std::string_view text) {
+    const auto count = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    std::wstring result(static_cast<std::size_t>(count), L'\0');
+    if (count) MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), count);
+    return result;
+}
+void report_game_hooks() { for (const auto& line : g->host->game_hooks().summary()) log(widen(line)); }
 void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {
     try { log(L"phase_" + std::wstring(phase) + L"_skipped: " + std::wstring(reason));
         if (g->warning) g->warning(L"CMFM phase " + std::wstring(phase) + L" is unavailable: " + std::wstring(reason));
@@ -116,6 +125,7 @@ void dispatch(cmfm_phase_t phase, std::wstring_view name, const void* data) noex
         log(L"phase_" + std::wstring(name) + L"_enter thread_id=" + std::to_wstring(GetCurrentThreadId()));
         g->host->dispatch(phase, data);
         if (phase == CMFM_PHASE_SHUTDOWN && g->graphics) g->graphics->report(g->host->graphics());
+        if (phase == CMFM_PHASE_SHUTDOWN) report_game_hooks();
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency);
         if (frequency.QuadPart) log(L"phase_" + std::wstring(name) + L"_complete elapsed_us=" +
             std::to_wstring((ticks()-begin)*1000000/frequency.QuadPart));
@@ -432,16 +442,13 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
     if (g) return;
     try {
         g=new State; g->host=&host; g->log=logger; g->warning=warning;
+        g->game_hooks = new game_hooks::NativeInstaller([](std::string_view text) { log(widen(text)); });
+        host.game_hooks().set_installer(g->game_hooks);
+        report_game_hooks();
         if (!host.graphics().chains().empty()) {
-            const auto widen = [](std::string_view text) {
-                const auto count = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
-                std::wstring result(static_cast<std::size_t>(count), L'\0');
-                if (count) MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), count);
-                return result;
-            };
             g->graphics = new graphics::NativeInstaller(
-                [widen](std::string_view text) { log(widen(text)); },
-                [widen](std::string_view text) { if (g->warning) g->warning(L"CMFM graphics are unavailable: " + widen(text)); });
+                [](std::string_view text) { log(widen(text)); },
+                [](std::string_view text) { if (g->warning) g->warning(L"CMFM graphics are unavailable: " + widen(text)); });
             host.graphics().set_installer(g->graphics);
         }
         LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency); g->qpc_frequency=frequency.QuadPart;

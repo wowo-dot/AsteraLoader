@@ -78,8 +78,8 @@ In this order; the first four are small.
     D3D12/DXGI to game functions. Today every Stracker plugin bundles its
     own MinHook.
     Status 2026-10-09: API 1.4 "cmfm.hooks" designed and implemented on the
-    core side, tested without patching (design-game-hooks-1.4.md); the hook
-    layer (user) is next.
+    core side and native installer, tested with real patches in the fake
+    game (design-game-hooks-1.4.md). MHW game-function hooks are unverified.
 11. **Graphics coordination** (the DLSS mod's main need,
     requirements-dlss-mod.md §3): one owner per D3D12/DXGI entry point,
     ordered Present and resize callbacks, the presentation-owner role,

@@ -1,9 +1,11 @@
 # Design: "cmfm.hooks", shared hooks on game functions (API 1.4)
 
-Status 2026-10-09: the plugin API and the registry are implemented and
-tested without patching (`game_hooks` test). The hook layer is the user's
-part (spec below). Until it exists, hooks stay PENDING and never run.
-Roadmap item 10; first in the "complete the core" order.
+Status 2026-10-09: the plugin API, registry and native MinHook installer are
+implemented. Tested in the original fake game through the production
+launcher/core, with three plugin fixtures, late registration, concurrent
+callers and an existing external hook. All 41 tests pass and `cmfm.dll`
+imports only KERNEL32. Actual game-function hooks in MHW remain unverified.
+See `handoff-game-hook-installer-20261009.md`. Roadmap item 10.
 
 ## Why
 
@@ -82,7 +84,38 @@ Two clients are ready:
     hooks;
   - the summary.
 
-## The hook layer (the user's part)
+## The hook layer (implemented)
+
+`src/core/game_hooks/installer.{hpp,cpp}` provides `NativeInstaller`.
+It generates a 13-byte `mov r11, imm64(head); jmp [r11]` entry on a page
+made RX before creating the inactive MinHook hook. It never reads the
+graphics internal-call flag and makes no helper call on the detour path.
+The registry publishes continuations and the head before enabling. Entries
+and trampolines stay until process exit, including failed activations.
+Unrelocatable entries return an explicit MinHook reason; an earlier jump
+is allowed and logged, with bounded relay traversal to its module.
+
+`phases::arm` sets the installer after PRE_MAIN, even for an empty registry
+(plugins may register later), and logs the summary. SHUTDOWN logs it again.
+MinHook and registry locking serialize later creation and activation.
+
+### Signature validation after a patch
+
+The original registry checked new registrations against the live patched
+entry, so a real WIN_MAIN join would reject the original signature. The
+registry now retains the bytes MinHook replaced (five at entry, or five
+above and two at entry for its hotpatch form). Signature validation overlays
+only that footprint with the pre-CMFM bytes, after checking the live patch
+still matches CMFM's recorded patch. Bytes outside it remain live checks.
+
+Pattern searches combine the scanner's live matches with verified matches
+at existing chain targets, deduplicate them and still require exactly one.
+Address-based joins use the same validation. The registry lock covers
+resolution, checking and installation, and offset arithmetic is checked.
+Joining and toggling remain pointer updates; they never create a second
+patch on a function.
+
+### Installer contract
 
 Implement `cmfm::game_hooks::Installer` (`registry.hpp`) and hand it over in
 `phases::arm`, after PRE_MAIN:
@@ -122,3 +155,19 @@ host.game_hooks().set_installer(&g_game_installer);  // installs every pending c
   a loop;
 - an existing MinHook patch on a second function stays under CMFM's;
 - `cmfm.dll` still imports only KERNEL32.
+
+This is implemented as `game_hooks_native`: two initial fixtures register
+by pattern and address, a third joins by pattern at WIN_MAIN, and a worker
+installs a new target after startup. The main thread toggles the first
+detour 5,000 times while that worker calls the shared function. Each call
+checks the legal order, eight mixed integer/float arguments and the result;
+the target's patch bytes must remain unchanged. A second target retains a
+pre-existing hook in the alpha fixture's separate MinHook instance. The
+test also checks arming/SHUTDOWN summaries and that a graphics internal
+region does not bypass the game-function chain.
+
+`game_hook_installer` checks inactive creation, head publication, all four
+XMM argument registers and stack arguments, last-error preservation,
+duplicate/invalid requests, an unrelocatable LOOP instruction, an
+address-based late join, an incorrect late signature and a synthetic
+executable-image function requiring MinHook's hotpatch-above form.

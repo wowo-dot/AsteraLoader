@@ -61,6 +61,7 @@ private:
     struct Chain;
 
     bool in_code(const void* address, std::size_t size) const;
+    bool matches_at(const Pattern& pattern, const std::uint8_t* at) const;
     void install(Chain& chain);
     static void link(Chain& chain);
 
