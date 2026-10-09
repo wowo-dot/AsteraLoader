@@ -119,6 +119,9 @@ bool Native::install(const Methods& methods) noexcept {
 }
 void Native::discover() noexcept {
     try {
+        // Device construction can reach another installed input path. AL's
+        // own discovery must neither publish nor neutralize those reads.
+        ReadScope internal;
         Methods methods;
         const auto di=GetModuleHandleW(L"dinput8.dll");
         if(!state_->di_done && di) {
