@@ -119,7 +119,11 @@ target_include_directories(al_minhook PUBLIC third_party/minhook/include)
 target_compile_definitions(al_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MINHOOK_PROCESS_THREADS)
 target_link_libraries(al_minhook PRIVATE al_thread_snapshot)
 
-add_library(al_startup STATIC
+set(AL_STARTUP_SOURCES
+    src/core/frame/layer.cpp
+    src/core/frame/layer.hpp
+    src/core/frame/sites.cpp
+    src/core/frame/sites.hpp
     src/core/game_hooks/installer.cpp
     src/core/game_hooks/installer.hpp
     src/core/graphics/installer.cpp
@@ -135,6 +139,7 @@ add_library(al_startup STATIC
     src/core/startup/protect_trace.hpp
     src/core/startup/runtime.cpp
     src/core/startup/runtime.hpp)
+add_library(al_startup STATIC ${AL_STARTUP_SOURCES})
 target_link_libraries(al_startup PUBLIC al_plugins PRIVATE al_minhook)
 al_project_target(al_startup)
 
@@ -301,6 +306,52 @@ add_executable(al_frame_clock_tests tests/test_frame_clock.cpp)
 target_link_libraries(al_frame_clock_tests PRIVATE al_plugins)
 al_project_target(al_frame_clock_tests)
 add_test(NAME frame_clock COMMAND al_frame_clock_tests)
+
+add_executable(al_frame_layer_tests tests/test_frame_layer.cpp)
+target_link_libraries(al_frame_layer_tests PRIVATE al_startup)
+al_project_target(al_frame_layer_tests)
+foreach(mode IN ITEMS identity bad_signature first_failure second_failure cost)
+    add_test(NAME frame_layer_${mode} COMMAND al_frame_layer_tests "${mode}" "${CMAKE_BINARY_DIR}/frame_layer_tests")
+    set_tests_properties(frame_layer_${mode} PROPERTIES TIMEOUT 30)
+endforeach()
+
+# Same runtime and hook layer, with synthetic sites in place of the MHW-only
+# resolver. These targets are test-only and are never installed or packaged.
+set(AL_FRAME_FIXTURE_SOURCES ${AL_STARTUP_SOURCES})
+list(REMOVE_ITEM AL_FRAME_FIXTURE_SOURCES src/core/frame/sites.cpp)
+add_library(al_frame_runtime_fixture STATIC ${AL_FRAME_FIXTURE_SOURCES} tests/frame_sites_fixture.cpp)
+target_link_libraries(al_frame_runtime_fixture PUBLIC al_plugins PRIVATE al_minhook)
+al_project_target(al_frame_runtime_fixture)
+add_library(al_frame_loader_fixture SHARED src/core/dllmain.cpp)
+target_link_libraries(al_frame_loader_fixture PRIVATE al_frame_runtime_fixture)
+al_project_target(al_frame_loader_fixture)
+set_target_properties(al_frame_loader_fixture PROPERTIES OUTPUT_NAME AsteraLoader
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/frame_loader_fixture/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/frame_loader_fixture/$<CONFIG>")
+add_executable(fake_frames_game WIN32 tests/fake_frames_game.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_frames_game PRIVATE al_common)
+target_compile_definitions(fake_frames_game PRIVATE AL_FAKE_PHASES)
+target_link_options(fake_frames_game PRIVATE /ENTRY:al_test_packed_entry)
+al_project_target(fake_frames_game)
+set_target_properties(fake_frames_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_frames_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_frames_game/$<CONFIG>")
+foreach(role IN ITEMS probe reflex)
+    add_library(al_frame_${role} SHARED tests/frame_plugin.cpp)
+    target_link_libraries(al_frame_${role} PRIVATE al_api)
+    al_project_target(al_frame_${role})
+    set_target_properties(al_frame_${role} PROPERTIES OUTPUT_NAME frame_${role}
+        RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
+endforeach()
+target_compile_definitions(al_frame_reflex PRIVATE FRAME_REFLEX)
+foreach(mode IN ITEMS normal backup)
+    add_test(NAME frame_layer_${mode} COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_frame_loader_fixture>" "-DFAKE_GAME=$<TARGET_FILE:fake_frames_game>"
+        "-DPROBE=$<TARGET_FILE:al_frame_probe>" "-DREFLEX=$<TARGET_FILE:al_frame_reflex>"
+        "-DBACKUP=$<STREQUAL:${mode},backup>" "-DWORK=${CMAKE_BINARY_DIR}/frame_layer_${mode}"
+        -P "${CMAKE_SOURCE_DIR}/tests/frame_layer.cmake")
+    set_tests_properties(frame_layer_${mode} PROPERTIES TIMEOUT 45)
+endforeach()
 
 add_executable(al_game_hook_installer_tests tests/test_game_hook_installer.cpp)
 target_link_libraries(al_game_hook_installer_tests PRIVATE al_startup al_minhook)

@@ -145,6 +145,7 @@ struct HostState {
     graphics::Hub hub;
     game_hooks::Registry hooks;
     frame::Clock clock;
+    std::atomic<bool> frame_requested{false};
     std::atomic<bool> exiting{false};  // EXITING was dispatched
     crash::Options crash;        // installed at WIN_MAIN
     std::wstring previous_crash;  // the last session's crash notice, if any
@@ -438,7 +439,11 @@ const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::
         if (wanted == AL_SCANNER_INTERFACE) return compatible(AL_SCANNER_VERSION, version) ? &kScanner : nullptr;
         if (wanted == AL_D3D12_INTERFACE) return compatible(AL_D3D12_VERSION, version) ? &kD3d12 : nullptr;
         if (wanted == AL_HOOKS_INTERFACE) return compatible(AL_HOOKS_VERSION, version) ? &kHooks : nullptr;
-        if (wanted == AL_FRAME_INTERFACE) return compatible(AL_FRAME_VERSION, version) ? &kFrame : nullptr;
+        if (wanted == AL_FRAME_INTERFACE) {
+            if (!compatible(AL_FRAME_VERSION, version)) return nullptr;
+            state.frame_requested.store(true);
+            return &kFrame;
+        }
         std::lock_guard lock(state.mutex);
         const auto found = state.interfaces.find(wanted);
         if (found == state.interfaces.end() || !compatible(found->second.version, version)) return nullptr;
@@ -770,6 +775,14 @@ bool Host::raise_exiting() {
     if (!state_ || state_->exiting.exchange(true)) return false;
     dispatch(AL_PHASE_EXITING, nullptr);
     return true;
+}
+
+const al_game_t* Host::game_identity() { return state_ ? state_->game.table() : nullptr; }
+bool Host::frame_requested() const {
+    if (!state_) return false;
+    if (state_->frame_requested.load()) return true;
+    for (const auto& plugin : plugins_) if (plugin->initialised && (plugin->manifest.phases & AL_PHASE_BIT(AL_PHASE_EXITING))) return true;
+    return false;
 }
 
 std::vector<PluginReport> Host::report() const {

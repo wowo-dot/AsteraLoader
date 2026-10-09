@@ -1,5 +1,9 @@
 # Handoff: the frame layer and the exit site (API 1.5, 2026-10-09)
 
+**Completed:** the native layer is implemented and tested (50/50).
+The original assignment below is retained for reference. The implementation,
+test limits and next real run are in `handoff-frame-runtime-20261009.md`.
+
 API 1.5 is in place on the core side: the `AL_PHASE_EXITING` phase, the
 `"al.frame"` interface, the clock behind it, and unit tests (43/43). Design:
 `design-frame-1.5.md`. What remains is the hook-layer part: two of the

@@ -4,6 +4,8 @@
 #include "core/phases/debug_slot.hpp"
 #include "core/graphics/installer.hpp"
 #include "core/game_hooks/installer.hpp"
+#include "core/frame/layer.hpp"
+#include "core/frame/clock.hpp"
 #include "common/memory.hpp"
 #include "common/windows.hpp"
 #include <windows.h>
@@ -54,6 +56,7 @@ struct State {
     Warning warning{};
     graphics::NativeInstaller* graphics{};
     game_hooks::NativeInstaller* game_hooks{};
+    frame::Layer* frame{};
     Image image;
     WinMain win_original{};
     std::atomic<bool> win_entered{false}, stopped{false}, device_done{false};
@@ -82,7 +85,10 @@ std::wstring widen(std::string_view text) {
     if (count) MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(), count);
     return result;
 }
-void report_game_hooks() { for (const auto& line : g->host->game_hooks().summary()) log(widen(line)); }
+void report_game_hooks() {
+    for (const auto& line : g->host->game_hooks().summary()) log(widen(line));
+    for (const auto& line : g->host->frame_clock().summary()) log(widen(line));
+}
 void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {
     try { log(L"phase_" + std::wstring(phase) + L"_skipped: " + std::wstring(reason));
         if (g->warning) g->warning(L"Astera Loader phase " + std::wstring(phase) + L" is unavailable: " + std::wstring(reason));
@@ -203,6 +209,7 @@ void stop_device() noexcept {
 int WINAPI win_main(HINSTANCE instance,HINSTANCE previous,char* command,int show) {
     if (g->win_entered.exchange(true)) return g->win_original(instance,previous,command,show);
     const auto error=GetLastError();
+    if (g->frame) g->frame->win_main(GetCurrentThreadId());
     log(L"phase_win_main_observer_removed; CRT and WinMain code unchanged");
     const al_phase_win_main_t main_data{sizeof(main_data),0,instance,command,show,0};
     dispatch(AL_PHASE_WIN_MAIN,L"win_main",&main_data);
@@ -442,8 +449,14 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
     if (g) return;
     try {
         g=new State; g->host=&host; g->log=logger; g->warning=warning;
+        g->frame = new frame::Layer(host, [](std::string_view text) { log(widen(text)); },
+            [](std::string_view text) { if (g->warning) g->warning(L"Astera Loader frames are unavailable: " + widen(text)); });
+        const auto identity = host.game_identity();
+        g->frame->prepare(frame::game_sites(identity, GetModuleHandleW(nullptr)),
+            host.frame_requested() || (identity && identity->game_version));
         g->game_hooks = new game_hooks::NativeInstaller([](std::string_view text) { log(widen(text)); });
         host.game_hooks().set_installer(g->game_hooks);
+        g->frame->installed();
         report_game_hooks();
         if (!host.graphics().chains().empty()) {
             g->graphics = new graphics::NativeInstaller(

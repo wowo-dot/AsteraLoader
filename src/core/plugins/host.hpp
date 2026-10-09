@@ -93,6 +93,10 @@ public:
     // the backup path or the other thread) return at once. Returns true for
     // the call that dispatched it. Any thread.
     bool raise_exiting();
+    // Reuse the cached identity rather than scanning the image again.
+    const al_game_t* game_identity();
+    // Whether an initial plugin asked for frames or the EXITING phase.
+    bool frame_requested() const;
 
 private:
     void close_graphics();
