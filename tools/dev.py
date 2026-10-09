@@ -63,10 +63,11 @@ def settings() -> dict:
         SETTINGS.write_text(json.dumps(TEMPLATE, indent=2) + "\n", encoding="utf-8")
         fail(f"wrote a template to {SETTINGS}; fill in the paths and run again")
     values = json.loads(SETTINGS.read_text(encoding="utf-8"))
-    missing = [key for key in TEMPLATE if key not in values]
+    # Paths ("<...>" in the template) must be filled in; names have defaults.
+    missing = [key for key, value in TEMPLATE.items() if key not in values and value.startswith("<")]
     if missing:
         fail(f"{SETTINGS} lacks {', '.join(missing)}")
-    return values
+    return {**TEMPLATE, **values}
 
 
 def run(command: list[str], **options) -> subprocess.CompletedProcess:
