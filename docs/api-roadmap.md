@@ -35,7 +35,8 @@ hooks included (the user's call, 2026-10-09); the user runs the game.
    DirectInput (frame-input-1), so capture blocks there.
 3. **GAME_READY** (item 8): a game-side signal (title screen or first load),
    found by reversing.
-4. **Release:** freeze ABI 1.x, a plugin author guide, one archive, a
+4. **Release:** freeze ABI 1.x, a plugin author guide (drafted for 1.5:
+   `plugin-guide.md`; add input when 1.6 lands), one archive, a
    clean-machine install test.
 5. **The deferred test matrix** (decisions.md item 9): SPL force-loaded, Steam
    launch options, a manual install outside MO2, overlay off, and a stability
