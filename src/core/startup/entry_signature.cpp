@@ -44,9 +44,49 @@ std::optional<std::uint32_t> relative_target(const std::uint8_t* memory, std::ui
 }
 }  // namespace
 
+std::optional<CrtEntry> verify_crt_entry(std::span<const std::uint8_t> image,
+                                       std::span<const CodeRange> code,
+                                       std::uint32_t rva, std::string& reason) {
+    if (!within(image, code, rva, kWrapper.size())) {
+        reason = "CRT wrapper outside readable code";
+        return {};
+    }
+    const auto* memory = image.data() + rva;
+    if (!matches(memory, kWrapper, 5)) {
+        reason = "CRT wrapper bytes do not match";
+        return {};
+    }
+    const auto cookie = relative_target(memory, rva, 9, 5);
+    const auto common = relative_target(memory, rva, 18, 14);
+    if (!cookie || !common || !within(image, code, *cookie, 80) || !within(image, code, *common, kCommon.size())) {
+        reason = "CRT branch target outside readable code";
+        return {};
+    }
+    if (!matches(image.data() + *common, kCommon, 16)) {
+        reason = "CRT common-main bytes do not match";
+        return {};
+    }
+    const auto* initialiser = image.data() + *cookie;
+    for (std::size_t i = 2; i + kDefaultCookie.size() + 5 <= 80; ++i) {
+        if ((initialiser[i - 2] == 0x48 || initialiser[i - 2] == 0x49) &&
+            initialiser[i - 1] >= 0xb8 && initialiser[i - 1] <= 0xbf &&
+            !std::memcmp(initialiser + i, kDefaultCookie.data(), kDefaultCookie.size()) &&
+            (initialiser[i + 8] & 0xf8) == 0x48 &&
+            (initialiser[i + 9] == 0x3b || initialiser[i + 9] == 0x39) &&
+            (initialiser[i + 10] & 0xc0) == 0xc0 &&
+            (initialiser[i + 11] == 0x74 || initialiser[i + 11] == 0x75)) {
+            reason = "verified CRT startup wrapper";
+            return CrtEntry{rva, *cookie, *common};
+        }
+    }
+    reason = "CRT cookie initializer bytes do not match";
+    return {};
+}
+
 std::optional<CrtEntry> find_crt_entry(std::span<const std::uint8_t> image,
                                      std::span<const CodeRange> code, std::string& reason) {
     std::optional<CrtEntry> found;
+    std::string candidate_reason;
     for (const auto& range : code) {
         if (range.rva >= image.size() || range.size > image.size() - range.rva || range.size < kWrapper.size()) continue;
         const auto last = range.size - kWrapper.size();
@@ -54,33 +94,13 @@ std::optional<CrtEntry> find_crt_entry(std::span<const std::uint8_t> image,
             const auto rva = range.rva + static_cast<std::uint32_t>(offset);
             const auto* memory = image.data() + rva;
             if (memory[0] != 0x48 || !matches(memory, kWrapper, 5)) continue;
-            const auto cookie = relative_target(memory, rva, 9, 5);
-            const auto common = relative_target(memory, rva, 18, 14);
-            if (!cookie || !common || !within(image, code, *cookie, 80) ||
-                !within(image, code, *common, kCommon.size()) ||
-                !matches(image.data() + *common, kCommon, 16)) continue;
-            // Validate a real cookie initializer: load cookie, load MSVC's
-            // default literal, compare, and a conditional branch. Never write it.
-            const auto* initialiser = image.data() + *cookie;
-            bool literal = false;
-            for (std::size_t i = 2; i + kDefaultCookie.size() + 5 <= 80; ++i) {
-                if ((initialiser[i - 2] == 0x48 || initialiser[i - 2] == 0x49) &&
-                    initialiser[i - 1] >= 0xb8 && initialiser[i - 1] <= 0xbf &&
-                    !std::memcmp(initialiser + i, kDefaultCookie.data(), kDefaultCookie.size()) &&
-                    (initialiser[i + 8] & 0xf8) == 0x48 &&
-                    (initialiser[i + 9] == 0x3b || initialiser[i + 9] == 0x39) &&
-                    (initialiser[i + 10] & 0xc0) == 0xc0 &&
-                    (initialiser[i + 11] == 0x74 || initialiser[i + 11] == 0x75)) {
-                    literal = true;
-                    break;
-                }
-            }
-            if (!literal) continue;
+            const auto candidate = verify_crt_entry(image, code, rva, candidate_reason);
+            if (!candidate) continue;
             if (found) {
                 reason = "more than one verified CRT entry; phase skipped";
                 return {};
             }
-            found = CrtEntry{rva, *cookie, *common};
+            found = candidate;
         }
     }
     reason = found ? "verified unique CRT startup wrapper" : "no verified unpacked CRT startup wrapper";

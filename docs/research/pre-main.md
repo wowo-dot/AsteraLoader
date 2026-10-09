@@ -240,6 +240,52 @@ startup costs include the 26 ms signature search and about 620 ms inside the
 client/plugin phase; the latter was already present in the baseline and was
 not changed by this optimization.
 
+## CRT entry cache (prepared, not yet measured in MHW)
+
+The startup detector now shares the scanner's per-EXE-hash file:
+`<real CMFM folder>\cache\scan.<sha256>.txt`. Its reserved record is
+`startup crt-entry-1 <wrapper RVA in hex>`. The last complete, valid record for
+that matcher version wins; plugin pattern records are left intact. Bump this
+key when wrapper/common-main/cookie verification rules change.
+
+`verify_crt_entry` is the common per-candidate check for both paths. It bounds
+checks the wrapper before reading, verifies its bytes, derives both relative
+targets from current memory, bounds checks the targets, and verifies the
+common-main and cookie-initializer signatures. No cookie/common-main RVA is
+persisted. A cache hit re-checks that candidate; global uniqueness is not
+searched again. The cache is populated only from a previously unique full
+scan followed by successful hook installation, for the same file hash and
+matcher version. It is an advisory optimization, not an authentication boundary.
+
+The background hash thread releases existing hash consumers, then reads the
+cache (4 MiB bound) and publishes the RVA atomically. `startup_crt_cache_ready`
+records availability. The protection observer only loads that atomic and runs
+the existing recoverable-fault guard. No cache-file access or hash wait is added
+to the detour. Missing, late, malformed, wrong-version or nonmatching entries
+use the full scan; `startup_signature_source=cache|scan` identifies the path and
+`startup_signature_cache_rejected` explains an invalid candidate.
+
+After a unique full scan and successful installation, the restored CRT-entry
+callback appends the answer outside the protection observer, using the real
+log-folder derivation and the hash already consumed by the plugin host. Cache
+I/O failures remain optional and never prevent startup. An extra line delimiter
+repairs an unfinished append without deleting scanner records. Cache hits,
+failed/ambiguous searches and failed installations are never appended.
+
+Verification: 31 Release CTest cases pass with warnings as errors. The packed
+stand-in goes through cold scan/write, warm verify, out-of-bounds rejection,
+stale in-code rejection, and wrong-version/malformed miss; each run dispatches
+PRE_MAIN once on the main thread and preserves original startup invariants.
+Pure checks cover bounds, current branch derivation, changed target bytes,
+hash/version separation, interrupted lines, shared records and file failures.
+The warm stand-in verification measured 5 µs. The existing full-scan ambiguity
+check still refuses multiple candidates. The core imports only KERNEL32 and
+the public/private ABIs are unchanged.
+
+The real-game comparison needs two launches of the installed build: the first
+searches and writes the answer; the second should report `cache` and measure
+the reduced check. A later cache arrival is allowed to fall back without delay.
+
 ## Diagnostic build used in pre-main-2
 
 The observer records the first 256 `VirtualProtect` calls while armed, including

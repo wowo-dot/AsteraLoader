@@ -35,12 +35,29 @@ int main() {
     check(found && found->entry == 64 && found->cookie_initialiser == 256 && found->common_main == 512,
           "verified relative call and tail jump");
     check(image == original, "signature scan is read-only");
+    auto cached = cmfm::startup::verify_crt_entry(image, ranges, 64, reason);
+    check(cached && cached->entry == 64 && cached->cookie_initialiser == 256 && cached->common_main == 512,
+          "cached wrapper uses the same target checks");
+    check(!cmfm::startup::verify_crt_entry(image, ranges, UINT32_MAX, reason), "cached RVA outside image refused");
+    check(!cmfm::startup::verify_crt_entry(image, ranges, 2040, reason), "truncated cached wrapper refused before reading");
+    const std::array<cmfm::startup::CodeRange, 1> clipped{{{64, 17}}};
+    check(!cmfm::startup::verify_crt_entry(image, clipped, 64, reason), "cached wrapper outside readable range refused");
+    check(image == original, "cached verification is read-only");
+    // Derive branch targets anew, rather than retaining the first result.
+    std::memcpy(image.data() + 640, image.data() + 512, 22);
+    const std::int32_t moved = 640 - (64 + 18);
+    std::memcpy(image.data() + 78, &moved, sizeof(moved));
+    cached = cmfm::startup::verify_crt_entry(image, ranges, 64, reason);
+    check(cached && cached->common_main == 640, "cached wrapper re-derives the current common-main target");
+    image = original;
     image[270] = 0xb9; image[281] = 0xc1;
     check(cmfm::startup::find_crt_entry(image, ranges, reason).has_value(), "cookie register allocation can vary");
     image = fixture();
     image[271] ^= 1;
+    check(!cmfm::startup::verify_crt_entry(image, ranges, 64, reason), "cached cookie mismatch refused");
     check(!cmfm::startup::find_crt_entry(image, ranges, reason), "cookie literal mismatch refuses entry");
     image = fixture(); image[512] = 0xe9;
+    check(!cmfm::startup::verify_crt_entry(image, ranges, 64, reason), "cached already-detoured common-main refused");
     check(!cmfm::startup::find_crt_entry(image, ranges, reason), "already detoured common-main refused");
     image = fixture();
     const std::int32_t overflow = INT32_MAX;

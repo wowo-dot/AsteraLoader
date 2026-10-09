@@ -109,6 +109,8 @@ target_compile_definitions(cmfm_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX CMF
 target_link_libraries(cmfm_minhook PRIVATE cmfm_thread_snapshot)
 
 add_library(cmfm_startup STATIC
+    src/core/startup/entry_cache.cpp
+    src/core/startup/entry_cache.hpp
     src/core/startup/entry_signature.cpp
     src/core/startup/entry_signature.hpp
     src/core/startup/protect_trace.hpp
@@ -341,6 +343,10 @@ add_executable(cmfm_startup_signature_tests tests/test_startup_signature.cpp)
 target_link_libraries(cmfm_startup_signature_tests PRIVATE cmfm_startup)
 cmfm_project_target(cmfm_startup_signature_tests)
 add_test(NAME startup_signature COMMAND cmfm_startup_signature_tests)
+add_executable(cmfm_entry_cache_tests tests/test_entry_cache.cpp)
+target_link_libraries(cmfm_entry_cache_tests PRIVATE cmfm_startup)
+cmfm_project_target(cmfm_entry_cache_tests)
+add_test(NAME startup_entry_cache COMMAND cmfm_entry_cache_tests "${CMAKE_BINARY_DIR}/entry_cache")
 
 add_executable(cmfm_protect_trace_tests tests/test_protect_trace.cpp)
 target_link_libraries(cmfm_protect_trace_tests PRIVATE cmfm_common)
@@ -385,6 +391,13 @@ add_test(NAME startup_helper_transition
         -DEXPECT_HELPER=1
         -P "${CMAKE_SOURCE_DIR}/tests/startup_phase.cmake")
 set_tests_properties(startup_helper_transition PROPERTIES TIMEOUT 45)
+add_test(NAME startup_cached_transition
+    COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"
+        "-DCORE=$<TARGET_FILE:cmfm>" "-DFAKE_GAME=$<TARGET_FILE:fake_packed_game>"
+        "-DPLUGIN=$<TARGET_FILE:cmfm_plugin_fixture_pre_main_probe>"
+        "-DWORK=${CMAKE_BINARY_DIR}/startup_cached_transition"
+        -P "${CMAKE_SOURCE_DIR}/tests/startup_cache.cmake")
+set_tests_properties(startup_cached_transition PROPERTIES TIMEOUT 60)
 add_test(NAME startup_trace_overflow
     COMMAND "${CMAKE_COMMAND}"
         "-DLAUNCHER=$<TARGET_FILE:cmfm_launcher>"

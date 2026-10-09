@@ -24,6 +24,41 @@ std::uint64_t cookie() {
     const auto* config = reinterpret_cast<const IMAGE_LOAD_CONFIG_DIRECTORY64*>(base + directory.VirtualAddress);
     return *reinterpret_cast<const std::uint64_t*>(config->SecurityCookie);
 }
+
+bool wait_for_cache() {
+    // Test-only synchronization, using plain Win32 before this exe's CRT.
+    // Production detours never wait for the hash/cache thread.
+    wchar_t path[2048]{};
+    auto length = GetEnvironmentVariableW(L"CMFM_FAKE_CACHE_LOG_FOLDER", path, 2048);
+    if (!length) return true;
+    if (length > 2000) return false;
+    path[length++] = L'\\';
+    for (const auto c : L"core.") if (c) path[length++] = c;
+    wchar_t digits[16]{};
+    unsigned count = 0;
+    for (auto pid = GetCurrentProcessId(); pid; pid /= 10) digits[count++] = static_cast<wchar_t>(L'0' + pid % 10);
+    while (count) path[length++] = digits[--count];
+    for (const auto c : L".log") path[length++] = c;
+    const auto until = GetTickCount64() + 5000;
+    constexpr char marker[] = "startup_crt_cache_ready";
+    while (GetTickCount64() < until) {
+        const auto file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                      OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE) {
+            char buffer[8192]{};
+            DWORD read = 0;
+            const bool ok = ReadFile(file, buffer, sizeof(buffer), &read, nullptr) != FALSE;
+            CloseHandle(file);
+            if (ok) for (DWORD i = 0; i + sizeof(marker) - 1 <= read; ++i) {
+                bool match = true;
+                for (unsigned j = 0; j < sizeof(marker) - 1; ++j) if (buffer[i + j] != marker[j]) { match = false; break; }
+                if (match) return true;
+            }
+        }
+        Sleep(2);
+    }
+    return false;
+}
 }  // namespace
 
 extern "C" __declspec(dllexport) BOOL cmfm_test_cookie_unchanged() {
@@ -53,6 +88,7 @@ __declspec(noinline) BOOL helper_transition(void* text, SIZE_T size) {
 
 #pragma code_seg(push, ".bind")
 extern "C" void cmfm_test_packed_entry() {
+    if (!wait_for_cache()) ExitProcess(99);
     const auto* base = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
     const auto* pe = headers();
     g_cookie_before = cookie();

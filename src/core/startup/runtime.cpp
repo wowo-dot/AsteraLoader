@@ -7,6 +7,7 @@
 #include "core/plugins/host.hpp"
 #include "core/plugins/guard.hpp"
 #include "core/startup/entry_signature.hpp"
+#include "core/startup/entry_cache.hpp"
 #include "core/startup/protect_trace.hpp"
 #include "core/hooks/thread_snapshot.hpp"
 
@@ -29,6 +30,9 @@ namespace {
 Handle g_hash_done;
 SRWLOCK g_hash_lock = SRWLOCK_INIT;
 std::wstring g_hash;
+std::wstring g_hash_logs_folder;
+Log g_hash_log = nullptr;
+std::atomic<std::uint32_t> g_cached_entry{0};
 
 enum class State : unsigned { waiting, resolving, hooked, running, completed, skipped };
 using Protect = BOOL(WINAPI*)(LPVOID, SIZE_T, DWORD, PDWORD);
@@ -62,6 +66,7 @@ struct Runtime {
     std::array<std::uint8_t, 5> entry_patch{};
     Handle resolved;
     ProtectTrace trace;
+    std::atomic<std::uint32_t> entry_to_cache{0};
     plugins::Host host;
 };
 // Once a hook is installed, this state and the DLL are pinned until process
@@ -297,6 +302,15 @@ int __cdecl crt_entry() noexcept {
         if (frequency.QuadPart) write(L"phase_pre_main_hash_wait_us=" + std::to_wstring(
             (hash_end.QuadPart - hash_start.QuadPart) * 1000000 / frequency.QuadPart));
         write(hash.empty() ? L"plugin_exe_sha256=unavailable" : L"plugin_exe_sha256=" + hash);
+        const auto scanned_rva = g_runtime->entry_to_cache.exchange(0);
+        if (scanned_rva && !hash.empty()) {
+            try {
+                const auto file = crt_cache_file(g_runtime->logs_folder, hash);
+                write(append_crt_cache(file, scanned_rva)
+                    ? L"startup_crt_cache_written rva=" + std::to_wstring(scanned_rva)
+                    : L"startup_crt_cache_write=unavailable; next launch will scan");
+            } catch (...) { write(L"startup_crt_cache_write=unavailable; next launch will scan"); }
+        }
         const auto root = join_path(directory_of(module_path()), L"cmfm\\plugins");
         write(L"plugin_discovery_root=" + redact_profile(root, environment(L"USERPROFILE")));
         g_runtime->host.load_all({root, g_runtime->logs_folder, hash});
@@ -315,7 +329,7 @@ int __cdecl crt_entry() noexcept {
                                            std::bit_cast<Entry>(g_runtime->entry_target)();
 }
 
-bool install_entry(const CrtEntry& candidate) {
+bool install_entry(const CrtEntry& candidate, bool full_scan = true) {
     auto* target = const_cast<std::uint8_t*>(g_runtime->image.base + candidate.entry);
     void* original = nullptr;
     auto result = MH_CreateHook(target, std::bit_cast<void*>(&crt_entry), &original);
@@ -336,6 +350,7 @@ bool install_entry(const CrtEntry& candidate) {
     }
     g_runtime->entry_enabled.store(true);
     std::memcpy(g_runtime->entry_patch.data(), target, g_runtime->entry_patch.size());
+    if (full_scan) g_runtime->entry_to_cache.store(candidate.entry);
     g_runtime->state.store(State::hooked);
     write(L"phase_pre_main_hook_ready entry_rva=" + std::to_wstring(candidate.entry) +
           L" cookie_rva=" + std::to_wstring(candidate.cookie_initialiser) +
@@ -356,6 +371,18 @@ bool scan_entry(CrtEntry* candidate, std::string* reason) {
 
 bool guarded_scan(CrtEntry* candidate, std::string* reason) {
     __try { return scan_entry(candidate, reason); }
+    __except (plugins::recoverable_fault(GetExceptionCode())) { return false; }
+}
+
+bool verify_entry(CrtEntry* candidate, std::uint32_t rva, std::string* reason) {
+    const auto ranges = readable_code(g_runtime->image);
+    const auto found = verify_crt_entry({g_runtime->image.base, g_runtime->image.size}, ranges, rva, *reason);
+    if (found) *candidate = *found;
+    return found.has_value();
+}
+
+bool guarded_verify(CrtEntry* candidate, std::uint32_t rva, std::string* reason) {
+    __try { return verify_entry(candidate, rva, reason); }
     __except (plugins::recoverable_fault(GetExceptionCode())) { return false; }
 }
 
@@ -416,13 +443,18 @@ __declspec(noinline) BOOL WINAPI protect_observer(LPVOID address, SIZE_T size, D
                 std::string reason;
                 CrtEntry candidate{};
                 const auto scan_begin = ticks();
-                const bool found = guarded_scan(&candidate, &reason);
+                const auto cached_rva = g_cached_entry.load(std::memory_order_acquire);
+                std::string cache_reason;
+                const bool from_cache = cached_rva && guarded_verify(&candidate, cached_rva, &cache_reason);
+                const bool found = from_cache || guarded_scan(&candidate, &reason);
                 const auto scan_end = ticks();
                 LARGE_INTEGER frequency{};
                 QueryPerformanceFrequency(&frequency);
                 if (frequency.QuadPart) write(L"startup_signature_scan_us=" + std::to_wstring(
                     (scan_end - scan_begin) * 1000000 / frequency.QuadPart));
-                if (found && install_entry(candidate)) {
+                write(from_cache ? L"startup_signature_source=cache" : L"startup_signature_source=scan");
+                if (cached_rva && !from_cache) write(L"startup_signature_cache_rejected: " + widen(cache_reason));
+                if (found && install_entry(candidate, !from_cache)) {
                     write(L"unpacked_crt_verified_after_protection_change");
                 } else {
                     write(L"phase_pre_main_pending: " + widen(reason));
@@ -569,15 +601,26 @@ bool clean_system_export(void* target) {
 }
 }  // namespace
 
-void initialise_hash_result() {
+void initialise_hash_result(std::wstring_view logs_folder, Log log) {
+    g_hash_logs_folder = logs_folder;
+    g_hash_log = log;
+    g_cached_entry.store(0);
     g_hash_done.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
 }
 
 void publish_hash_result(std::wstring hash) noexcept {
+    std::wstring cache_file;
+    try { cache_file = crt_cache_file(g_hash_logs_folder, hash); } catch (...) {}
     AcquireSRWLockExclusive(&g_hash_lock);
     g_hash.swap(hash);
     ReleaseSRWLockExclusive(&g_hash_lock);
     if (g_hash_done) SetEvent(g_hash_done.get());
+    // Hash consumers are released before optional file I/O. A late cache read
+    // simply loses this launch's fast path; the detour never waits for it.
+    std::uint32_t rva = 0;
+    try { rva = read_crt_cache(cache_file); } catch (...) {}
+    g_cached_entry.store(rva, std::memory_order_release);
+    try { if (g_hash_log) g_hash_log(L"startup_crt_cache_ready rva=" + std::to_wstring(rva)); } catch (...) {}
 }
 
 void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexcept {

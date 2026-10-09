@@ -148,7 +148,7 @@ DWORD startup(const cmfm::StartupRequest* request) {
         LogLock lock;
         if (!g_log.good()) return ERROR_WRITE_FAULT;
     }
-    cmfm::startup::initialise_hash_result();
+    cmfm::startup::initialise_hash_result(folder, log_line);
     log_line(L"bootstrap_stage=exe_hash_thread_begin");
     start_exe_hash();
     log_line(L"bootstrap_stage=exe_hash_thread_ready");
