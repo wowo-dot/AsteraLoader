@@ -25,6 +25,12 @@ struct Image {
 struct DeviceFrame {
     std::uint64_t r11, r10, out, iid, level, adapter, rax, flags;
 };
+// Written by the worker before signalling ready; read by its requesting
+// thread after the event wait. No formatting/allocation while it is suspended.
+struct ObserverTiming {
+    std::uint64_t begin{}, signal{}, awake{}, worker_ready{}, end{};
+    std::uint64_t reset{}, notify{}, open{}, suspend{}, get{}, reserve{}, set{}, resume{};
+};
 struct Pending {
     bool win_main{};
     DWORD thread{};
@@ -36,6 +42,9 @@ struct Pending {
     std::uint32_t level{};
     DebugSlot debug{};
     bool armed{};
+    ObserverTiming timing;
+    unsigned call{};
+    std::uint64_t forward_ready{}, forward_log{};
 };
 struct State {
     plugins::Host* host{};
@@ -56,6 +65,9 @@ struct State {
     Handle request, ready, worker;
     Pending pending;
     unsigned device_attempts=0;
+    std::atomic<unsigned> device_calls{0};
+    std::uint64_t qpc_frequency{}, worker_create_begin{}, worker_create{};
+    std::atomic<std::uint64_t> worker_started{0};
 };
 State* g{}; // Pinned core / host and callback addresses live until exit.
 
@@ -66,6 +78,35 @@ void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {
     } catch (...) {}
 }
 std::uint64_t ticks() { LARGE_INTEGER n{}; QueryPerformanceCounter(&n); return n.QuadPart; }
+std::uint64_t microseconds(std::uint64_t count) noexcept {
+    return g->qpc_frequency ? count*1000000/g->qpc_frequency : 0;
+}
+std::uint64_t interval(std::uint64_t begin,std::uint64_t end) noexcept {
+    return begin && end>=begin ? end-begin : 0;
+}
+void observer_timing(const Pending& request) noexcept {
+    if (!request.win_main && request.call>3) return;
+    try {
+        const auto& t=request.timing;
+        log(L"startup_hook_timing operation="+std::wstring(request.win_main?L"win_main_arm":L"device_return_arm")+
+            L" elapsed_us="+std::to_wstring(microseconds(interval(t.begin,t.end)))+
+            L" thread_id="+std::to_wstring(request.thread)+L" call="+std::to_wstring(request.call)+
+            L" armed="+std::to_wstring(request.armed)+L" begin_qpc="+std::to_wstring(t.begin)+
+            L" end_qpc="+std::to_wstring(t.end)+L" reset_us="+std::to_wstring(microseconds(t.reset))+
+            L" signal_us="+std::to_wstring(microseconds(t.notify))+
+            L" worker_wake_us="+std::to_wstring(microseconds(interval(t.signal,t.awake)))+
+            L" thread_open_us="+std::to_wstring(microseconds(t.open))+
+            L" suspend_us="+std::to_wstring(microseconds(t.suspend))+
+            L" get_context_us="+std::to_wstring(microseconds(t.get))+
+            L" reserve_us="+std::to_wstring(microseconds(t.reserve))+
+            L" set_context_us="+std::to_wstring(microseconds(t.set))+
+            L" resume_us="+std::to_wstring(microseconds(t.resume))+
+            L" caller_wake_us="+std::to_wstring(microseconds(interval(t.worker_ready,t.end)))+
+            L" worker_create_us="+std::to_wstring(microseconds(g->worker_create))+
+            L" worker_start_from_create_us="+std::to_wstring(microseconds(interval(g->worker_create_begin,g->worker_started.load())))+
+            L" worker_precreated=1");
+    } catch (...) { /* Optional diagnostics never affect forwarding. */ }
+}
 void dispatch(cmfm_phase_t phase, std::wstring_view name, const void* data) noexcept {
     try {
         std::lock_guard serial(g->dispatch_mutex);
@@ -165,26 +206,43 @@ int WINAPI win_main(HINSTANCE instance,HINSTANCE previous,char* command,int show
 }
 
 DWORD WINAPI context_worker(void*) noexcept {
+    g->worker_started.store(ticks());
     while (WaitForSingleObject(g->request.get(),INFINITE)==WAIT_OBJECT_0) {
+        const auto awake=ticks();
         const bool stopping=g->stopped.load();
         if (stopping && !g->observer_active.load()) break;
         auto& pending=g->pending;
+        auto& timing=pending.timing;
+        timing.awake=awake;
         if (!stopping) pending.armed=false;
+        auto begin=ticks();
         Handle thread(OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_SET_CONTEXT,FALSE,pending.thread));
-        if (thread && SuspendThread(thread.get())!=DWORD(-1)) {
+        timing.open=ticks()-begin;
+        DWORD suspended=DWORD(-1);
+        if (thread) { begin=ticks(); suspended=SuspendThread(thread.get()); timing.suspend=ticks()-begin; }
+        if (thread && suspended!=DWORD(-1)) {
             CONTEXT context{}; context.ContextFlags=CONTEXT_DEBUG_REGISTERS|CONTEXT_CONTROL;
-            if (GetThreadContext(thread.get(),&context)) {
+            begin=ticks(); const auto got=GetThreadContext(thread.get(),&context); timing.get=ticks()-begin;
+            if (got) {
                 context.ContextFlags=CONTEXT_DEBUG_REGISTERS; // Never write control/stack/flags.
                 if (stopping) {
-                    if (release_debug_slot(context,pending.debug) && SetThreadContext(thread.get(),&context))
-                        g->observer_active.store(false);
-                } else if (auto saved=reserve_debug_slot(context,reinterpret_cast<DWORD64>(pending.caller))) {
-                    pending.debug=*saved;
-                    pending.armed=SetThreadContext(thread.get(),&context)!=FALSE;
+                    if (release_debug_slot(context,pending.debug)) {
+                        begin=ticks(); const auto set=SetThreadContext(thread.get(),&context); timing.set=ticks()-begin;
+                        if (set) g->observer_active.store(false);
+                    }
+                } else {
+                    begin=ticks(); const auto saved=reserve_debug_slot(context,reinterpret_cast<DWORD64>(pending.caller)); timing.reserve=ticks()-begin;
+                    if (saved) {
+                        pending.debug=*saved;
+                        begin=ticks(); pending.armed=SetThreadContext(thread.get(),&context)!=FALSE; timing.set=ticks()-begin;
+                    }
                 }
             }
+            begin=ticks();
             ResumeThread(thread.get()); // Exactly balances our one suspension.
+            timing.resume=ticks()-begin;
         }
+        timing.worker_ready=ticks();
         SetEvent(g->ready.get());
         if (stopping) {
             if (!g->observer_active.load()) if (auto handler=g->handler.exchange(nullptr)) RemoveVectoredExceptionHandler(handler);
@@ -209,9 +267,18 @@ LONG CALLBACK device_exception(EXCEPTION_POINTERS* exception) noexcept {
 }
 
 bool observe(Pending pending) noexcept {
+    pending.timing.begin=ticks();
     g->pending=pending;
+    auto begin=ticks();
     ResetEvent(g->ready.get());
-    if (!SetEvent(g->request.get()) || WaitForSingleObject(g->ready.get(),INFINITE)!=WAIT_OBJECT_0 || !g->pending.armed) return false;
+    g->pending.timing.reset=ticks()-begin;
+    g->pending.timing.signal=ticks();
+    const auto notified=SetEvent(g->request.get());
+    // This field belongs to the caller; the worker never reads it.
+    g->pending.timing.notify=ticks()-g->pending.timing.signal;
+    const auto ready=notified && WaitForSingleObject(g->ready.get(),INFINITE)==WAIT_OBJECT_0;
+    g->pending.timing.end=ticks();
+    if (!ready || !g->pending.armed) return false;
     g->observer_thread.store(pending.thread);
     g->observer_active.store(true,std::memory_order_release);
     return true;
@@ -219,8 +286,14 @@ bool observe(Pending pending) noexcept {
 
 void device_return(std::uint64_t result) noexcept {
     const auto error=GetLastError();
+    const auto returned=ticks();
     try {
         auto& p=g->pending;
+        if (p.call && p.call<=3) log(L"phase_device_call_return thread_id="+std::to_wstring(GetCurrentThreadId())+
+            L" call="+std::to_wstring(p.call)+L" return_qpc="+std::to_wstring(returned)+
+            L" forward_ready_qpc="+std::to_wstring(p.forward_ready)+
+            L" forward_to_return_bridge_us="+std::to_wstring(microseconds(interval(p.forward_ready,returned)))+
+            L" forward_log_us="+std::to_wstring(microseconds(p.forward_log)));
         const bool success=static_cast<std::int32_t>(result)>=0 && p.out && readable(p.out,sizeof(void*)) && *p.out;
         auto forward=g->forward.load();
         if (g->device_import.delayed) {
@@ -278,6 +351,19 @@ void* return_bridge(void* caller) {
 }
 void* device_enter(void* caller, const DeviceFrame* frame) noexcept {
     const auto error=GetLastError();
+    // First timestamp in the C helper, before logging, validation, allocation
+    // or the worker handshake. The forwarding bridge only saved registers.
+    const auto entered=ticks();
+    const auto call=g->device_calls.fetch_add(1)+1;
+    const bool measured=call<=3;
+    std::uint64_t diagnostic_log=0, bridge_time=0, observer_time=0;
+    bool observed=false;
+    if (measured) {
+        const auto begin=ticks();
+        try { log(L"phase_device_call_enter thread_id="+std::to_wstring(GetCurrentThreadId())+
+            L" call="+std::to_wstring(call)+L" entry_qpc="+std::to_wstring(entered)); } catch (...) {}
+        diagnostic_log+=ticks()-begin;
+    }
     auto forward=g->forward.load();
     bool claimed=false;
     try {
@@ -287,21 +373,42 @@ void* device_enter(void* caller, const DeviceFrame* frame) noexcept {
             // test_and_set returns the OLD value; this branch owns the request.
             claimed=true;
             if (++g->device_attempts>16) throw 0;
-            auto& p=g->pending; p={}; p.thread=GetCurrentThreadId(); p.caller=caller;
+            auto& p=g->pending; p={}; p.thread=GetCurrentThreadId(); p.caller=caller; p.call=call;
             p.out=reinterpret_cast<void**>(frame->out); p.adapter=reinterpret_cast<void*>(frame->adapter);
             p.level=static_cast<std::uint32_t>(frame->level);
             const auto iid=reinterpret_cast<const GUID*>(frame->iid);
             if (!readable(iid,sizeof(GUID))) throw 0;
-            p.iid=*iid; p.resume=return_bridge(caller);
+            p.iid=*iid;
+            auto begin=ticks(); p.resume=return_bridge(caller); bridge_time=ticks()-begin;
             if (!p.resume) throw 0;
-            if (!observe(p)) throw 0;
+            const auto armed=observe(p);
+            observer_time=interval(g->pending.timing.begin,g->pending.timing.end);
+            begin=ticks(); observer_timing(g->pending); diagnostic_log+=ticks()-begin;
+            if (!armed) throw 0;
+            observed=true;
+            begin=ticks();
             log(L"phase_device_return_observer_armed thread_id="+std::to_wstring(p.thread));
+            diagnostic_log+=ticks()-begin;
             claimed=false; // Released by the return bridge, after the API.
         } else claimed=false;
     } catch (...) {
         g->device_done.store(true);
         if (claimed) { g->busy.clear(); claimed=false; }
         stop_device(); unavailable(L"device_created",L"could not reserve an execution breakpoint");
+    }
+    if (measured) {
+        const auto before_log=ticks();
+        try { log(L"phase_device_call_forward thread_id="+std::to_wstring(GetCurrentThreadId())+
+            L" call="+std::to_wstring(call)+L" observed="+std::to_wstring(observed)+
+            L" entry_qpc="+std::to_wstring(entered)+L" forward_log_begin_qpc="+std::to_wstring(before_log)+
+            L" entry_to_forward_log_us="+std::to_wstring(microseconds(interval(entered,before_log)))+
+            L" return_bridge_us="+std::to_wstring(microseconds(bridge_time))+
+            L" observer_us="+std::to_wstring(microseconds(observer_time))+
+            L" diagnostic_log_us="+std::to_wstring(microseconds(diagnostic_log))); } catch (...) {}
+        if (observed) {
+            g->pending.forward_ready=ticks();
+            g->pending.forward_log=g->pending.forward_ready-before_log;
+        }
     }
     SetLastError(error);
     return forward;
@@ -321,17 +428,24 @@ void* entry_bridge() {
 void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper) noexcept {
     if (g) return;
     try {
-        g=new State; g->host=&host; g->log=logger; g->warning=warning; g->image=image_of(crt_wrapper);
+        g=new State; g->host=&host; g->log=logger; g->warning=warning;
+        LARGE_INTEGER frequency{}; QueryPerformanceFrequency(&frequency); g->qpc_frequency=frequency.QuadPart;
+        g->image=image_of(crt_wrapper);
         std::string reason;
         const auto site=find_win_main({g->image.base,g->image.size},g->image.code,g->image.common,reason);
         if (!site) { unavailable(L"win_main",std::wstring(reason.begin(),reason.end())); unavailable(L"shutdown",L"WinMain unavailable"); return; }
         g->win_original=std::bit_cast<WinMain>(g->image.base+site->target);
         g->request.reset(CreateEventW(nullptr,FALSE,FALSE,nullptr)); g->ready.reset(CreateEventW(nullptr,TRUE,FALSE,nullptr));
         g->handler=AddVectoredExceptionHandler(1,device_exception);
-        if (g->request && g->ready && g->handler) g->worker.reset(CreateThread(nullptr,0,context_worker,nullptr,0,nullptr));
+        if (g->request && g->ready && g->handler) {
+            g->worker_create_begin=ticks(); g->worker.reset(CreateThread(nullptr,0,context_worker,nullptr,0,nullptr));
+            g->worker_create=ticks()-g->worker_create_begin;
+        }
         Pending win{}; win.win_main=true; win.thread=GetCurrentThreadId();
         win.caller=std::bit_cast<void*>(g->win_original); win.resume=std::bit_cast<void*>(&win_main);
-        if (!g->worker || !observe(win)) {
+        const bool win_observed=g->worker && observe(win);
+        if (g->worker) observer_timing(g->pending);
+        if (!win_observed) {
             g->stopped.store(true); if (g->request) SetEvent(g->request.get()); stop_device();
             unavailable(L"win_main",L"could not reserve an execution breakpoint"); return;
         }

@@ -81,6 +81,7 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,char*,int) {
     Microsoft::WRL::ComPtr<IUnknown> adapter;
     if (FAILED(CreateDXGIFactory2(0,IID_PPV_ARGS(&factory))) || FAILED(factory->EnumWarpAdapter(IID_PPV_ARGS(&adapter)))) return 92;
     if (cmfm_test_create_device(adapter.Get(),TRUE)) return 93;
+    if (cmfm_test_create_device(adapter.Get(),TRUE)) return 93;
     RenderSetup setup{adapter.Get()};
     if (cmfm::environment(L"CMFM_FAKE_DEVICE_THREAD").empty()) {
         if (const auto result=create_on_setup_thread(&setup)) return static_cast<int>(result);

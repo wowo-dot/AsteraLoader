@@ -7,6 +7,7 @@
 #include <MinHook.h>
 #include <intrin.h>
 #include <bit>
+#include <atomic>
 
 namespace {
 cmfm::LogFile record_log;
@@ -14,6 +15,7 @@ using Device=HRESULT (WINAPI*)(IUnknown*,D3D_FEATURE_LEVEL,REFIID,void**);
 Device original{};
 bool coexistence=true;
 bool win_main_seen=false, spl_seen=false;
+std::atomic<unsigned> api_calls{0};
 using WinMainFn=int (WINAPI*)(HINSTANCE,HINSTANCE,char*,int);
 WinMainFn win_original{};
 int WINAPI spl_like_win_main(HINSTANCE instance,HINSTANCE previous,char* command,int show) {
@@ -22,6 +24,9 @@ int WINAPI spl_like_win_main(HINSTANCE instance,HINSTANCE previous,char* command
     return win_original(instance,previous,command,show);
 }
 HRESULT WINAPI device_hook(IUnknown* adapter,D3D_FEATURE_LEVEL level,REFIID iid,void** out) {
+    LARGE_INTEGER entered{}; QueryPerformanceCounter(&entered);
+    record_log.line(L"device_api_call_enter call="+std::to_wstring(api_calls.fetch_add(1)+1)+
+        L" entry_qpc="+std::to_wstring(entered.QuadPart)+L" thread="+std::to_wstring(GetCurrentThreadId()));
     const auto caller=_ReturnAddress();
     using Check=BOOL (*)(const void*);
     const auto check=std::bit_cast<Check>(GetProcAddress(GetModuleHandleW(nullptr),"cmfm_test_validate_device_caller"));
