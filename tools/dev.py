@@ -339,22 +339,36 @@ def collect(args: argparse.Namespace) -> None:
     cmfm = Path(config["mo2_mods"]) / config["cmfm_mod"] / "cmfm"
     folder = launch_folder(args)
     run_folder = LOCAL / "runs" / args.run
-    before = set()
-    for name in ("logs-before.txt", "logs-collected.txt"):
-        if (run_folder / name).exists():
-            before |= set((run_folder / name).read_text(encoding="utf-8").split())
+    # Logs are named by process id, and ids get reused, so a name seen before
+    # the run can still be a new launch: go by modification time instead.
+    marker = run_folder / ("logs-before.txt" if (run_folder / "logs-before.txt").exists() else "manifest.json")
+    if not marker.exists():
+        fail(f"{run_folder} has no logs-before.txt or manifest.json; run install-mo2 or baseline first")
+    cutoff = marker.stat().st_mtime_ns
+    collected_file = run_folder / "logs-collected.txt"
+    collected = set()
+    if collected_file.exists():
+        for line in collected_file.read_text(encoding="utf-8").splitlines():
+            name, _, stamp = line.partition(" ")
+            collected.add((name, int(stamp) if stamp else None))
+    collected_names = {name for name, stamp in collected if stamp is None}  # older format: name only
+
+    def is_new(path: Path) -> bool:
+        stamp = path.stat().st_mtime_ns
+        return stamp > cutoff and (path.name, stamp) not in collected and path.name not in collected_names
+
     target = folder / "cmfm-logs"
     target.mkdir(exist_ok=True)
 
     # Every launch since install-mo2 or the last collect, oldest first.
-    new = {kind: sorted((p for p in (cmfm / "logs").glob(f"{kind}.*.log") if p.name not in before),
+    new = {kind: sorted((p for p in (cmfm / "logs").glob(f"{kind}.*.log") if is_new(p)),
                         key=lambda p: p.stat().st_mtime)
            for kind in ("core", "launcher")}
     for log in new["core"] + new["launcher"]:
         shutil.copy2(log, target / log.name)
     # A later collect (the next --launch) skips these.
-    with open(run_folder / "logs-collected.txt", "a", encoding="utf-8") as collected:
-        collected.writelines(log.name + "\n" for log in new["core"] + new["launcher"])
+    with open(collected_file, "a", encoding="utf-8") as record:
+        record.writelines(f"{log.name} {log.stat().st_mtime_ns}\n" for log in new["core"] + new["launcher"])
     # Plugin logs keep one previous launch; copy it too when there were two.
     for log in (cmfm / "logs" / "plugins").glob("*.log"):
         if not log.name.endswith(".previous.log") or len(new["core"]) > 1:
