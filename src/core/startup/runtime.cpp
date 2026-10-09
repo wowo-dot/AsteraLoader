@@ -318,6 +318,11 @@ int __cdecl crt_entry() noexcept {
         report_plugins();
         g_runtime->host.dispatch(CMFM_PHASE_PRE_MAIN, nullptr);
         report_plugins();
+        // A crash in the previous session (CMFM's crash handler), told once.
+        for (const auto& notice : g_runtime->host.notices()) {
+            write(L"previous_session_crash: " + redact_profile(notice, environment(L"USERPROFILE")));
+            visible_warning(notice);
+        }
         write(L"phase_pre_main_complete; startup wrapper restored");
         phases::arm(g_runtime->host, g_runtime->log, visible_warning, g_runtime->entry_target);
         g_runtime->state.store(State::completed);
