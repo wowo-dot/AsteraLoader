@@ -351,3 +351,22 @@ DLSS plugin, hello, 19 Stracker plugins). The user quit through Exit Game.
 
 Run folder: `local/runs/crash-mo2-1` (the report is in `crashes/`).
 
+## Run crash-mo2-2: exit-time crashes stay quiet (confirmed)
+
+The fixed handler (b76c29f), same profile and steps.
+
+- `more_auto_shoutouts.dll` crashed on its own thread at `+0x6d964`. The
+  thread entry was the same as in the DLSS mod's records from phases-mo2-1.
+  The report named the Stracker plugin.
+- WinMain returned 27 ms later and the exit code was 0. The report gained its
+  `afterwards=` line and the notice was withdrawn to `last-crash.exit.txt`.
+- At start-up there was no popup, since crash-mo2-1's notice had been
+  retired.
+
+So both exit-time crashers, `auto_food_skill` and `more_auto_shoutouts`, are
+now documented by CMFM itself. They read game memory from their own threads
+while the game shuts down. They are harmless to the user, and the plugins'
+authors could fix them.
+
+Run folder: `local/runs/crash-mo2-2`.
+

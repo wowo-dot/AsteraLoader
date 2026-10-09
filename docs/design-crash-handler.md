@@ -4,7 +4,8 @@ Status 2026-10-09: implemented, tested outside the game (`crash_handler`
 test: real crashes in child processes), and seen in the game in
 `crash-mo2-1`: the report named the Stracker plugin auto_food_skill.dll,
 on its own thread, correctly. That run also showed exit-time crashes can
-come before CMFM's SHUTDOWN, which led to the withdrawal rule below.
+come before CMFM's SHUTDOWN, which led to the withdrawal rule below, confirmed
+in `crash-mo2-2` (tag v0.1.0-dev.11).
 Requirements: `requirements-dlss-mod.md` §5; roadmap "CMFM Menu milestone",
 moved forward because a loader hosting about 20 third-party DLLs needs it
 early. Code: `src/core/crash/`.
