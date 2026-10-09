@@ -84,8 +84,8 @@ In this order; the first four are small.
     Status 2026-10-09: API 1.3 "cmfm.d3d12" implemented (core side and
     native hook layer), tested on WARP/DXGI stand-ins and confirmed in the
     game with the DLSS mod off (graphics-mo2-1, tag v0.1.0-dev.10;
-    design-d3d12-1.3.md). Next: the DLSS mod moves to the shared detours
-    (DLSS project), then a run with frame generation on.
+    design-d3d12-1.3.md). The DLSS mod 0.14.0 runs on it with frame
+    generation on (graphics-dlss-1): its first real client.
 12. **Input:** hotkeys and input capture (DirectInput8 and XInput).
 13. **Run on the game thread:** queue work for a safe point each frame;
     nothing runs when the queue is empty.

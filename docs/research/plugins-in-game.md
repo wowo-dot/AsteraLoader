@@ -291,3 +291,42 @@ cmfm.d3d12 detours first), SPL force-loaded, a long session.
 
 Run folder: `local/runs/graphics-mo2-1`.
 
+## Run graphics-dlss-1: the DLSS mod as a cmfm.d3d12 client (confirmed)
+
+The DLSS mod 0.14.0 (DLSS repo 581f5e3), moved onto cmfm.d3d12 after
+`handoff-dlss-migration-20261009.md`, as its CMFM plugin build; the
+standalone winmm.dll mod off. Frame generation 2x, Reflex on. CMFM d404cad
+(v0.1.0-dev.10), hello 0.4.0, the 19 Stracker plugins. Same in-game steps as
+graphics-mo2-1.
+
+- The mod took the presentation role and registered 47 detours in one call.
+- On the present path the chains are `cmfm,mhw_dlss`: CMFM's event layer,
+  then the mod. Its other swap-chain and factory methods (GetBuffer,
+  SetFullscreenState, GetDesc, ResizeTarget, GetCurrentBackBufferIndex,
+  CreateSwapChainForCoreWindow) are its alone.
+- The swap-chain family installed 9 targets; 5 of them sit over the Steam
+  overlay's patches.
+- Frame generation came on. The mod's own records:
+  - it saw CMFM and took its factory from the adapter's parent;
+  - it returned native interfaces to the game;
+  - it armed routing with no faults;
+  - its frame-generation status reports "on" with generated frames;
+  - its heartbeat counts 10,787 presents against 4,400 native ones, about
+    the same ratio as in standalone mode.
+- hello counted 13,971 presents, exactly CMFM's own count. CMFM's events
+  count the game's presents only, not the frames Streamline generates and
+  presents itself.
+- DEVICE_CREATED took 2.0 s, nearly all of it the mod's own setup (Streamline
+  initialisation), which used to run inside its D3D12CreateDevice hook. The
+  swap chain therefore came at 7.3 s instead of 5.2 s. It has 6 buffers
+  under frame generation.
+- The mod routed four resizes (the game's own and the user's alt-tab and
+  window-mode change) to its proxy, all S_OK.
+- 19 of 19 Stracker plugins loaded and the exit code was 0. The mod's crash
+  record stayed empty.
+
+Not yet run: SPL force-loaded with the migrated mod, a long session with
+loading screens and cutscenes, full-screen toggles.
+
+Run folder: `local/runs/graphics-dlss-1`.
+

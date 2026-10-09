@@ -8,8 +8,9 @@ All 37 CTest cases pass; `cmfm.dll` imports only KERNEL32. First MHW run
 `graphics-mo2-1` (tag v0.1.0-dev.10): both families installed over the Steam
 overlay's own patches, the two phases fired once, every present was counted
 and seven resizes raised events, with the DLSS mod off
-(`research/plugins-in-game.md`). Coexistence with the actual DLSS mod and SPL
-remains unverified; the DLSS mod must move to these detours first.
+(`research/plugins-in-game.md`). The DLSS mod 0.14.0, moved onto these
+detours, then ran with frame generation on in `graphics-dlss-1`. SPL with
+graphics hooks remains unverified.
 
 ## What the DLSS mod actually does
 
