@@ -122,3 +122,47 @@ Not yet tested:
 - overlay off;
 - manual and Steam launch options;
 - the full 19-plugin set.
+
+## Run stracker-all-1: every Stracker plugin the user uses (confirmed)
+
+Profile `cmfm-stracker`: `cmfm` plus 15 plugin mods with 22 plugin DLLs.
+These are the user's everyday set from `Default`, including G8F Actor
+Routing 0.4, plus the handoff's test targets: LuaEngine, Better Input
+Detection, MoreAutoShoutout_v and Tic Rate Fix. Stracker's Loader and SPL
+are off, `!CRCBypass.dll` is excluded, and there is no force-load. Two
+launches, the second into the save.
+
+- Both launches: 22 found, 22 loaded, 0 failed, exit code 0. Each plugin
+  was mapped once, from its own mod folder, at PRE_MAIN. Stracker's
+  `dinput8.dll` never loads; the game loads System32's at 8.8 s.
+- LuaEngine works. It initialised in both launches, and in the second it
+  logged a scene switch when the save loaded.
+- PRE_MAIN takes 3.9-4.4 s. That is the plugins' own DllMain work, run in
+  order under the loader lock. The slowest are:
+  - MatchMakingUnlocker, about 0.85 s;
+  - BetterDailyCatSkills, 0.6 s;
+  - QuestLoader and NoHomeChange, 0.5 s each;
+  - G8F_AnimationRouting, 0.5 s, falling to 7 ms on the next launch.
+
+  The graphics device came up at 5.6 s, against about 1.7 s with two
+  plugins. Stracker's Loader does the same work later, when the game loads
+  `dinput8.dll`. A baseline run should show whether the time to the title
+  screen differs.
+- Messages that are not CMFM's:
+  - NameColorForce reports that its config file is missing. The mod ships
+    none.
+  - LuaEngine's `Engine.lua` checks for Stracker's `loader.dll` and
+    `dinput8.dll` in the game folder and reports "file not found". The
+    check is informational, and these files are absent under CMFM on
+    purpose. The `?` characters come from LuaEngine itself; its own log
+    shows them too.
+- The "Stracker's Loader" console window appears because the config has
+  `"logcmd": true`. The shim reproduces Stracker here: the console opens
+  with the first line that passes `logLevel`. Earlier runs logged nothing
+  at ERROR, so they had no console.
+
+Run folder: `local/runs/stracker-all-1`.
+
+Not yet run:
+- the same plugins under Stracker's Loader, as a baseline for start-up time;
+- the mods that are off in every profile.
