@@ -1,7 +1,7 @@
 /* hello: the smallest CMFM plugin, in plain C.
  *
  * It logs the folder paths CMFM hands it, which game this is (the "cmfm.game"
- * service, API 1.1) and when PRE_MAIN runs. Install
+ * service, API 1.1) and each phase it sees with its payload (API 1.2). Install
  * it as <game>\cmfm\plugins\hello\hello.dll (under MO2: its own mod with that
  * layout). CMFM writes its log to cmfm\logs\plugins\hello.log.
  */
@@ -51,12 +51,41 @@ static double ms_since_process_start(void) {
     return (double)(current.QuadPart - start.QuadPart) / 10000.0;
 }
 
+static void say_guid(const char* label, const GUID* guid) {
+    if (!guid) {
+        say(CMFM_LOG_INFO, "%s: (none)", label);
+        return;
+    }
+    say(CMFM_LOG_INFO, "%s: {%08lX-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}", label, guid->Data1, guid->Data2,
+        guid->Data3, guid->Data4[0], guid->Data4[1], guid->Data4[2], guid->Data4[3], guid->Data4[4], guid->Data4[5],
+        guid->Data4[6], guid->Data4[7]);
+}
+
 static void CMFM_CALL on_phase(cmfm_plugin_t* self, cmfm_phase_t phase, const void* data) {
     (void)self;
-    (void)data;
     say(CMFM_LOG_INFO, "phase %u on thread %lu, %.1f ms after process start", phase, GetCurrentThreadId(),
         ms_since_process_start());
-    if (phase == CMFM_PHASE_PRE_MAIN) say_module("game exe as the game sees it", NULL);
+    /* Payloads are valid during this call only. Each starts with its size:
+     * check it before reading a field a later API version added. */
+    if (phase == CMFM_PHASE_PRE_MAIN) {
+        say_module("game exe as the game sees it", NULL);
+    } else if (phase == CMFM_PHASE_WIN_MAIN && data) {
+        const cmfm_phase_win_main_t* win_main = (const cmfm_phase_win_main_t*)data;
+        if (win_main->size < sizeof(*win_main)) return;
+        say(CMFM_LOG_INFO, "WinMain: instance is the game exe: %s, command line \"%s\", show command %d",
+            win_main->instance == (void*)GetModuleHandleW(NULL) ? "yes" : "no",
+            win_main->command_line ? win_main->command_line : "(none)", win_main->show_command);
+    } else if (phase == CMFM_PHASE_DEVICE_CREATED && data) {
+        const cmfm_phase_device_t* device = (const cmfm_phase_device_t*)data;
+        if (device->size < sizeof(*device)) return;
+        say(CMFM_LOG_INFO, "device %s, adapter %s, minimum feature level 0x%x", device->device ? "present" : "missing",
+            device->adapter ? "given" : "default", device->minimum_feature_level);
+        say_guid("device interface the game asked for", (const GUID*)device->riid);
+    } else if (phase == CMFM_PHASE_SHUTDOWN && data) {
+        const cmfm_phase_shutdown_t* shutdown = (const cmfm_phase_shutdown_t*)data;
+        if (shutdown->size < sizeof(*shutdown)) return;
+        say(CMFM_LOG_INFO, "WinMain returned %d", shutdown->exit_code);
+    }
 }
 
 static const cmfm_plugin_info_t info = {
@@ -64,8 +93,9 @@ static const cmfm_plugin_info_t info = {
     CMFM_API_VERSION,
     "hello",      /* name: also the folder and DLL name */
     "CMFM Hello", /* display name */
-    "0.2.0",      /* this plugin's version */
-    CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN),
+    "0.3.0",      /* this plugin's version */
+    CMFM_PHASE_BIT(CMFM_PHASE_PRE_MAIN) | CMFM_PHASE_BIT(CMFM_PHASE_WIN_MAIN) |
+        CMFM_PHASE_BIT(CMFM_PHASE_DEVICE_CREATED) | CMFM_PHASE_BIT(CMFM_PHASE_SHUTDOWN),
     0,    /* order */
     NULL, /* load_after */
     NULL, /* load_before */
