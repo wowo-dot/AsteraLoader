@@ -57,8 +57,14 @@ settles the open questions below first.
 ## Open questions (one probe run)
 
 Questions 1 and 3 are answered above (DirectInput; raw input through
-DirectInput's own window). Still open: 2 (devices and methods), 4 (pads)
-and 5 (Alt+F4).
+DirectInput's own window). Question 5 too: on Alt+F4 the window procedure
+gets no close message at all before the process ends (frame-input-1
+launch 2), so the game detects Alt+F4 itself, through its DirectInput
+keyboard, and ends the process during that frame. The window procedure
+cannot warn plugins; the frame layer could only by checking the keys at
+BEGIN, and with no teardown there is nothing to protect. Left out of v1:
+Alt+F4 ends the game at once, and plugins save settings when they change.
+Still open: 2 (devices and methods) and 4 (pads).
 
 1. Where `sMhKeyboard`'s maps come from: DirectInput's keyboard device
    (`GetDeviceState` / `GetDeviceData`), window messages, or Win32 key
