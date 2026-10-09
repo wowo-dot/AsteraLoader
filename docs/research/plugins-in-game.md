@@ -82,3 +82,43 @@ dinput8.dll and loader.dll are in the virtual game folder.
   unexplained.
 
 Run folders: `local/runs/stracker-mo2-2`, `local/runs/stracker-mo2-3`.
+
+## Run spl-mo2-1: SharpPluginLoader force-loaded (confirmed)
+
+SPL 2.0.0 from its official GitHub release, as an MO2 mod. Its `winmm.dll`
+is force-loaded by MO2 for the "CMFM Launcher" entry, in the user's profile
+`cmfm-spl`, which is `cmfm` plus SPL, minus the DLSS winmm mod (both ship a
+`winmm.dll`). Steam overlay on, no C# plugins, two launches.
+
+- CMFM is unchanged by SPL. The startup check came from the cache (93 and
+  84 µs), and PRE_MAIN ran. hello and stracker_compat were active, the
+  Stracker plugins loaded 2 of 2, and both launches exited with code 0.
+- Load order:
+  - `cmfm.dll` loads first;
+  - SPL's `winmm.dll` follows 10 ms later, from its mod folder;
+  - CMFM's PRE_MAIN plugins come next;
+  - SPL's .NET host (hostfxr, coreclr, the Bootstrapper) starts right after
+    PRE_MAIN returns, at its own post-unpack point.
+- SPL found `__scrt_common_main_seh` at 0x1427428D4. That is the common-main
+  function CMFM's startup check verifies, so CMFM restoring its startup hook
+  before handing over leaves SPL's hook points intact.
+- SPL's D3D12 setup succeeded, and its F9 menu opened (user). Its log has no
+  errors.
+- SPL rewrites `loader-config.json` in place. Stracker's keys survive, and
+  SPL adds an `SPL` object (PreloadDLLs `dinput8.dll`, `dxgi.dll`; neither
+  exists here). stracker_compat still reads the file.
+- SPL writes into MO2's overwrite folder: `FASMX64.dll` and `imgui.ini` at
+  the game root, and its caches, log and `cimgui.dll` under
+  `nativePC\plugins\CSharp\Loader`.
+- SPL's own startup cost is that the graphics device came up 0.35-0.9 s
+  later than without it. The first launch also built SPL's caches.
+
+Run folder: `local/runs/spl-mo2-1`.
+
+Not yet tested:
+- SPL with Stracker's Loader still enabled (SPL would preload its
+  `dinput8.dll` right after PRE_MAIN);
+- SPL with C# plugins;
+- overlay off;
+- manual and Steam launch options;
+- the full 19-plugin set.

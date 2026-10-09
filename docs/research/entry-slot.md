@@ -115,5 +115,5 @@ Consequences:
 - Later markers came 0.3–0.6 s later than in entry-slot-1. That is one run
   each; the shift beyond the pause is not explained yet.
 
-Not yet run: SPL force-loaded, overlay off, manual install, Steam launch
-options.
+SPL force-loaded: confirmed in spl-mo2-1 (plugins-in-game.md). Not yet run:
+overlay off, manual install, Steam launch options.
