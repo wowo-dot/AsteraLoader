@@ -1,6 +1,6 @@
 # Writing an Astera Loader plugin
 
-For plugin API 1.5. The header `include/al/al_plugin.h` is the reference;
+For plugin API 1.6. The header `include/al/al_plugin.h` is the reference;
 this guide explains how its parts fit together. The smallest working plugin
 is `examples/hello/hello.c`.
 
@@ -72,6 +72,9 @@ order:
    - built for another major API version, or a newer minor one than this AL;
    - `exe_sha256` given and the game exe not on the list;
    - name not matching the folder;
+   - a reserved name: `al` or `al.<anything>` (AL's own service names), or
+     a DLL name of Windows, the game or another loader (`dinput8`,
+     `loader`, `dxgi` and the like);
    - a required plugin (`dependencies`) missing, too old, or failing to start;
    - a cycle in `load_after` / `load_before`.
 
@@ -178,6 +181,7 @@ if (!frame) { /* this AL has no al.frame 1.0 or newer: run without it */ }
 | `al.d3d12` | 1.3 | The game's DXGI and Direct3D 12 calls, shared between plugins. |
 | `al.hooks` | 1.4 | Detours on functions in the game's own code, shared between plugins. |
 | `al.frame` | 1.5 | Callbacks on the game thread every frame; tasks posted to it. |
+| `al.input` | 1.6 | Hotkeys, key and pad state, the game window's messages, input capture for menus. |
 
 ### al.game
 
@@ -284,6 +288,58 @@ A detour that passes a call into code which itself calls DXGI or D3D12
 (Streamline's proxies, say) wraps that call in `begin_internal` /
 `end_internal`, so every plugin sees each game call once.
 
+### al.input: hotkeys, key state and menus
+
+MHW reads the keyboard and mouse through DirectInput and pads through
+XInput, once per frame on its frame thread. AL keeps a copy of what each of
+those reads returned, and everything below works from those copies: a
+plugin sees what the game saw, and nothing held while the game window is in
+the background. AL never polls input itself, and logs no keys or text.
+
+- **Hotkeys:** `add_hotkey` takes a key (a Windows `VK_` code, mouse
+  buttons included) and `AL_MOD_*` modifiers; `add_pad_hotkey` takes
+  `AL_PAD_*` buttons on a pad slot (0 to 3). The callback runs on the game
+  thread in the frame the combination becomes held. Two plugins may use the
+  same combination; both their logs say so.
+- **State:** `key_down` and `pad_state`, from any thread.
+- **Window messages:** `subscribe_messages` delivers the game window's
+  messages on the window's thread, before the game; a callback returning
+  non-zero keeps the message from the game. That is how a menu's UI gets
+  mouse moves, clicks and typed characters (`WM_CHAR`). Keeping keyboard
+  messages from the game does not stop the hunter: the game reads its
+  controls through DirectInput. That is what capture is for.
+- **Capture:** `capture(self, AL_INPUT_KEYBOARD | AL_INPUT_MOUSE)` makes
+  the game see those devices idle while plugins keep the real state;
+  `release` undoes the latest capture. A menu captures when it opens and
+  releases when it closes. Capture fails until `status` shows the device in
+  `devices`. Another plugin's capture suppresses your hotkeys, your own
+  does not. AL never leaves the game captured: a plugin that faults or is
+  disabled, the game losing focus, and EXITING all end capture.
+
+Request `al.input` from `al_plugin_init` or PRE_MAIN, so AL installs its
+input layer and watches for the game window.
+
+```c
+static const al_input_t* g_input;
+static int g_menu_open; /* touched on the game thread only */
+
+static void AL_CALL toggle_menu(al_plugin_t* self, uint32_t handle, void* user) {
+    if (!g_menu_open) {
+        g_menu_open = g_input->capture(self, AL_INPUT_KEYBOARD | AL_INPUT_MOUSE) == AL_OK;
+    } else {
+        g_input->release(self);
+        g_menu_open = 0;
+    }
+}
+
+/* in al_plugin_init: */
+g_input = (const al_input_t*)api->get_interface(init->self, AL_INPUT_INTERFACE, AL_INPUT_VERSION);
+if (g_input) {
+    const al_hotkey_t key = {sizeof(al_hotkey_t), VK_F1, AL_MOD_CTRL, 0, "Open menu"};
+    if (!g_input->add_hotkey(init->self, &key, toggle_menu, NULL)) { /* the log says why */ }
+}
+```
+
 ## Threads
 
 | Code | Thread |
@@ -291,6 +347,8 @@ A detour that passes a call into code which itself calls DXGI or D3D12
 | `al_plugin_init`, PRE_MAIN, WIN_MAIN, SHUTDOWN | the game's main thread |
 | EXITING | usually the WinMain thread |
 | al.frame callbacks and tasks | the game's frame thread |
+| al.input hotkey callbacks | the game's frame thread, at the end of the frame |
+| al.input message callbacks | the window's thread (the WinMain thread) |
 | al.d3d12 Present events | the game's present thread |
 | al.d3d12 detours, al.hooks detours | whatever thread calls the function |
 | The API's functions | callable from any thread |
@@ -299,8 +357,11 @@ A detour that passes a call into code which itself calls DXGI or D3D12
 
 - Strings are UTF-8 and NUL-terminated; paths are UTF-16 (`wchar_t`).
 - No C++ exceptions cross the boundary. Catch them inside the plugin.
-- Check `size` before reading any struct field added after the version the
-  plugin was built for (see `hello.c`).
+- Set `size` to `sizeof` in every struct you pass to AL. In structs AL
+  passes to you, check `size` before reading a field added after the
+  version you built for (see `hello.c`).
+- Any result other than `AL_OK` is a failure (test `!= AL_OK`, not
+  `== AL_ERROR`); a handle of 0 is a failure.
 - Do not patch the game exe or its files on disk. Use `al.hooks` and
   `al.d3d12` rather than hooking functions yourself. Never stack a second
   inline patch on a function AL or another plugin hooks.
@@ -326,8 +387,6 @@ A plugin can publish its own service for other plugins with
 
 ## Coming next
 
-- **Input (API 1.6, in progress):** hotkeys, key state, the game window's
-  messages, and input capture for menus. Draft in `design-input-1.6.md`.
 - **GAME_READY:** a phase for when the game has finished loading.
 
 The full plan is in `api-roadmap.md`.

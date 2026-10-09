@@ -31,6 +31,13 @@
  * additive only (new fields at the end, `size` grows). AL refuses a plugin
  * built for another major version, or for a newer minor version than it
  * provides; a plugin built for an older minor version keeps working.
+ *   - Structs a plugin passes in: AL accepts any `size` at least the size
+ *     the struct had in the version that introduced it, and reads a later
+ *     field only when `size` covers it.
+ *   - Structs AL passes out: check `size` before reading a field added
+ *     after the version the plugin was built for.
+ *   - Results: any value other than AL_OK is a failure; later versions may
+ *     add codes. Functions returning a handle return 0 on failure.
  *
  * Services (1.1): api->get_interface returns versioned tables by name, such
  * as "al.game" and "al.scanner" below, or tables other plugins publish
@@ -41,7 +48,10 @@
  * DEVICE_CREATED and SHUTDOWN, each at most once and in that order, with a
  * payload struct as `data` (see below). 1.3 adds SWAPCHAIN_CREATED and
  * FIRST_PRESENT between DEVICE_CREATED and SHUTDOWN. GAME_READY is reserved
- * and does not fire yet.
+ * and does not fire yet. 1.5 adds EXITING, before SHUTDOWN.
+ * Phase numbers are names, not firing order. Phases fire in this order:
+ * PRE_MAIN, WIN_MAIN, DEVICE_CREATED, SWAPCHAIN_CREATED, FIRST_PRESENT,
+ * (GAME_READY), EXITING, SHUTDOWN.
  *
  * Direct3D 12 (1.3): the "al.d3d12" service shares the game's DXGI and
  * D3D12 calls between plugins: events, and detours chained on one hook per
@@ -49,6 +59,13 @@
  *
  * Game functions (1.4): the "al.hooks" service does the same for
  * functions in the game's own code.
+ *
+ * Frames (1.5): the "al.frame" service calls plugins on the game's frame
+ * thread every frame and runs tasks posted to it from any thread.
+ *
+ * Input (1.6): the "al.input" service gives hotkeys, key and pad state from
+ * the game's own reads, the game window's messages, and input capture for
+ * menus.
  */
 #ifndef AL_PLUGIN_H
 #define AL_PLUGIN_H
@@ -78,7 +95,8 @@ extern "C" {
 
 typedef uint32_t al_result_t;
 #define AL_OK 0u
-#define AL_ERROR 1u /* the plugin could not start; set_status says why */
+#define AL_ERROR 1u /* failed; for al_plugin_init, the plugin could not start and
+                       set_status says why */
 
 /* Moments in the game's life a plugin can subscribe to. `data` is NULL for
  * PRE_MAIN and points to the struct named below for the others; it is valid
@@ -570,9 +588,31 @@ typedef struct al_frame_t {
     void(AL_CALL* status)(al_plugin_t* self, al_frame_status_t* status);
 } al_frame_t;
 
-/* Input observed from the game's own device reads, never global polling.
- * Hotkeys run at frame END. Window callbacks run on the window thread.
- * No input values or typed text are written to AL's logs. */
+/* "al.input" 1.0 (API 1.6): hotkeys, key and pad state, the game window's
+ * messages, and input capture for menus.
+ *
+ * MHW reads the keyboard and mouse through DirectInput and pads through
+ * XInput, once per frame on its frame thread. AL keeps a copy of what each
+ * of those reads returned, before capture changes it; hotkeys, key_down and
+ * pad_state use those copies. AL never polls input itself, and writes no
+ * input values or typed text to its logs. While the game window is not in
+ * the foreground, queries return nothing held and hotkeys do not fire.
+ *
+ * Request the interface from al_plugin_init or PRE_MAIN, so AL watches for
+ * the game window and installs its input layer.
+ *
+ * Threads: hotkey callbacks run on the game's frame thread, at the end of
+ * the frame, just before al.frame END callbacks. Message callbacks run on
+ * the window's thread (the WinMain thread). Everything else may be called
+ * from any thread. A callback that faults disables its plugin and releases
+ * its capture; the game goes on.
+ *
+ * Capture: while any plugin holds capture of a device, the game receives
+ * that device as idle (nothing held, mouse still, pad neutral); plugins
+ * still see the real state. Capture is counted per plugin: each capture call
+ * is undone by one release, the latest first. Another plugin's capture
+ * suppresses this plugin's hotkeys; its own do not. A disabled plugin, focus
+ * loss and EXITING never leave the game captured. */
 #define AL_INPUT_INTERFACE "al.input"
 #define AL_INPUT_VERSION AL_MAKE_VERSION(1, 0)
 #define AL_MOD_CTRL 1u
@@ -616,33 +656,48 @@ typedef void(AL_CALL* al_hotkey_fn)(al_plugin_t* self, uint32_t handle, void* us
 /* Non-zero consumes this message before later callbacks and the game. */
 typedef uint32_t(AL_CALL* al_message_fn)(al_plugin_t* self, void* hwnd, uint32_t message,
                                       uintptr_t wparam, intptr_t lparam, void* user);
-#define AL_INPUT_WAITING 0u
+#define AL_INPUT_WAITING 0u     /* the input layer is not installed yet */
 #define AL_INPUT_RUNNING 1u
-#define AL_INPUT_UNAVAILABLE 2u
-#define AL_INPUT_STOPPED 3u
+#define AL_INPUT_UNAVAILABLE 2u /* AL could not install it; reason says why */
+#define AL_INPUT_STOPPED 3u     /* the game is exiting (EXITING) */
 typedef struct al_input_status_t {
-    uint32_t size, state, devices, captured; /* devices: installed capture paths */
-    void* window;
-    const char* reason; /* valid until exit */
+    uint32_t size, state, devices, captured; /* devices: AL_INPUT_* bits AL can capture;
+                                                captured: the bits captured now */
+    void* window;       /* the game window (HWND), or NULL before it exists */
+    const char* reason; /* why UNAVAILABLE, else ""; valid until the process exits */
 } al_input_status_t;
 typedef struct al_input_t {
     uint32_t size, version;
-    /* Rising combination edge, focused window, no other plugin's capture.
-     * Duplicate combinations are allowed and reported. Any thread to register. */
+    /* Calls `callback` in the frame the combination becomes held: the key
+     * plus every modifier given (others may be held too). Returns a handle,
+     * or 0 with the reason in the plugin's log; reserved must be 0. A
+     * combination another plugin uses too is allowed, and both plugins' logs
+     * say so. */
     uint32_t(AL_CALL* add_hotkey)(al_plugin_t*, const al_hotkey_t*, al_hotkey_fn, void* user);
     al_result_t(AL_CALL* remove_hotkey)(al_plugin_t*, uint32_t handle);
+    /* Non-zero if the key (a VK code, 0..255) was held in the game's latest
+     * read. */
     uint32_t(AL_CALL* key_down)(al_plugin_t*, uint32_t key);
-    /* One callback per plugin; another subscription replaces it. */
+    /* Window messages, before the game sees them; lower `order` first. A
+     * callback returning non-zero keeps the message from later callbacks and
+     * the game; messages that destroy the window always reach it. One
+     * callback per plugin; subscribing again replaces it. */
     al_result_t(AL_CALL* subscribe_messages)(al_plugin_t*, int32_t order, al_message_fn, void* user);
-    /* Nested, per plugin, released last-in first-out. Requires installed paths.
-     * Disabled plugins, focus loss and EXITING cannot leave capture active. */
+    /* Captures the AL_INPUT_* devices given (see above). AL_ERROR, with the
+     * reason in the plugin's log, unless status.devices has every one. */
     al_result_t(AL_CALL* capture)(al_plugin_t*, uint32_t devices);
+    /* Undoes this plugin's latest capture. */
     al_result_t(AL_CALL* release)(al_plugin_t*);
+    /* The game window (HWND), or NULL before it exists. */
     void*(AL_CALL* window)(al_plugin_t*);
-    /* Fills up to out->size; real pre-capture pad state, any thread. */
+    /* The pad in slot 0..3 as the game's latest read returned it, before
+     * capture. Fills *out up to out->size; AL_ERROR for another slot. */
     al_result_t(AL_CALL* pad_state)(al_plugin_t*, uint32_t user_index, al_pad_state_t* out);
+    /* As add_hotkey, for pad buttons: every button in `buttons` held, plus
+     * the keyboard modifiers given. */
     uint32_t(AL_CALL* add_pad_hotkey)(al_plugin_t*, const al_pad_hotkey_t*, al_hotkey_fn, void* user);
     al_result_t(AL_CALL* unsubscribe_messages)(al_plugin_t*);
+    /* Fills *out up to out->size. */
     void(AL_CALL* status)(al_plugin_t*, al_input_status_t* out);
 } al_input_t;
 

@@ -8,6 +8,9 @@ plugins in the wild depend on it. Reviewed: `include/al/al_plugin.h` at
 `frame/clock.cpp`). Not reviewed: `al.input`, still in progress; see the last
 section.
 
+Status 2026-10-10: items 1 to 5 are done (bc25279 and the header
+comments after it), and `al.input` was checked against the last section.
+
 ## What the freeze means
 
 From the first public release, every 1.x change is additive: new functions
