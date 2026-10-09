@@ -189,10 +189,25 @@ def enabled_mods(profile_folder: Path) -> list[str]:
     return [line[1:] for line in lines if line.startswith("+")]
 
 
-def force_loaded(profile_folder: Path, title: str) -> bool:
+def forced_libraries(profile_folder: Path, title: str) -> list[str] | None:
+    """The executable's enabled force-load entries as "process: library", or
+    None when force-load is off for it."""
     text = (profile_folder / "settings.ini").read_text(encoding="utf-8", errors="replace")
-    key = title.replace(" ", "%20").replace(":", "%3A") + "\\enabled=true"
-    return any(line.strip() == key for line in text.splitlines())
+    prefix = title.replace(" ", "%20").replace(":", "%3A") + "\\"
+    values = {}
+    for line in text.splitlines():
+        key, _, value = line.strip().partition("=")
+        if key.startswith(prefix):
+            values[key[len(prefix):]] = value
+    if values.get("enabled") != "true":
+        return None
+    entries = []
+    for index in range(1, int(values.get("size", "0") or 0) + 1):
+        if values.get(f"{index}\\enabled") == "true":
+            process = values.get(f"{index}\\process", "")
+            library = values.get(f"{index}\\library", "").replace("\\\\", "\\")
+            entries.append(f"{process}: {library}")
+    return entries
 
 
 def install_mo2(args: argparse.Namespace) -> None:
@@ -232,6 +247,7 @@ def install_mo2(args: argparse.Namespace) -> None:
 
     profile = selected_profile(Path(config["mo2_ini"]))
     profile_folder = Path(config["mo2_profiles"]) / profile
+    forced = forced_libraries(profile_folder, config["launcher_title"])
     logs = mods / config["cmfm_mod"] / "cmfm" / "logs"
     run_folder.mkdir(parents=True, exist_ok=True)
     (run_folder / "logs-before.txt").write_text(
@@ -247,7 +263,8 @@ def install_mo2(args: argparse.Namespace) -> None:
         "mo2_profile": profile,
         "mo2_enabled_mods": enabled_mods(profile_folder),
         "mo2_executable": config["launcher_title"],
-        "force_load": force_loaded(profile_folder, config["launcher_title"]),
+        "force_load": forced is not None,
+        "force_loaded_libraries": forced or [],
         "steam_overlay": "unconfirmed",
         "sealed": False,
     }
