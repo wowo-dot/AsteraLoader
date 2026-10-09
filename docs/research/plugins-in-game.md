@@ -166,3 +166,27 @@ Run folder: `local/runs/stracker-all-1`.
 Not yet run:
 - the same plugins under Stracker's Loader, as a baseline for start-up time;
 - the mods that are off in every profile.
+
+## Run stracker-baseline-1: the same plugins under Stracker's Loader (confirmed)
+
+Profile `stracker-baseline`: `cmfm-stracker` with Stracker's Loader in place
+of CMFM, started from the plain "Monster Hunter: World" entry. Two launches.
+
+- Both launches crashed the same way, before the Capcom logo, about 19 s
+  after start. Windows recorded 0xC0000005 in `nvwgf2umx.dll`, NVIDIA's
+  D3D12 driver, at offset 0x797c17 both times.
+  - The crash came shortly after LuaEngine's scripts started. LuaEngine
+    wrote its own crash record of its environment check.
+  - Nothing names the culprit. The likely mix is the plugins the user does
+    not normally run (LuaEngine above all), loaded after the graphics
+    device exists, possibly with the DLSS frame-generation mod.
+  - The user does not use LuaEngine, so this is not bisected.
+  - Under CMFM the same plugins did not crash in two launches (stracker-all-1).
+- Start-up time: under Stracker's Loader the plugins load from 4.4-4.9 s,
+  after the graphics device, and take 6.5-7 s, against 4.2-4.4 s at CMFM's
+  PRE_MAIN.
+- The game's input, audio and last-module markers came 3.0-3.4 s later than
+  under CMFM, so CMFM reaches the title screen sooner even though its window
+  appears later.
+
+Run folder: `local/runs/stracker-baseline-1`.
