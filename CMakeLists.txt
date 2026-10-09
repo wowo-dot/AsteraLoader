@@ -210,25 +210,28 @@ set_target_properties(al_hello PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/hello")
 install(FILES "$<TARGET_FILE:al_hello>" DESTINATION AsteraLoader/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
 
-# A throwaway diagnostic plugin, staged with the examples for test runs only:
-# it finds the game's per-frame function and reports its thread and stack.
-add_library(al_site_probe SHARED probes/site_probe.cpp)
-target_link_libraries(al_site_probe PRIVATE al_api)
-al_project_target(al_site_probe)
-set_target_properties(al_site_probe PROPERTIES
-    OUTPUT_NAME site_probe
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/site_probe")
-install(FILES "$<TARGET_FILE:al_site_probe>" DESTINATION AsteraLoader/plugins/site_probe COMPONENT examples EXCLUDE_FROM_ALL)
+# probes/site_probe.cpp found the frame and exit sites for API 1.5; the frame
+# layer replaced it, and it is no longer built.
 
-# Another throwaway diagnostic: which input the game reads, and what Alt+F4
-# sends (design-input-1.6.md); also an al.frame client.
+# A throwaway diagnostic: which input the game reads (design-input-1.6.md).
+# Built but not staged: its own hooks on DirectInput and XInput would sit
+# beside al.input's. Retired once al.input is tested in game.
 add_library(al_input_probe SHARED probes/input_probe.cpp)
 target_link_libraries(al_input_probe PRIVATE al_api al_minhook)
 al_project_target(al_input_probe)
 set_target_properties(al_input_probe PROPERTIES
     OUTPUT_NAME input_probe
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/input_probe")
-install(FILES "$<TARGET_FILE:al_input_probe>" DESTINATION AsteraLoader/plugins/input_probe COMPONENT examples EXCLUDE_FROM_ALL)
+
+# A test plugin for al.input in game, staged with the examples for test runs
+# only: hotkeys toggle capture, as a menu would; it logs counts only.
+add_library(al_input_check SHARED probes/input_check.cpp)
+target_link_libraries(al_input_check PRIVATE al_api)
+al_project_target(al_input_check)
+set_target_properties(al_input_check PROPERTIES
+    OUTPUT_NAME input_check
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/input_check")
+install(FILES "$<TARGET_FILE:al_input_check>" DESTINATION AsteraLoader/plugins/input_check COMPONENT examples EXCLUDE_FROM_ALL)
 
 include(CTest)
 if(BUILD_TESTING)
