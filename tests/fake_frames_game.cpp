@@ -9,6 +9,8 @@
 
 namespace {
 struct Main { volatile unsigned char exit = 0; std::atomic<unsigned> frames{0}; } main_object;
+int title_area{};
+std::atomic<unsigned> title_calls{0};
 struct Record { unsigned token; DWORD thread; std::uint64_t index; bool flag; };
 std::array<Record, 64> records{};
 std::atomic<unsigned> used{0};
@@ -28,10 +30,19 @@ __declspec(dllexport) BOOL al_test_end_wait() {
     SetEvent(end_reached);
     return WaitForSingleObject(flag_set, 5000) == WAIT_OBJECT_0;
 }
+// Stands in for aTitle's start: the title area starts in frame 1, and again
+// in frame 2 (a return to the title); GAME_READY must follow frame 1 only.
+__declspec(dllexport) __declspec(noinline) std::uintptr_t al_test_title(void* area, void* a2, void* a3, void* a4) {
+    if (area != &title_area || a2 != reinterpret_cast<void*>(0x77) || a3 || a4 != reinterpret_cast<void*>(0x99)) invalid.store(true);
+    title_calls.fetch_add(1);
+    return 0x7171;
+}
 __declspec(dllexport) __declspec(noinline) std::uintptr_t al_test_frame(void* main, void* a2, void* a3, void* a4) {
     if (main != &main_object || a2 != reinterpret_cast<void*>(0x1234) || a3 != reinterpret_cast<void*>(0x5678) ||
         a4 != reinterpret_cast<void*>(0x9abc) || GetLastError() != 0x111) invalid.store(true);
     const auto index = main_object.frames.fetch_add(1);
+    if ((index == 1 || index == 2) &&
+        al_test_title(&title_area, reinterpret_cast<void*>(0x77), nullptr, reinterpret_cast<void*>(0x99)) != 0x7171) invalid.store(true);
     al_test_frame_record(Body, index);
     SetLastError(0x222);
     return 0x123456789abcdef0ull;
@@ -79,7 +90,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, char*, int) {
     main_object.exit = 1;
     SetEvent(quit.get()); game.join();
     if (!reached || invalid.load() || !validate(frame_thread, backup ? frame_thread : GetCurrentThreadId())) return 94;
-    unsigned exits = 0, final_tasks = 0, bodies = 0;
+    unsigned exits = 0, final_tasks = 0, bodies = 0, readies = 0;
     // The per-frame trace proves the loader is inside the Reflex markers
     // and around plugin detours at order 0. Exiting may interleave on WinMain.
     std::array<unsigned, 8> expected{OuterBegin, Begin, InnerBegin, Body, InnerEnd, End, OuterEnd, 0};
@@ -91,11 +102,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, char*, int) {
         if (item.thread != frame_thread) return 96;
         if (item.token == TaskInitial) { if (phase != 1 || bodies) return 97; continue; }
         if (item.token == TaskFinal) { ++final_tasks; if (!item.flag || phase != 6) return 98; continue; }
+        // After frame 1's END callbacks, before the outer detour returns.
+        if (item.token == GameReady) { ++readies; if (phase != 6 || item.index != 1 || bodies != 2) return 101; continue; }
         if (item.token != expected[phase]) return 99;
         if (item.token == Body) ++bodies;
         phase = (phase + 1) % 7;
     }
-    if (phase || bodies != 3 || exits != 1 || final_tasks != 1) return 100;
-    log.line(L"frame_valid=1 frames=3 tasks=2 exiting=1 backup=" + std::to_wstring(backup));
+    if (phase || bodies != 3 || exits != 1 || final_tasks != 1 || readies != 1 || title_calls.load() != 2) return 100;
+    log.line(L"frame_valid=1 frames=3 tasks=2 exiting=1 game_ready=1 backup=" + std::to_wstring(backup));
     return 37;
 }

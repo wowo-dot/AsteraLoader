@@ -94,6 +94,11 @@ public:
     // the backup path or the other thread) return at once. Returns true for
     // the call that dispatched it. Any thread.
     bool raise_exiting();
+    // Dispatches AL_PHASE_GAME_READY once, and never after EXITING. Returns
+    // true for the call that dispatched it.
+    bool raise_game_ready(const al_phase_game_ready_t& payload);
+    // Whether a running plugin subscribed to `phase`.
+    bool subscribed(al_phase_t phase) const;
     // Reuse the cached identity rather than scanning the image again.
     const al_game_t* game_identity();
     // Whether an initial plugin asked for frames or the EXITING phase.

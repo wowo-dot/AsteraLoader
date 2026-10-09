@@ -11,7 +11,7 @@ const al_frame_t* frame{};
 al_plugin_t* self{};
 FrameRecord record{};
 void* next{};
-std::uint64_t begins{}, ends{}, tasks{}, exit_calls{};
+std::uint64_t begins{}, ends{}, tasks{}, exit_calls{}, ready_calls{};
 DWORD frame_thread{}, exit_thread{};
 bool valid = true;
 std::uintptr_t update(void* main, void* a2, void* a3, void* a4) {
@@ -56,12 +56,19 @@ void AL_CALL event(al_plugin_t*, al_frame_event_t kind, const al_frame_info_t* i
     }
     SetLastError(0xbad);
 }
-void AL_CALL phase(al_plugin_t*, al_phase_t id, const void*) {
+void AL_CALL phase(al_plugin_t*, al_phase_t id, const void* data) {
+    if (id == AL_PHASE_GAME_READY) {
+        const auto* ready = static_cast<const al_phase_game_ready_t*>(data);
+        ++ready_calls;
+        valid = valid && ready && ready->size == sizeof(*ready) && ready->source == AL_GAME_READY_TITLE &&
+            ready->frame == 1 && ends == 2 && GetCurrentThreadId() == frame_thread;
+        record(GameReady, ready ? ready->frame : 99);
+    }
     if (id == AL_PHASE_EXITING) {
         ++exit_calls; exit_thread = GetCurrentThreadId(); record(Exiting, 0);
     }
-    if (id == AL_PHASE_SHUTDOWN) api->log(self, valid && begins == 3 && ends == 3 && tasks == 2 && exit_calls == 1
-        ? AL_LOG_INFO : AL_LOG_ERROR, valid && begins == 3 && ends == 3 && tasks == 2 && exit_calls == 1 ? "shutdown_frame_valid=1" : "shutdown_frame_valid=0");
+    const auto ok = valid && begins == 3 && ends == 3 && tasks == 2 && exit_calls == 1 && ready_calls == 1;
+    if (id == AL_PHASE_SHUTDOWN) api->log(self, ok ? AL_LOG_INFO : AL_LOG_ERROR, ok ? "shutdown_frame_valid=1" : "shutdown_frame_valid=0");
 }
 #else
 void AL_CALL phase(al_plugin_t*, al_phase_t, const void*) {}
@@ -74,7 +81,11 @@ constexpr const char* name = "frame_probe";
 constexpr int order = 0;
 #endif
 const al_plugin_info_t info{sizeof(info), AL_API_VERSION, name, name, "0.0.1",
-    AL_PHASE_BIT(AL_PHASE_EXITING) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN), 0, nullptr, nullptr, nullptr, phase, nullptr};
+    AL_PHASE_BIT(AL_PHASE_EXITING) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN)
+#ifndef FRAME_REFLEX
+        | AL_PHASE_BIT(AL_PHASE_GAME_READY)
+#endif
+    , 0, nullptr, nullptr, nullptr, phase, nullptr};
 }
 extern "C" AL_PLUGIN_EXPORT const al_plugin_info_t* AL_CALL al_plugin_info() { return &info; }
 extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* table, const al_init_t* init) {
@@ -105,7 +116,7 @@ extern "C" __declspec(dllexport) BOOL al_test_post_initial() {
 }
 extern "C" __declspec(dllexport) BOOL al_test_frame_validate(DWORD game_thread, DWORD expected_exit_thread) {
     al_frame_status_t status{}; status.size = sizeof(status); frame->status(self, &status);
-    return valid && begins == 3 && ends == 3 && tasks == 2 && exit_calls == 1 && exit_thread == expected_exit_thread &&
+    return valid && begins == 3 && ends == 3 && tasks == 2 && exit_calls == 1 && ready_calls == 1 && exit_thread == expected_exit_thread &&
         status.state == AL_FRAME_STOPPED && status.frames == 3 && status.game_thread == game_thread &&
         frame->post(self, task, nullptr) == AL_ERROR;
 }

@@ -14,7 +14,7 @@
 #define AL_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-AL_ABI_CHECK(AL_API_VERSION == 0x00010006u);
+AL_ABI_CHECK(AL_API_VERSION == 0x00010007u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 AL_ABI_CHECK(sizeof(al_plugin_info_t) == 80);
@@ -166,6 +166,12 @@ AL_ABI_CHECK(offsetof(al_frame_t, post) == 24);
 AL_ABI_CHECK(offsetof(al_frame_t, status) == 32);
 
 AL_ABI_CHECK(AL_LOG_DEBUG == 0 && AL_LOG_INFO == 1 && AL_LOG_WARNING == 2 && AL_LOG_ERROR == 3);
+/* 1.7: GAME_READY's payload. */
+AL_ABI_CHECK(sizeof(al_phase_game_ready_t) == 16);
+AL_ABI_CHECK(offsetof(al_phase_game_ready_t, source) == 4);
+AL_ABI_CHECK(offsetof(al_phase_game_ready_t, frame) == 8);
+AL_ABI_CHECK(AL_GAME_READY_TITLE == 1);
+
 /* 1.6: "al.input" (additive; all earlier tables stay unchanged). */
 AL_ABI_CHECK(AL_INPUT_VERSION == 0x00010000u);
 AL_ABI_CHECK(sizeof(al_hotkey_t) == 24 && offsetof(al_hotkey_t, name) == 16);

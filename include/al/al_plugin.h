@@ -1,4 +1,4 @@
-/* AL plugin API, version 1.6. C ABI, 64-bit Windows.
+/* AL plugin API, version 1.7. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\AsteraLoader\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -47,11 +47,11 @@
  * Phases (1.2): besides PRE_MAIN, AL now dispatches WIN_MAIN,
  * DEVICE_CREATED and SHUTDOWN, each at most once and in that order, with a
  * payload struct as `data` (see below). 1.3 adds SWAPCHAIN_CREATED and
- * FIRST_PRESENT between DEVICE_CREATED and SHUTDOWN. GAME_READY is reserved
- * and does not fire yet. 1.5 adds EXITING, before SHUTDOWN.
+ * FIRST_PRESENT between DEVICE_CREATED and SHUTDOWN. 1.5 adds EXITING,
+ * before SHUTDOWN, and 1.7 GAME_READY, when the title screen starts.
  * Phase numbers are names, not firing order. Phases fire in this order:
  * PRE_MAIN, WIN_MAIN, DEVICE_CREATED, SWAPCHAIN_CREATED, FIRST_PRESENT,
- * (GAME_READY), EXITING, SHUTDOWN.
+ * GAME_READY, EXITING, SHUTDOWN.
  *
  * Direct3D 12 (1.3): the "al.d3d12" service shares the game's DXGI and
  * D3D12 calls between plugins: events, and detours chained on one hook per
@@ -66,6 +66,9 @@
  * Input (1.6): the "al.input" service gives hotkeys, key and pad state from
  * the game's own reads, the game window's messages, and input capture for
  * menus.
+ *
+ * Game ready (1.7): AL_PHASE_GAME_READY fires once the game has booted and
+ * its title screen starts.
  */
 #ifndef AL_PLUGIN_H
 #define AL_PLUGIN_H
@@ -82,7 +85,7 @@ extern "C" {
 #define AL_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define AL_API_VERSION_MAJOR 1u
-#define AL_API_VERSION_MINOR 6u
+#define AL_API_VERSION_MINOR 7u
 #define AL_API_VERSION AL_MAKE_VERSION(AL_API_VERSION_MAJOR, AL_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -115,7 +118,12 @@ typedef uint32_t al_phase_t;
 #define AL_PHASE_FIRST_PRESENT 4u     /* 1.3: the game's first Present, before it reaches the
                                            swap chain and before PRE_PRESENT callbacks; the
                                            game's present thread; al_d3d12_present_t */
-#define AL_PHASE_GAME_READY 5u        /* reserved: does not fire yet */
+#define AL_PHASE_GAME_READY 5u        /* 1.7: the game finished booting and its title
+                                           screen started; game data and the game's own
+                                           systems are set up. Once, on the game's frame
+                                           thread at the end of that frame, after al.frame
+                                           END; al_phase_game_ready_t. Not on executables
+                                           AL does not know, nor if the game quits first. */
 #define AL_PHASE_SHUTDOWN 6u          /* 1.2: WinMain returned, before CRT teardown;
                                            save your own data now; main thread;
                                            al_phase_shutdown_t. Does not fire if the game
@@ -171,6 +179,14 @@ typedef struct al_phase_shutdown_t {
     uint32_t size;
     int32_t exit_code; /* what WinMain returned */
 } al_phase_shutdown_t;
+
+/* 1.7: GAME_READY's payload. */
+#define AL_GAME_READY_TITLE 1u /* the title screen started */
+typedef struct al_phase_game_ready_t {
+    uint32_t size;
+    uint32_t source; /* what AL saw: AL_GAME_READY_TITLE */
+    uint64_t frame;  /* the al.frame index of the frame it fired at the end of */
+} al_phase_game_ready_t;
 
 /* 1.1: a plugin this one needs. */
 typedef struct al_dependency_t {

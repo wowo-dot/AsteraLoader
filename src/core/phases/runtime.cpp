@@ -465,6 +465,8 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
         g->game_hooks = new game_hooks::NativeInstaller([](std::string_view text) { log(widen(text)); });
         host.game_hooks().set_installer(g->game_hooks);
         g->frame->installed();
+        if (!g->frame->ready_problem().empty() && host.subscribed(AL_PHASE_GAME_READY) && g->warning)
+            g->warning(L"Astera Loader cannot announce GAME_READY: " + widen(g->frame->ready_problem()));
         g->input->installed();
         report_game_hooks();
         if (!host.graphics().chains().empty()) {

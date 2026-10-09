@@ -66,9 +66,9 @@ void manifests() {
     info.size = sizeof(info);
 
     info.api_version = AL_MAKE_VERSION(2, 0);
-    check(contains(refusal(&info), "needs Astera Loader API 2.0; this Astera Loader provides 1.6. Update Astera Loader."), "newer major");
-    info.api_version = AL_MAKE_VERSION(1, 7);
-    check(contains(refusal(&info), "needs Astera Loader API 1.7"), "newer minor refused");
+    check(contains(refusal(&info), "needs Astera Loader API 2.0; this Astera Loader provides 1.7. Update Astera Loader."), "newer major");
+    info.api_version = AL_MAKE_VERSION(1, 8);
+    check(contains(refusal(&info), "needs Astera Loader API 1.8"), "newer minor refused");
     info.api_version = AL_MAKE_VERSION(0, 9);
     check(contains(refusal(&info), "no longer supports"), "older major refused");
     info.api_version = AL_API_VERSION;

@@ -25,6 +25,7 @@ namespace {
 void require(bool ok, const char* why) { if (!ok) throw std::runtime_error(why); }
 __declspec(noinline) std::uintptr_t update(void*, void*, void*, void*) { return GetTickCount64() ^ 0x123456789abcull; }
 __declspec(noinline) void exit_site(void*) { SetLastError(0x5a); }
+__declspec(noinline) std::uintptr_t title_site(void*, void*, void*, void*) { return GetTickCount64() ^ 0x5151ull; }
 std::string signature(void* target) {
     std::string text;
     for (unsigned i = 0; i < 16; ++i) {
@@ -64,6 +65,17 @@ int wmain(int argc, wchar_t** argv) {
         namespace fs = std::filesystem;
         const auto work = fs::path(argv[2]) / (std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64()));
         fs::create_directories(work / L"plugins");
+        if (mode == L"ready_rules") {
+            // GAME_READY goes out once, and never after EXITING.
+            const al_phase_game_ready_t ready{sizeof(ready), AL_GAME_READY_TITLE, 7};
+            auto* first = new al::plugins::Host;
+            first->load_all({(work / L"plugins").wstring(), (work / L"logs").wstring(), L""});
+            require(first->raise_game_ready(ready) && !first->raise_game_ready(ready), "GAME_READY not once only");
+            auto* late = new al::plugins::Host;
+            late->load_all({(work / L"plugins").wstring(), (work / L"logs2").wstring(), L""});
+            require(late->raise_exiting() && !late->raise_game_ready(ready), "GAME_READY after EXITING");
+            std::cout << "GAME_READY fires once and never after EXITING\n"; return 0;
+        }
         // Like the production host, all callback/continuation storage stays
         // alive until process exit. The stand-in installer never patches code.
         auto* host = new al::plugins::Host;
@@ -74,16 +86,25 @@ int wmain(int argc, wchar_t** argv) {
         unsigned char flag = 0;
         const void* object = &flag;
         al::frame::Sites sites{{std::bit_cast<void*>(&update), signature(std::bit_cast<void*>(&update)), 0},
-            {std::bit_cast<void*>(&exit_site), signature(std::bit_cast<void*>(&exit_site)), 0}, &object, 0, {}};
+            {std::bit_cast<void*>(&exit_site), signature(std::bit_cast<void*>(&exit_site)), 0},
+            {std::bit_cast<void*>(&title_site), signature(std::bit_cast<void*>(&title_site)), 0}, &object, 0, {}};
         auto* installer = new Installer;
         if (mode == L"bad_signature") sites.exiting.pattern = "00 00 00 00 00 00";
         if (mode == L"first_failure") installer->fail = 1;
         if (mode == L"second_failure") installer->fail = 2;
+        if (mode == L"title_failure") installer->fail = 3;
         layer->prepare(std::move(sites), true);
         host->game_hooks().set_installer(installer);
         layer->installed();
+        if (mode == L"title_failure") {
+            // Only GAME_READY is lost: frames and EXITING stay armed, quietly.
+            require(host->frame_clock().state() == AL_FRAME_WAITING && warnings == 0 && !layer->ready_problem().empty(),
+                "a failed title hook took the frame layer down or warned");
+            std::cout << "A refused title site leaves the frame layer armed and says why GAME_READY cannot fire\n"; return 0;
+        }
         if (mode == L"cost") {
-            require(host->frame_clock().state() == AL_FRAME_WAITING && installer->head && warnings == 0, "benchmark hooks not ready");
+            require(host->frame_clock().state() == AL_FRAME_WAITING && installer->head && warnings == 0 && layer->ready_problem().empty(),
+                "benchmark hooks not ready");
             std::uint64_t made = 0;
             double baseline_ns = 0, layer_ns = 0;
             std::thread worker([&] {

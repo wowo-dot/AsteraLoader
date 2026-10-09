@@ -24,6 +24,7 @@ Sites game_sites(const al_game_t* identity, const void* image) {
     }
     sites.update = {const_cast<std::uint8_t*>(base + 0x1af2b60), kFramePattern, -25};
     sites.exiting = {const_cast<std::uint8_t*>(base + 0x22e5c60), kExitPattern, 0};
+    sites.title = {const_cast<std::uint8_t*>(base + 0x25cf70), kTitlePattern, 0};
     sites.main_object = reinterpret_cast<const void* const*>(base + 0x51c5320);
     sites.exit_offset = 0x2be8;
     return sites;

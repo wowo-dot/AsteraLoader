@@ -42,6 +42,9 @@ void Layer::unavailable(std::string reason, bool warn) noexcept {
         auto& registry = host_.game_hooks();
         if (update_handle_) registry.set_enabled(client_, update_handle_, false);
         if (exit_handle_) registry.set_enabled(client_, exit_handle_, false);
+        if (title_handle_) registry.set_enabled(client_, title_handle_, false);
+        ready_armed_.store(false, std::memory_order_release);
+        ready_problem_ = "the frame layer is unavailable: " + reason;
         host_.frame_clock().set_unavailable(reason);
         if(host_.input_service().wanted()) host_.input_service().unavailable("frame layer: "+reason);
         note("frame_layer_unavailable reason=" + reason);
@@ -61,7 +64,21 @@ void Layer::prepare(Sites sites, bool warn_unavailable) {
     const al_hook_t exit_hook{sizeof(exit_hook), -500, "Game:Exiting", sites_.exiting.pattern.c_str(), sites_.exiting.offset, 0,
         sites_.exiting.target, std::bit_cast<void*>(&exiting), &exit_next_};
     exit_handle_ = registry.hook(client_, exit_hook, problem);
-    if (!exit_handle_) unavailable("Game:Exiting: " + problem);
+    if (!exit_handle_) { unavailable("Game:Exiting: " + problem); return; }
+    // GAME_READY's site is optional: without it, frames and EXITING still work.
+    if (!sites_.title.target) { ready_unavailable("no title site for this executable"); return; }
+    const al_hook_t title_hook{sizeof(title_hook), -500, "Area:TitleStart", sites_.title.pattern.c_str(), sites_.title.offset, 0,
+        sites_.title.target, std::bit_cast<void*>(&title), &title_next_};
+    title_handle_ = registry.hook(client_, title_hook, problem);
+    if (!title_handle_) ready_unavailable("Area:TitleStart: " + problem);
+}
+void Layer::ready_unavailable(std::string reason) noexcept {
+    ready_armed_.store(false, std::memory_order_release);
+    try {
+        if (title_handle_) host_.game_hooks().set_enabled(client_, title_handle_, false);
+        ready_problem_ = reason;
+        note("game_ready_unavailable reason=" + reason);
+    } catch (...) {}
 }
 void Layer::installed() {
     if (host_.frame_clock().state() == AL_FRAME_UNAVAILABLE) return;
@@ -71,6 +88,11 @@ void Layer::installed() {
     }
     armed_.store(true, std::memory_order_release);
     note("frame_layer_armed order=-500; EXITING precedes the game exit flag");
+    if (!title_handle_) return;
+    if (host_.game_hooks().state(client_, title_handle_) != AL_HOOK_ACTIVE) { ready_unavailable("the title hook could not be activated"); return; }
+    ready_problem_.clear();
+    ready_armed_.store(true, std::memory_order_release);
+    note("game_ready_armed site=Area:TitleStart");
 }
 void Layer::win_main(std::uint32_t thread) noexcept { win_main_.store(thread, std::memory_order_release); }
 void Layer::notify(std::string_view source) noexcept {
@@ -98,10 +120,29 @@ std::uintptr_t Layer::update(void* main, void* a2, void* a3, void* a4) {
     const auto returned_error = GetLastError();
     layer.host_.input_service().end_frame();
     clock.end_frame();
+    if (!layer.ready_done_ && layer.title_started_.load(std::memory_order_acquire)) layer.ready();
     bool set = false;
     if (!exit_flag(layer.sites_, set)) layer.unavailable("the game's frame-loop exit flag is unreadable");
     else if (set) { layer.notify("frame_backup"); clock.last_frame(); }
     SetLastError(returned_error);
+    return result;
+}
+// The title area started during this frame: GAME_READY, once, between frames.
+void Layer::ready() noexcept {
+    ready_done_ = true;
+    try {
+        al_frame_status_t status{}; status.size = sizeof(status); host_.frame_clock().status(status);
+        const al_phase_game_ready_t payload{sizeof(payload), AL_GAME_READY_TITLE, status.frames ? status.frames - 1 : 0};
+        if (host_.raise_game_ready(payload))
+            note("phase_game_ready source=title frame=" + std::to_string(payload.frame) + " thread_id=" + std::to_string(GetCurrentThreadId()));
+    } catch (...) {}
+}
+// aTitle's start runs once the title area has loaded, and again after a
+// return to the title; only the first time matters.
+std::uintptr_t Layer::title(void* area, void* a2, void* a3, void* a4) {
+    auto& layer = *active;
+    const auto result = std::bit_cast<Update>(layer.title_next_)(area, a2, a3, a4);
+    if (layer.ready_armed_.load(std::memory_order_acquire)) layer.title_started_.store(true, std::memory_order_release);
     return result;
 }
 void Layer::exiting(void* main) {

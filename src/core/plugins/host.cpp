@@ -150,6 +150,7 @@ struct HostState {
     input::Service input;
     std::atomic<bool> frame_requested{false};
     std::atomic<bool> exiting{false};  // EXITING was dispatched
+    std::atomic<bool> ready{false};    // GAME_READY was dispatched
     crash::Options crash;        // installed at WIN_MAIN
     std::wstring previous_crash;  // the last session's crash notice, if any
     std::mutex mutex;  // guards interfaces
@@ -853,6 +854,18 @@ bool Host::raise_exiting() {
     if (!state_ || state_->exiting.exchange(true)) return false;
     dispatch(AL_PHASE_EXITING, nullptr);
     return true;
+}
+
+bool Host::raise_game_ready(const al_phase_game_ready_t& payload) {
+    if (!state_ || state_->exiting.load() || state_->ready.exchange(true)) return false;
+    dispatch(AL_PHASE_GAME_READY, &payload);
+    return true;
+}
+
+bool Host::subscribed(al_phase_t phase) const {
+    if (phase >= AL_PHASE_COUNT) return false;
+    for (const auto& plugin : plugins_) if (running(*plugin) && (plugin->manifest.phases & AL_PHASE_BIT(phase))) return true;
+    return false;
 }
 
 const al_game_t* Host::game_identity() { return state_ ? state_->game.table() : nullptr; }
