@@ -22,6 +22,13 @@
 // there, before the game tears down), lists every instruction in the game's
 // code that writes a byte or more at +0x2BE8 with its function's code, and
 // names the two function pointers the loop calls.
+//
+// 0.4: astera-mo2-1 found the WinMain thread's message loop sets the flag
+// after WM_QUIT, and that Alt+F4 ends the process without SHUTDOWN. The
+// probe now writes data\site_probe\exit-report.txt from DllMain when the
+// process ends (the stack of the thread ending it), finds every call to the
+// function the message loop calls right before setting the flag, dumps it
+// and the frame thread's teardown, and times the gaps between frames.
 #include "al/al_plugin.h"
 
 #include <windows.h>
@@ -29,8 +36,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
+#include <iterator>
 
 namespace {
 const al_api_t* g_api = nullptr;
@@ -206,9 +216,40 @@ int exit_flag() {
     return main ? *reinterpret_cast<const volatile std::uint8_t*>(main + kExitFlag) : -1;
 }
 
+// The same at process exit, when the game may have freed its object: -2 on a fault.
+int exit_flag_guarded() {
+    __try {
+        return exit_flag();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -2;
+    }
+}
+
+// Time from one frame's end to the next one's start: SteamAPI_RunCallbacks
+// and the loop's check, or Sleep(1) while the window is inactive. A flag set
+// in this gap is missed by a check after each frame.
+constexpr std::int64_t kGapLimitsUs[] = {20, 100, 500, 2000, 10000};
+std::uint64_t g_gaps[6] = {};
+std::int64_t g_gap_max_us = 0;
+std::int64_t g_gap_sum_us = 0;
+std::int64_t g_frame_sum_us = 0;
+std::int64_t g_qpf = 1;
+
+void count_gap(std::int64_t start) {
+    const auto previous = g_last_end_qpc.load(std::memory_order_relaxed);
+    if (!previous) return;
+    const auto us = (start - previous) * 1000000 / g_qpf;
+    unsigned bucket = 0;
+    while (bucket < 5 && us >= kGapLimitsUs[bucket]) ++bucket;
+    ++g_gaps[bucket];
+    g_gap_sum_us += us;
+    g_gap_max_us = (std::max)(g_gap_max_us, us);
+}
+
 std::uintptr_t probe_update(void* main, void* a2, void* a3, void* a4) {
     const auto call = g_calls.fetch_add(1, std::memory_order_relaxed);
     const auto now = qpc();
+    count_gap(now);
     if (call == 0) {
         g_update_thread = GetCurrentThreadId();
         g_update_start = current_thread_start();
@@ -224,6 +265,7 @@ std::uintptr_t probe_update(void* main, void* a2, void* a3, void* a4) {
     g_in_frame.store(false, std::memory_order_relaxed);
     const auto end = qpc();
     g_last_end_qpc.store(end, std::memory_order_relaxed);
+    g_frame_sum_us += (end - now) * 1000000 / g_qpf;
     if (!g_flag_after_frame && exit_flag() > 0) {
         g_flag_after_frame = call + 1;
         g_flag_after_qpc = end;
@@ -273,40 +315,79 @@ void name_pointer(char* out, std::size_t size, const void* target) {
     }
 }
 
-// Every instruction that stores a byte or a dword at [reg+0x2BE8], with the
-// code around it and its function's start.
-void scan_writers() {
-    const char* const patterns[] = {"C6 ?? E8 2B 00 00", "C7 ?? E8 2B 00 00", "88 ?? E8 2B 00 00", "89 ?? E8 2B 00 00"};
-    unsigned writers = 0;
-    for (const auto* pattern : patterns) {
-        void* matches[64] = {};
-        const auto count = g_scanner->find(g_self, pattern, AL_SCAN_CODE, matches, 64);
-        say(AL_LOG_INFO, "writer pattern \"%s\": %u match(es)", pattern, count);
-        for (unsigned k = 0; k < count && k < 64; ++k) {
-            const auto* at = static_cast<const std::uint8_t*>(matches[k]);
-            if ((at[1] & 0xC0) != 0x80 || (at[1] & 7) == 4) continue;  // [reg+disp32] only
-            char bytes[3 * 20 + 1] = {};
-            for (int b = 0; b < 20; ++b) std::snprintf(bytes + 3 * b, 4, "%02X ", at[b - 4]);
-            DWORD64 image = 0;
-            const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(at), &image, nullptr);
-            const auto* primary = entry ? primary_entry(entry) : nullptr;
-            say(AL_LOG_INFO, "writer %u at exe+0x%llx (from 4 bytes before: %s) fragment 0x%lx-0x%lx primary 0x%lx-0x%lx",
-                writers, static_cast<unsigned long long>(rva(at)), bytes, entry ? entry->BeginAddress : 0,
-                entry ? entry->EndAddress : 0, primary ? primary->BeginAddress : 0, primary ? primary->EndAddress : 0);
-            if (++writers > 24 || !entry) continue;
-            // The code before and after the store, within its fragment, and the function's start.
-            const auto here = static_cast<std::uint32_t>(rva(at));
-            char label[32];
-            std::snprintf(label, sizeof(label), "writer %u", writers - 1);
-            const std::uint32_t begin = entry->BeginAddress, end = entry->EndAddress;
-            dump(label, (std::max)(begin, here > 0x200 ? here - 0x200 : 0u), (std::min)(end, here + 0x80));
-            const std::uint32_t start = primary->BeginAddress, finish = primary->EndAddress;
-            if (start != begin || here - begin > 0x200) {
-                std::snprintf(label, sizeof(label), "writer %u start", writers - 1);
-                dump(label, start, (std::min)(finish, start + 0x60));
+// astera-mo2-1, exe 421810: the WinMain thread's message loop (exe+0x22e4670)
+// calls one function right before it sets the exit flag (the call at
+// exe+0x22e482f); the frame thread's teardown starts at exe+0x22e4c0c.
+constexpr std::uintptr_t kMessageLoopRva = 0x22e4670;
+constexpr std::uintptr_t kBeforeFlagCallRva = 0x22e482f;
+constexpr std::uintptr_t kTeardownRva = 0x22e4c0c;
+
+// Call and jump sites (E8/E9 rel32) in the exe's executable sections that
+// lead to `target`. Fills `sites`, returns how many there are; 0xFFFFFFFF on a fault.
+unsigned find_callers(std::uint32_t target, std::uint32_t* sites, unsigned capacity) {
+    unsigned found = 0;
+    __try {
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(g_image);
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(g_image + dos->e_lfanew);
+        const auto* section = IMAGE_FIRST_SECTION(nt);
+        for (WORD s = 0; s < nt->FileHeader.NumberOfSections; ++s, ++section) {
+            if (!(section->Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
+            const std::uint8_t* code = g_image + section->VirtualAddress;
+            const std::uint32_t size = section->Misc.VirtualSize;
+            for (std::uint32_t k = 0; k + 5 <= size; ++k) {
+                if (code[k] != 0xE8 && code[k] != 0xE9) continue;
+                std::int32_t relative;
+                std::memcpy(&relative, code + k + 1, 4);
+                const auto from = section->VirtualAddress + k;
+                if (static_cast<std::uint32_t>(from + 5 + relative) != target) continue;
+                if (found < capacity) sites[found] = from;
+                ++found;
             }
         }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0xFFFFFFFFu;
     }
+    return found;
+}
+
+void report_callers(const char* label, std::uint32_t target) {
+    std::uint32_t sites[16];
+    const auto count = find_callers(target, sites, 16);
+    if (count == 0xFFFFFFFFu) {
+        say(AL_LOG_INFO, "%s exe+0x%x: the code scan faulted", label, target);
+        return;
+    }
+    say(AL_LOG_INFO, "%s exe+0x%x: %u call or jump site(s)", label, target, count);
+    for (unsigned k = 0; k < count && k < 16; ++k) {
+        DWORD64 image = 0;
+        const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(g_image + sites[k]), &image, nullptr);
+        const auto* primary = entry ? primary_entry(entry) : nullptr;
+        say(AL_LOG_INFO, "  %s at exe+0x%x in function 0x%lx", g_image[sites[k]] == 0xE8 ? "call" : "jump", sites[k],
+            primary ? primary->BeginAddress : 0);
+    }
+}
+
+// The places a "game exiting" event could hang on, read at WIN_MAIN so a
+// launch that never reaches SHUTDOWN still reports them.
+void report_exit_sites() {
+    if (!g_known_exe) return;
+    const auto* call = g_image + kBeforeFlagCallRva;
+    if (call[0] != 0xE8) {
+        say(AL_LOG_INFO, "no call at exe+0x%llx", static_cast<unsigned long long>(kBeforeFlagCallRva));
+        return;
+    }
+    std::int32_t relative;
+    std::memcpy(&relative, call + 1, 4);
+    const auto callee = static_cast<std::uint32_t>(kBeforeFlagCallRva + 5 + relative);
+    DWORD64 image = 0;
+    const auto* entry = RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(g_image + callee), &image, nullptr);
+    say(AL_LOG_INFO, "called before the flag is set: exe+0x%x, function 0x%lx-0x%lx", callee,
+        entry ? entry->BeginAddress : 0, entry ? entry->EndAddress : 0);
+    dump("before-flag callee", callee, entry ? (std::min)(static_cast<std::uint32_t>(entry->EndAddress), callee + 0x180)
+                                             : callee + 0x80);
+    report_callers("callers of the before-flag callee", callee);
+    report_callers("callers of the message loop", static_cast<std::uint32_t>(kMessageLoopRva));
+    dump("frame thread teardown", static_cast<std::uint32_t>(kTeardownRva), static_cast<std::uint32_t>(kTeardownRva + 0x200));
 }
 
 void report_flag(std::int64_t shutdown) {
@@ -321,12 +402,59 @@ void report_flag(std::int64_t shutdown) {
     } else {
         say(AL_LOG_INFO, "watcher never saw it set");
     }
+    const auto gaps = g_gaps[0] + g_gaps[1] + g_gaps[2] + g_gaps[3] + g_gaps[4] + g_gaps[5];
+    if (gaps) {
+        say(AL_LOG_INFO, "between frames: mean %.1f us, max %lld us; <20us %llu, <100us %llu, <500us %llu, <2ms %llu, "
+            "<10ms %llu, more %llu; frames take %.1f us on average",
+            static_cast<double>(g_gap_sum_us) / static_cast<double>(gaps), g_gap_max_us,
+            static_cast<unsigned long long>(g_gaps[0]), static_cast<unsigned long long>(g_gaps[1]),
+            static_cast<unsigned long long>(g_gaps[2]), static_cast<unsigned long long>(g_gaps[3]),
+            static_cast<unsigned long long>(g_gaps[4]), static_cast<unsigned long long>(g_gaps[5]),
+            static_cast<double>(g_frame_sum_us) / static_cast<double>(g_calls.load()));
+    }
     for (const auto slot : {kLoopStartSlot, kAfterFrameSlot}) {
         char text[MAX_PATH + 96];
         name_pointer(text, sizeof(text), *reinterpret_cast<void* const*>(g_image + slot));
         say(AL_LOG_INFO, "slot exe+0x%llx -> %s", static_cast<unsigned long long>(slot), text);
     }
-    scan_writers();
+}
+
+// Written from DllMain when the process ends, with or without SHUTDOWN: who
+// ended it (the calling thread's stack) and the state of the frame loop.
+wchar_t g_exit_report[MAX_PATH * 2] = {};
+std::atomic<bool> g_shutdown_seen{false};
+
+void write_exit_report() {
+    if (!g_exit_report[0]) return;
+    static char text[16384];
+    std::size_t used = 0;
+    const auto add = [&](const char* format, auto... values) {
+        if (used < sizeof(text)) {
+            const auto n = std::snprintf(text + used, sizeof(text) - used, format, values...);
+            if (n > 0) used = (std::min)(sizeof(text), used + static_cast<std::size_t>(n));
+        }
+    };
+    const auto now = qpc();
+    const auto thread = GetCurrentThreadId();
+    add("process exit on thread %lu (%s); SHUTDOWN %s\r\n", thread,
+        thread == g_main_thread ? "the WinMain thread" : thread == g_update_thread ? "the frame thread" : "another thread",
+        g_shutdown_seen.load() ? "was dispatched" : "never came");
+    add("frames %llu, the last ended %.1f ms ago; exit flag now %d, first seen after frame %llu\r\n",
+        static_cast<unsigned long long>(g_calls.load()), ms_between(g_last_end_qpc.load(), now),
+        g_shutdown_seen.load() ? -3 : exit_flag_guarded(), static_cast<unsigned long long>(g_flag_after_frame));
+    void* stack[48];
+    const auto count = RtlCaptureStackBackTrace(0, 48, stack, nullptr);
+    for (USHORT k = 0; k < count; ++k) {
+        char place[MAX_PATH + 32];
+        where(stack[k], place, sizeof(place));
+        add("  %02u %s\r\n", static_cast<unsigned>(k), place);
+    }
+    const auto file = CreateFileW(g_exit_report, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(file, text, static_cast<DWORD>(used), &written, nullptr);
+    CloseHandle(file);
 }
 
 // Thread exits from 3 s before the last frame on, oldest first, at most 80.
@@ -398,7 +526,9 @@ void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void*) {
     } else if (phase == AL_PHASE_WIN_MAIN) {
         g_main_thread = GetCurrentThreadId();
         if (g_known_exe) g_watcher = CreateThread(nullptr, 0, watch_flag, nullptr, 0, nullptr);
+        report_exit_sites();
     } else if (phase == AL_PHASE_SHUTDOWN) {
+        g_shutdown_seen.store(true);
         g_stop_watch.store(true, std::memory_order_relaxed);
         if (g_watcher) {
             WaitForSingleObject(g_watcher, 200);
@@ -409,14 +539,15 @@ void AL_CALL on_phase(al_plugin_t*, al_phase_t phase, const void*) {
 }
 
 const al_plugin_info_t kInfo = {
-    sizeof(al_plugin_info_t), AL_API_VERSION, "site_probe", "Astera Loader site probe (diagnostic)", "0.3.0",
+    sizeof(al_plugin_info_t), AL_API_VERSION, "site_probe", "Astera Loader site probe (diagnostic)", "0.4.0",
     AL_PHASE_BIT(AL_PHASE_PRE_MAIN) | AL_PHASE_BIT(AL_PHASE_WIN_MAIN) | AL_PHASE_BIT(AL_PHASE_SHUTDOWN),
     0, nullptr, nullptr, nullptr, on_phase, nullptr,
 };
 }  // namespace
 
 // Records each thread that ends. The loader lock is held here: only stores.
-extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID reserved) {
+    if (reason == DLL_PROCESS_DETACH && reserved) write_exit_report();  // the process is ending
     if (reason == DLL_THREAD_DETACH) {
         auto& slot = g_exits[g_exit_count.fetch_add(1, std::memory_order_relaxed) % kExits];
         slot.thread = GetCurrentThreadId();
@@ -434,6 +565,17 @@ extern "C" AL_PLUGIN_EXPORT al_result_t AL_CALL al_plugin_init(const al_api_t* a
     g_api = api;
     g_self = init->self;
     g_image = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    g_qpf = frequency.QuadPart ? frequency.QuadPart : 1;
+    if (init->size >= offsetof(al_init_t, data_folder) + sizeof(init->data_folder) && init->data_folder) {
+        const auto length = std::wcslen(init->data_folder);
+        constexpr wchar_t kName[] = L"\\exit-report.txt";
+        if (length + std::size(kName) <= std::size(g_exit_report)) {
+            std::memcpy(g_exit_report, init->data_folder, length * sizeof(wchar_t));
+            std::memcpy(g_exit_report + length, kName, sizeof(kName));
+        }
+    }
     g_query_thread = reinterpret_cast<QueryThread>(
         reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
     g_scanner = static_cast<const al_scanner_t*>(
