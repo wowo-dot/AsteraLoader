@@ -17,6 +17,7 @@ class Registry;
 namespace al::frame {
 class Clock;
 }
+namespace al::input { class Service; }
 
 namespace al::plugins {
 
@@ -97,6 +98,7 @@ public:
     const al_game_t* game_identity();
     // Whether an initial plugin asked for frames or the EXITING phase.
     bool frame_requested() const;
+    ::al::input::Service& input_service();
 
 private:
     void close_graphics();

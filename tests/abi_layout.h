@@ -14,7 +14,7 @@
 #define AL_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-AL_ABI_CHECK(AL_API_VERSION == 0x00010005u);
+AL_ABI_CHECK(AL_API_VERSION == 0x00010006u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 AL_ABI_CHECK(sizeof(al_plugin_info_t) == 80);
@@ -166,5 +166,13 @@ AL_ABI_CHECK(offsetof(al_frame_t, post) == 24);
 AL_ABI_CHECK(offsetof(al_frame_t, status) == 32);
 
 AL_ABI_CHECK(AL_LOG_DEBUG == 0 && AL_LOG_INFO == 1 && AL_LOG_WARNING == 2 && AL_LOG_ERROR == 3);
+/* 1.6: "al.input" (additive; all earlier tables stay unchanged). */
+AL_ABI_CHECK(AL_INPUT_VERSION == 0x00010000u);
+AL_ABI_CHECK(sizeof(al_hotkey_t) == 24 && offsetof(al_hotkey_t, name) == 16);
+AL_ABI_CHECK(sizeof(al_pad_hotkey_t) == 24 && offsetof(al_pad_hotkey_t, name) == 16);
+AL_ABI_CHECK(sizeof(al_pad_state_t) == 24 && offsetof(al_pad_state_t, buttons) == 12);
+AL_ABI_CHECK(offsetof(al_pad_state_t, left_x) == 16 && offsetof(al_pad_state_t, right_x) == 20);
+AL_ABI_CHECK(sizeof(al_input_status_t) == 32 && offsetof(al_input_status_t, window) == 16);
+AL_ABI_CHECK(sizeof(al_input_t) == 96 && offsetof(al_input_t, status) == 88);
 
 #endif

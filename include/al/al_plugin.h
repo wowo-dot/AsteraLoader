@@ -1,4 +1,4 @@
-/* AL plugin API, version 1.4. C ABI, 64-bit Windows.
+/* AL plugin API, version 1.6. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\AsteraLoader\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -65,7 +65,7 @@ extern "C" {
 #define AL_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define AL_API_VERSION_MAJOR 1u
-#define AL_API_VERSION_MINOR 5u
+#define AL_API_VERSION_MINOR 6u
 #define AL_API_VERSION AL_MAKE_VERSION(AL_API_VERSION_MAJOR, AL_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -569,6 +569,82 @@ typedef struct al_frame_t {
     /* Fills *status up to status->size. Any thread. */
     void(AL_CALL* status)(al_plugin_t* self, al_frame_status_t* status);
 } al_frame_t;
+
+/* Input observed from the game's own device reads, never global polling.
+ * Hotkeys run at frame END. Window callbacks run on the window thread.
+ * No input values or typed text are written to AL's logs. */
+#define AL_INPUT_INTERFACE "al.input"
+#define AL_INPUT_VERSION AL_MAKE_VERSION(1, 0)
+#define AL_MOD_CTRL 1u
+#define AL_MOD_SHIFT 2u
+#define AL_MOD_ALT 4u
+#define AL_INPUT_KEYBOARD 1u
+#define AL_INPUT_MOUSE 2u
+#define AL_INPUT_PAD 4u
+#define AL_INPUT_ALL 7u
+
+typedef struct al_hotkey_t {
+    uint32_t size, key, modifiers, reserved; /* key is a Windows VK, including mouse buttons */
+    const char* name;
+} al_hotkey_t;
+/* XInput button masks; all specified buttons must be held. */
+#define AL_PAD_UP 0x0001u
+#define AL_PAD_DOWN 0x0002u
+#define AL_PAD_LEFT 0x0004u
+#define AL_PAD_RIGHT 0x0008u
+#define AL_PAD_START 0x0010u
+#define AL_PAD_BACK 0x0020u
+#define AL_PAD_LEFT_THUMB 0x0040u
+#define AL_PAD_RIGHT_THUMB 0x0080u
+#define AL_PAD_LEFT_SHOULDER 0x0100u
+#define AL_PAD_RIGHT_SHOULDER 0x0200u
+#define AL_PAD_A 0x1000u
+#define AL_PAD_B 0x2000u
+#define AL_PAD_X 0x4000u
+#define AL_PAD_Y 0x8000u
+typedef struct al_pad_hotkey_t {
+    uint32_t size, user_index, buttons, modifiers; /* slot 0..3; modifiers are keyboard modifiers */
+    const char* name;
+} al_pad_hotkey_t;
+typedef struct al_pad_state_t {
+    uint32_t size, connected, packet;
+    uint16_t buttons;
+    uint8_t left_trigger, right_trigger;
+    int16_t left_x, left_y, right_x, right_y;
+} al_pad_state_t;
+typedef void(AL_CALL* al_hotkey_fn)(al_plugin_t* self, uint32_t handle, void* user);
+/* Non-zero consumes this message before later callbacks and the game. */
+typedef uint32_t(AL_CALL* al_message_fn)(al_plugin_t* self, void* hwnd, uint32_t message,
+                                      uintptr_t wparam, intptr_t lparam, void* user);
+#define AL_INPUT_WAITING 0u
+#define AL_INPUT_RUNNING 1u
+#define AL_INPUT_UNAVAILABLE 2u
+#define AL_INPUT_STOPPED 3u
+typedef struct al_input_status_t {
+    uint32_t size, state, devices, captured; /* devices: installed capture paths */
+    void* window;
+    const char* reason; /* valid until exit */
+} al_input_status_t;
+typedef struct al_input_t {
+    uint32_t size, version;
+    /* Rising combination edge, focused window, no other plugin's capture.
+     * Duplicate combinations are allowed and reported. Any thread to register. */
+    uint32_t(AL_CALL* add_hotkey)(al_plugin_t*, const al_hotkey_t*, al_hotkey_fn, void* user);
+    al_result_t(AL_CALL* remove_hotkey)(al_plugin_t*, uint32_t handle);
+    uint32_t(AL_CALL* key_down)(al_plugin_t*, uint32_t key);
+    /* One callback per plugin; another subscription replaces it. */
+    al_result_t(AL_CALL* subscribe_messages)(al_plugin_t*, int32_t order, al_message_fn, void* user);
+    /* Nested, per plugin, released last-in first-out. Requires installed paths.
+     * Disabled plugins, focus loss and EXITING cannot leave capture active. */
+    al_result_t(AL_CALL* capture)(al_plugin_t*, uint32_t devices);
+    al_result_t(AL_CALL* release)(al_plugin_t*);
+    void*(AL_CALL* window)(al_plugin_t*);
+    /* Fills up to out->size; real pre-capture pad state, any thread. */
+    al_result_t(AL_CALL* pad_state)(al_plugin_t*, uint32_t user_index, al_pad_state_t* out);
+    uint32_t(AL_CALL* add_pad_hotkey)(al_plugin_t*, const al_pad_hotkey_t*, al_hotkey_fn, void* user);
+    al_result_t(AL_CALL* unsubscribe_messages)(al_plugin_t*);
+    void(AL_CALL* status)(al_plugin_t*, al_input_status_t* out);
+} al_input_t;
 
 typedef const al_plugin_info_t*(AL_CALL* al_plugin_info_fn)(void);
 typedef al_result_t(AL_CALL* al_plugin_init_fn)(const al_api_t* api, const al_init_t* init);

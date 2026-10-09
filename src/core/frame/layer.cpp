@@ -1,5 +1,6 @@
 #include "core/frame/layer.hpp"
 #include "core/frame/clock.hpp"
+#include "core/input/service.hpp"
 #include "core/plugins/host.hpp"
 #include <windows.h>
 #include <bit>
@@ -42,6 +43,7 @@ void Layer::unavailable(std::string reason, bool warn) noexcept {
         if (update_handle_) registry.set_enabled(client_, update_handle_, false);
         if (exit_handle_) registry.set_enabled(client_, exit_handle_, false);
         host_.frame_clock().set_unavailable(reason);
+        if(host_.input_service().wanted()) host_.input_service().unavailable("frame layer: "+reason);
         note("frame_layer_unavailable reason=" + reason);
         if (warn && warning_) warning_(reason);
     } catch (...) {}
@@ -89,10 +91,12 @@ std::uintptr_t Layer::update(void* main, void* a2, void* a3, void* a4) {
     if (layer.frame_thread_.load(std::memory_order_relaxed) != thread) return next(main, a2, a3, a4);
     FrameScope scope;
     const auto incoming_error = GetLastError();
+    layer.host_.input_service().begin_frame(thread);
     clock.begin_frame();
     SetLastError(incoming_error);
     const auto result = next(main, a2, a3, a4);
     const auto returned_error = GetLastError();
+    layer.host_.input_service().end_frame();
     clock.end_frame();
     bool set = false;
     if (!exit_flag(layer.sites_, set)) layer.unavailable("the game's frame-loop exit flag is unreadable");

@@ -77,6 +77,8 @@ target_include_directories(al_api INTERFACE include)
 
 # Plugin manifests and load order (core side of the plugin API).
 add_library(al_plugins STATIC
+    src/core/input/service.cpp
+    src/core/input/service.hpp
     src/core/crash/handler.cpp
     src/core/crash/handler.hpp
     src/core/crash/report.cpp
@@ -120,6 +122,8 @@ target_compile_definitions(al_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MI
 target_link_libraries(al_minhook PRIVATE al_thread_snapshot)
 
 set(AL_STARTUP_SOURCES
+    src/core/input/native.cpp
+    src/core/input/native.hpp
     src/core/frame/layer.cpp
     src/core/frame/layer.hpp
     src/core/frame/sites.cpp
@@ -316,6 +320,26 @@ add_executable(al_frame_clock_tests tests/test_frame_clock.cpp)
 target_link_libraries(al_frame_clock_tests PRIVATE al_plugins)
 al_project_target(al_frame_clock_tests)
 add_test(NAME frame_clock COMMAND al_frame_clock_tests)
+
+add_executable(al_input_tests tests/test_input.cpp)
+target_link_libraries(al_input_tests PRIVATE al_plugins)
+al_project_target(al_input_tests)
+add_test(NAME input_service COMMAND al_input_tests)
+add_executable(al_input_native_tests tests/test_input_native.cpp)
+target_link_libraries(al_input_native_tests PRIVATE al_startup user32)
+al_project_target(al_input_native_tests)
+add_test(NAME input_native COMMAND al_input_native_tests)
+add_test(NAME input_native_refusal COMMAND al_input_native_tests refusal)
+set_tests_properties(input_service input_native input_native_refusal PROPERTIES TIMEOUT 30)
+add_library(al_input_fixture SHARED tests/input_plugin.cpp)
+target_link_libraries(al_input_fixture PRIVATE al_api)
+al_project_target(al_input_fixture)
+set_target_properties(al_input_fixture PROPERTIES OUTPUT_NAME input_fixture RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
+add_executable(al_input_host_tests tests/test_input_host.cpp)
+target_link_libraries(al_input_host_tests PRIVATE al_plugins)
+al_project_target(al_input_host_tests)
+add_test(NAME input_host COMMAND al_input_host_tests "$<TARGET_FILE:al_input_fixture>" "${CMAKE_BINARY_DIR}/input_host")
+set_tests_properties(input_host PROPERTIES TIMEOUT 30)
 
 add_executable(al_frame_layer_tests tests/test_frame_layer.cpp)
 target_link_libraries(al_frame_layer_tests PRIVATE al_startup)

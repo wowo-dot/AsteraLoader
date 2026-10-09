@@ -19,4 +19,7 @@ bool guarded_d3d12_event(al_d3d12_event_fn call, al_plugin_t* plugin, al_d3d12_e
 bool guarded_frame_event(al_frame_fn call, al_plugin_t* plugin, al_frame_event_t event, const al_frame_info_t* frame,
                          void* user, unsigned long& fault) noexcept;
 bool guarded_task(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& fault) noexcept;
+bool guarded_hotkey(al_hotkey_fn, al_plugin_t*, std::uint32_t handle, void*, unsigned long& fault) noexcept;
+bool guarded_message(al_message_fn, al_plugin_t*, void* hwnd, std::uint32_t message, std::uintptr_t wparam,
+                     std::intptr_t lparam, void* user, std::uint32_t& consumed, unsigned long& fault) noexcept;
 }  // namespace al::plugins

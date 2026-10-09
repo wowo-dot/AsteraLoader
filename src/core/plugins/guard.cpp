@@ -33,6 +33,13 @@ bool task_cpp(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& f
     try { call(plugin, user); return true; }
     catch (...) { fault = kCppException; return false; }
 }
+bool hotkey_cpp(al_hotkey_fn call, al_plugin_t* plugin, std::uint32_t handle, void* user, unsigned long& fault) noexcept {
+    try { call(plugin, handle, user); return true; } catch (...) { fault = kCppException; return false; }
+}
+bool message_cpp(al_message_fn call, al_plugin_t* plugin, void* hwnd, std::uint32_t id, std::uintptr_t wp,
+                 std::intptr_t lp, void* user, std::uint32_t& consumed, unsigned long& fault) noexcept {
+    try { consumed = call(plugin, hwnd, id, wp, lp, user); return true; } catch (...) { fault = kCppException; return false; }
+}
 }  // namespace
 
 int recoverable_fault(unsigned long code) noexcept {
@@ -82,6 +89,15 @@ bool guarded_frame_event(al_frame_fn call, al_plugin_t* plugin, al_frame_event_t
 
 bool guarded_task(al_task_fn call, al_plugin_t* plugin, void* user, unsigned long& fault) noexcept {
     __try { return task_cpp(call, plugin, user, fault); }
+    __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
+}
+bool guarded_hotkey(al_hotkey_fn call, al_plugin_t* plugin, std::uint32_t handle, void* user, unsigned long& fault) noexcept {
+    __try { return hotkey_cpp(call, plugin, handle, user, fault); }
+    __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
+}
+bool guarded_message(al_message_fn call, al_plugin_t* plugin, void* hwnd, std::uint32_t id, std::uintptr_t wp,
+                     std::intptr_t lp, void* user, std::uint32_t& consumed, unsigned long& fault) noexcept {
+    __try { return message_cpp(call, plugin, hwnd, id, wp, lp, user, consumed, fault); }
     __except (recoverable_fault(GetExceptionCode())) { fault = GetExceptionCode(); return false; }
 }
 }  // namespace al::plugins

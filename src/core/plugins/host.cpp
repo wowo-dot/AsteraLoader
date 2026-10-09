@@ -6,6 +6,7 @@
 #include "common/windows.hpp"
 #include "core/crash/handler.hpp"
 #include "core/frame/clock.hpp"
+#include "core/input/service.hpp"
 #include "core/game_hooks/registry.hpp"
 #include "core/graphics/hub.hpp"
 #include "core/plugins/discovery.hpp"
@@ -145,6 +146,7 @@ struct HostState {
     graphics::Hub hub;
     game_hooks::Registry hooks;
     frame::Clock clock;
+    input::Service input;
     std::atomic<bool> frame_requested{false};
     std::atomic<bool> exiting{false};  // EXITING was dispatched
     crash::Options crash;        // installed at WIN_MAIN
@@ -202,10 +204,13 @@ void AL_CALL api_set_status(al_plugin_t* self, al_status_t status, const char* r
     try {
         auto text = plugin_text(reason, 1024);
         note(*self, "STATUS", std::string(status_name(status)) + (text.empty() ? "" : ": " + text));
-        std::lock_guard lock(self->mutex);
-        self->status = status;
-        self->reason = std::move(text);
-        self->stopped = status == AL_STATUS_DISABLED;
+        graphics::Client* owner=nullptr;
+        { std::lock_guard lock(self->mutex);
+          self->status = status;
+          self->reason = std::move(text);
+          self->stopped = status == AL_STATUS_DISABLED;
+          owner=self->graphics.get(); }
+        if(status==AL_STATUS_DISABLED && self->state && owner) self->state->input.cancel(*owner);
     } catch (...) { /* Never throw into a plugin. */ }
 }
 
@@ -254,10 +259,13 @@ graphics::Client& graphics_client(al_plugin_t& plugin) {
         client->log = [&plugin](std::string_view level, std::string_view text) { note(plugin, level, text); };
         client->disable = [&plugin](std::string reason) {
             note(plugin, "ERROR", "disabled: " + reason);
-            std::lock_guard inner(plugin.mutex);
-            plugin.status = AL_STATUS_DISABLED;
-            plugin.reason = std::move(reason);
-            plugin.stopped = true;
+            graphics::Client* owner=nullptr;
+            { std::lock_guard inner(plugin.mutex);
+              plugin.status = AL_STATUS_DISABLED;
+              plugin.reason = std::move(reason);
+              plugin.stopped = true;
+              owner=plugin.graphics.get(); }
+            if(plugin.state && owner) plugin.state->input.cancel(*owner);
         };
         plugin.graphics = std::move(client);
     }
@@ -430,6 +438,54 @@ void AL_CALL frame_status(al_plugin_t* self, al_frame_status_t* status) noexcept
 const al_frame_t kFrame{sizeof(al_frame_t), AL_FRAME_VERSION, frame_subscribe, frame_unsubscribe, frame_post,
                         frame_status};
 
+al_result_t input_result(al_plugin_t* self, const std::string& problem) {
+    if(!problem.empty()) note(*self,"WARN","al.input: "+problem);
+    return problem.empty() ? AL_OK:AL_ERROR;
+}
+std::uint32_t AL_CALL input_add(al_plugin_t* self,const al_hotkey_t* key,al_hotkey_fn fn,void* user) noexcept {
+    if(!self || !self->state || !key || key->size<sizeof(*key) || key->reserved) return 0;
+    try { std::string problem; const auto name=plugin_text(key->name,128);
+        const auto handle=self->state->input.add(graphics_client(*self),key->key,key->modifiers,name.c_str(),fn,user,problem);
+        input_result(self,problem); return handle; } catch (...) { return 0; }
+}
+std::uint32_t AL_CALL input_pad_add(al_plugin_t* self,const al_pad_hotkey_t* key,al_hotkey_fn fn,void* user) noexcept {
+    if(!self || !self->state || !key || key->size<sizeof(*key) || key->user_index>3) return 0;
+    try { std::string problem; const auto name=plugin_text(key->name,128);
+        const auto handle=self->state->input.add(graphics_client(*self),key->buttons,key->modifiers,name.c_str(),fn,user,problem,static_cast<int>(key->user_index));
+        input_result(self,problem); return handle; } catch (...) { return 0; }
+}
+al_result_t AL_CALL input_remove(al_plugin_t* self,std::uint32_t handle) noexcept {
+    if(!self || !self->state) return AL_ERROR;
+    try { return input_result(self,self->state->input.remove(graphics_client(*self),handle)); } catch (...) { return AL_ERROR; }
+}
+std::uint32_t AL_CALL input_key(al_plugin_t* self,std::uint32_t key) noexcept { return self && self->state && self->state->input.key_down(key); }
+al_result_t AL_CALL input_messages(al_plugin_t* self,std::int32_t order,al_message_fn fn,void* user) noexcept {
+    if(!self || !self->state || !fn) return AL_ERROR;
+    try { return input_result(self,self->state->input.messages(graphics_client(*self),order,fn,user)); } catch (...) { return AL_ERROR; }
+}
+al_result_t AL_CALL input_unsubscribe(al_plugin_t* self) noexcept {
+    if(!self || !self->state) return AL_ERROR;
+    try { return input_result(self,self->state->input.messages(graphics_client(*self),0,nullptr,nullptr)); } catch (...) { return AL_ERROR; }
+}
+al_result_t AL_CALL input_capture(al_plugin_t* self,std::uint32_t devices) noexcept {
+    if(!self || !self->state) return AL_ERROR;
+    try { return input_result(self,self->state->input.capture(graphics_client(*self),devices)); } catch (...) { return AL_ERROR; }
+}
+al_result_t AL_CALL input_release(al_plugin_t* self) noexcept {
+    if(!self || !self->state) return AL_ERROR;
+    try { return input_result(self,self->state->input.release(graphics_client(*self))); } catch (...) { return AL_ERROR; }
+}
+void* AL_CALL input_window(al_plugin_t* self) noexcept { return self && self->state ? self->state->input.window():nullptr; }
+al_result_t AL_CALL input_pad(al_plugin_t* self,std::uint32_t slot,al_pad_state_t* out) noexcept {
+    return self && self->state && out && self->state->input.pad_state(slot,*out) ? AL_OK:AL_ERROR;
+}
+void AL_CALL input_status(al_plugin_t* self,al_input_status_t* out) noexcept {
+    if(!self || !self->state || !out) return;
+    try { self->state->input.status(*out); } catch (...) {}
+}
+const al_input_t kInput{sizeof(kInput),AL_INPUT_VERSION,input_add,input_remove,input_key,input_messages,input_capture,
+    input_release,input_window,input_pad,input_pad_add,input_unsubscribe,input_status};
+
 const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::uint32_t version) noexcept {
     if (!self || !self->state || !name) return nullptr;
     try {
@@ -439,6 +495,10 @@ const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::
         if (wanted == AL_SCANNER_INTERFACE) return compatible(AL_SCANNER_VERSION, version) ? &kScanner : nullptr;
         if (wanted == AL_D3D12_INTERFACE) return compatible(AL_D3D12_VERSION, version) ? &kD3d12 : nullptr;
         if (wanted == AL_HOOKS_INTERFACE) return compatible(AL_HOOKS_VERSION, version) ? &kHooks : nullptr;
+        if (wanted == AL_INPUT_INTERFACE) {
+            if(!compatible(AL_INPUT_VERSION,version)) return nullptr;
+            state.input.request(); state.frame_requested=true; return &kInput;
+        }
         if (wanted == AL_FRAME_INTERFACE) {
             if (!compatible(AL_FRAME_VERSION, version)) return nullptr;
             state.frame_requested.store(true);
@@ -707,6 +767,10 @@ void Host::load_all(const HostOptions& options) {
 void Host::dispatch(al_phase_t phase, const void* data) {
     if (phase >= AL_PHASE_COUNT) return;
     crash::note_phase(phase);
+    if(phase==AL_PHASE_SWAPCHAIN_CREATED && data && state_) {
+        const auto* chain=static_cast<const al_d3d12_swapchain_t*>(data);
+        if(chain->size>=offsetof(al_d3d12_swapchain_t,window)+sizeof(void*)) state_->input.attach_window(chain->window);
+    }
     // The game's C runtime has set its own top-level filter by now; AL's
     // goes in front of it and passes every crash on to it.
     if (phase == AL_PHASE_WIN_MAIN && state_) crash::install(state_->crash);
@@ -729,16 +793,20 @@ void Host::dispatch(al_phase_t phase, const void* data) {
         const auto elapsed=microseconds_since(start);
         { std::lock_guard lock(plugin->mutex); plugin->phase_us[phase] += elapsed; }
         if (!returned) {
-            std::lock_guard lock(plugin->mutex);
-            plugin->status = AL_STATUS_DISABLED;
-            plugin->reason = "on_phase raised exception " + std::to_string(fault);
-            plugin->stopped = true;
+            graphics::Client* owner=nullptr;
+            { std::lock_guard lock(plugin->mutex);
+              plugin->status = AL_STATUS_DISABLED;
+              plugin->reason = "on_phase raised exception " + std::to_string(fault);
+              plugin->stopped = true;
+              owner=plugin->graphics.get(); }
+            if(state_ && owner) state_->input.cancel(*owner);
         }
     }
     if (phase == AL_PHASE_PRE_MAIN && state_) close_graphics();
     // Plugins have had their SHUTDOWN; game-thread tasks still queued will
     // never run, and their plugins are told.
     if (phase == AL_PHASE_SHUTDOWN && state_) state_->clock.close();
+    if ((phase == AL_PHASE_EXITING || phase == AL_PHASE_SHUTDOWN) && state_) state_->input.stop();
 }
 
 // Ends al.d3d12 registration once PRE_MAIN has run.
@@ -748,6 +816,7 @@ void Host::close_graphics() {
         if (running(*plugin)) phases |= plugin->manifest.phases;
     }
     auto& hub = state_->hub;
+    if(state_->input.wanted()) phases |= AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED);
     hub.close(phases);
     if (!hub.chains().empty() && state_->game.table()->graphics == AL_GRAPHICS_DX11) {
         hub.set_unavailable("the game runs DirectX 11 (graphics_option.ini)");
@@ -784,6 +853,7 @@ bool Host::frame_requested() const {
     for (const auto& plugin : plugins_) if (plugin->initialised && (plugin->manifest.phases & AL_PHASE_BIT(AL_PHASE_EXITING))) return true;
     return false;
 }
+::al::input::Service& Host::input_service() { return state_->input; }
 
 std::vector<PluginReport> Host::report() const {
     std::vector<PluginReport> lines;

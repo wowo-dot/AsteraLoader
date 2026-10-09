@@ -1,8 +1,9 @@
-# Design: input, hotkeys and input capture (API 1.6, draft)
+# Design: input, hotkeys and input capture (API 1.6)
 
-Status 2026-10-09: research and draft API. Roadmap "path to v1" step 2.
-The hook side is built after API 1.5's frame layer lands; one probe run
-settles the open questions below first.
+Status 2026-10-10: API, input service and native hook layer implemented.
+The probe research below supplied the input sites; validation of the new
+layer in MHW remains pending. See `handoff-input-20261010.md` for the
+implemented rules, tests and next run. Roadmap "path to v1" step 2.
 
 ## Who needs it
 
@@ -71,8 +72,8 @@ nothing in MHW.** In frame-input-1 launch 2 (and earlier in astera-mo2-2)
 the user pressed it, saw no reaction, and ended the process from outside;
 the probe logged no `WM_SYSKEYDOWN F4` before that. So there is no Alt+F4
 path to warn plugins about. A process ended from outside or by a crash
-gets no notice, and plugins save settings when they change. Still open: 2
-(devices and methods) and 4 (pads).
+gets no notice, and plugins save settings when they change. Question 2 is
+answered by input-probe-3. Question 4's Steam Input on/off comparison remains.
 
 1. Where `sMhKeyboard`'s maps come from: DirectInput's keyboard device
    (`GetDeviceState` / `GetDeviceData`), window messages, or Win32 key
@@ -86,7 +87,12 @@ gets no notice, and plugins save settings when they change. Still open: 2
    well; what happens with Steam Input off.
 5. What Alt+F4 does (answered: nothing).
 
-## The API: "al.input" 1.0 (draft)
+## The API: "al.input" 1.0
+
+The canonical C ABI is `include/al/al_plugin.h`. API 1.6 adds this interface;
+earlier tables and phases retain their layouts. Request it during plugin init
+or PRE_MAIN so the loader can arrange swap-chain/window observation. Window
+discovery currently follows AL's DirectX 12 path.
 
 ```c
 #define AL_INPUT_INTERFACE "al.input"
@@ -102,6 +108,24 @@ typedef struct al_hotkey_t {
 } al_hotkey_t;
 
 typedef void(AL_CALL* al_hotkey_fn)(al_plugin_t* self, uint32_t handle, void* user);
+
+typedef struct al_pad_hotkey_t {
+    uint32_t size, user_index, buttons, modifiers;
+    const char* name;
+} al_pad_hotkey_t;
+
+typedef struct al_pad_state_t {
+    uint32_t size, connected, packet;
+    uint16_t buttons;
+    uint8_t left_trigger, right_trigger;
+    int16_t left_x, left_y, right_x, right_y;
+} al_pad_state_t;
+
+typedef struct al_input_status_t {
+    uint32_t size, state, devices, captured;
+    void* window;
+    const char* reason;
+} al_input_status_t;
 
 /* A window message; return non-zero to keep it from the game (and from
  * later callbacks). Runs on the window's thread (the WinMain thread). */
@@ -125,13 +149,33 @@ typedef struct al_input_t {
     al_result_t(AL_CALL* release)(al_plugin_t* self);
     /* The game window, once it exists (NULL before). */
     void*(AL_CALL* window)(al_plugin_t* self);
+    al_result_t(AL_CALL* pad_state)(al_plugin_t* self, uint32_t slot, al_pad_state_t* out);
+    uint32_t(AL_CALL* add_pad_hotkey)(al_plugin_t* self, const al_pad_hotkey_t*, al_hotkey_fn, void* user);
+    al_result_t(AL_CALL* unsubscribe_messages)(al_plugin_t* self);
+    void(AL_CALL* status)(al_plugin_t* self, al_input_status_t* out);
 } al_input_t;
 ```
 
-input-probe-3 showed pads reach the game through `XInputGetState` (with a
-controller connected and Steam running), so a pad state query and pad
-button hotkeys can be part of 1.0; the API above gets them before it is
-built. Steam Input on/off is still to be checked.
+Pad slots are 0..3; `AL_PAD_*` use XInput's button masks. A pad hotkey
+requires every selected button, plus any keyboard modifiers. Steam Input
+on/off still needs checking in MHW; no other pad path is claimed here.
+
+`AL_MOD_CTRL`, `AL_MOD_SHIFT`, `AL_MOD_ALT` are bits 1, 2, 4. Device bits
+`AL_INPUT_KEYBOARD`, `AL_INPUT_MOUSE`, `AL_INPUT_PAD` are 1, 2, 4;
+`AL_INPUT_ALL` is 7. Capture requires every requested path to be installed;
+it returns AL_ERROR and logs why while those paths are missing. Repeated
+capture calls nest per plugin; release pops the latest mask. The union of
+all live owners is blocked. A disabled owner never blocks the game, and
+EXITING retires capture. The owning plugin's hotkeys keep working; another
+owner's capture suppresses them. Suppressed edges do not replay on release.
+
+One message subscription per plugin; another replaces it, or unsubscribe
+removes it. Callback faults disable the plugin, release its capture and
+allow the message/game frame to continue. Focus loss makes queries neutral
+and suspends blocking. Old snapshots and held-key edges do not reappear
+on focus gain. Pad outputs/status respect the caller's size. No key values
+or typed text are written to loader logs; diagnostics contain counts and
+registration/refusal information.
 
 ## How it works (core side)
 
@@ -163,15 +207,44 @@ built. Steam Input on/off is still to be checked.
   neutral pad from `XInputGetState`. Window messages are not involved: the
   game does not read input from them (frame-input-1). Plugins still see
   the real state through the snapshots and their message callbacks.
-- **Cost:** a flag check and one copy (256, 20 or 16 bytes) per game read,
-  six reads per frame; with no message callbacks the window procedure
-  adds one call and a branch per message.
+- **Cost:** fixed-size snapshot publication, virtual-key mapping and a
+  capture check per game read. No per-frame allocation or global input
+  polling. A local stand-in measurement of six native hook reads plus the
+  empty END pass was about 0.2 microseconds per frame, including stand-in
+  originals and MinHook; it does not measure Windows device-driver or MHW
+  timing. The window layer forwards to the previous procedure when no
+  callback consumes a message.
+
+`src/core/input/service.*` owns hotkeys, capture, messages and atomic
+snapshots. `src/core/input/native.*` resolves System32 device methods from
+throwaway keyboard/mouse objects after the game's DLLs load. It hooks each
+distinct target once, including aliases/forwarded XInput exports; nested
+calls do not overwrite the original snapshot with captured neutral data.
+Only reads on AL's frame thread participate; other-thread reads, return
+codes, failed-read buffers and last error are preserved. Standard keyboard
+and mouse state formats are supported. Buffered DirectInput capture returns
+no events; hotkey snapshots use the measured GetDeviceState path.
+
+The native layer is pinned until exit. It never globally enables/unhooks
+other tools' hooks. Partial or later installation failures leave its
+existing hooks forwarding and publish an UNAVAILABLE reason and warning.
+Window handles must belong to this process and be top-level windows;
+destruction messages always reach the previous procedure, even if a plugin
+tries to consume them. AL remains behind a later SPL-style subclass.
 
 ## Tests
 
-- Pure: hotkey edge detection and modifiers, conflicts, capture counting,
-  message callback order and consumption.
-- Fake game: a window with its own procedure, a fake DirectInput device and
-  XInput stand-in; capture on/off and what the game sees.
-- In game: the probe run first, then one run with a test plugin (a hotkey,
-  capture toggled by it, a message log).
+- `input_service`: combination edges, modifiers, pad hotkeys and coherent
+  concurrent queries, conflicts, nested capture, callback order/consumption,
+  faults, focus, allocation refusals and the empty frame path.
+- `input_native`: a real test window with a later subclass, native MinHook
+  entries on fake keyboard/mouse reads and nested/aliased XInput stand-ins;
+  capture on/off, real pre-capture snapshots, failed/disconnected reads,
+  thread isolation, last error, destruction and steady-read allocations.
+- `input_native_refusal`: a later installation failure makes an already
+  active layer forward again and reports its reason visibly.
+- `input_host`: a DLL client of the public C table, version checks, input
+  alone requesting graphics/window observation, frame/message callbacks,
+  bounded queries and EXITING. C/C++ tests pin the ABI layouts.
+- MHW with a hotkey/capture test plugin, DLSS FG and SPL remains the next
+  run. Disable the old input_probe first: it has independent MinHook hooks.
