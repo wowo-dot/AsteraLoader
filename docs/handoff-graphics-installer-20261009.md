@@ -62,3 +62,9 @@ the user launch through MO2. Confirm event counts and graphics status, then
 test loading a save, resize / alt-tab / full-screen transitions, SPL and
 overlay coexistence. No real MHW graphics-hook run was performed here, and
 no tested-in-game tag was created for this implementation.
+
+Update (Claude, same day): the first game run, `graphics-mo2-1`, confirmed the
+installer in MHW with the DLSS mod off, and the build is tagged
+v0.1.0-dev.10 (`research/plugins-in-game.md`). The DLSS migration checklist is
+`handoff-dlss-migration-20261009.md`.
+

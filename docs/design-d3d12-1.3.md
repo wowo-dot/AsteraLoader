@@ -250,7 +250,8 @@ SPL and Steam overlay in MHW stay unverified until a game run.
 
 ## What the DLSS mod would change to use it
 
-For the DLSS project, not done here:
+For the DLSS project, not done here. The full checklist, hook by hook, is
+`handoff-dlss-migration-20261009.md`.
 
 - Claim the presentation role in `cmfm_plugin_init`, and register its
   detours with `hook()` instead of MinHook. The detour bodies stay; the
