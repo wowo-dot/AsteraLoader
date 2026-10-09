@@ -43,7 +43,9 @@ hooks included (the user's call, 2026-10-09); the user runs the game.
    generation on. These are the user's runs.
 
 After v1, unless a plugin needs it sooner: **per-save plugin data** (item 9;
-no client yet). Separate tracks: **CMFM** (settings, status pages, popups,
+no client yet). It may not be needed at all: SKSE's co-save matters because
+Skyrim players juggle many saves, while MHW players mostly keep one save
+for the whole game (the user, 2026-10-09). Separate tracks: **CMFM** (settings, status pages, popups,
 drawn through al.d3d12; publishes its own interface, so the core API does
 not grow for it) and **the MHW SDK** (names, structures and gameplay events
 on top of al.hooks).
