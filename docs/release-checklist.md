@@ -74,6 +74,17 @@ LICENSE
    Defender's defaults would lose the launcher. Decided (decisions.md item
    14): the README explains it and asks for a Defender exclusion; a
    VirusTotal check of the release binaries.
+   VirusTotal, build 1b54c64 (2026-10-10, uploaded by the user):
+   - `AsteraLoader.exe` (cc238433...): 4/71. Arctic Wolf "Unsafe", Bkav Pro
+     `W32.Malware.1491A66`, CrowdStrike Falcon "malicious, confidence 60%",
+     SecureAge "Malicious". Microsoft, Kaspersky, Malwarebytes, McAfee,
+     Sophos, Avast and Google clean.
+   - `AsteraLoader.dll` (176132fa...): 1/71, Cynet (machine learning).
+   - The package zip (ce069c6f...): 2/67, Kaspersky
+     `VHO:Trojan.Win32.Agent.gen` and Bkav Pro. Kaspersky flags neither the
+     exe nor the core DLL, so its hit is on a Stracker DLL or the archive.
+   All are heuristic or machine-learning verdicts, typical for a new
+   unsigned loader. Repeat for the release build (new hashes).
 
 ## Install instructions to verify
 
