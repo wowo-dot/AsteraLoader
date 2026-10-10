@@ -59,6 +59,15 @@ Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept {
     return {OwnerKind::other, name};
 }
 
+std::wstring_view parent_folder(std::wstring_view path) noexcept {
+    const auto slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring_view::npos || slash == 0) return {};
+    const auto folder = path.substr(0, slash);
+    const auto before = folder.find_last_of(L"\\/");
+    const auto name = before == std::wstring_view::npos ? folder : folder.substr(before + 1);
+    return name.find(L':') == std::wstring_view::npos ? name : std::wstring_view();  // "D:" is no folder name
+}
+
 const char* owner_label(OwnerKind kind) noexcept {
     switch (kind) {
     case OwnerKind::game: return "the game";

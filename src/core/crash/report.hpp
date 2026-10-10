@@ -28,6 +28,9 @@ struct Owner {
 // MO2's virtual game folder or the real mod folder (both keep the plugin
 // layout). `is_core` / `is_game` come from comparing the module's base.
 Owner classify(std::wstring_view path, bool is_core, bool is_game) noexcept;
+// The name of the folder the file is in ("SharpPluginLoader 2.0.0" for an
+// MO2 mod's DLL), or "" when the path has none.
+std::wstring_view parent_folder(std::wstring_view path) noexcept;
 
 // "plugin", "Stracker plugin", "Astera Loader", "the game", "Windows", "module".
 const char* owner_label(OwnerKind kind) noexcept;

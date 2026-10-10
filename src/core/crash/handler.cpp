@@ -110,7 +110,8 @@ struct Path {
 struct Module {
     const void* base;
     Owner owner;
-    std::wstring_view file;  // the module's file name, within path
+    std::wstring_view file;    // the module's file name, within path
+    std::wstring_view folder;  // the folder it is in, within path
     wchar_t path[600];
     DWORD path_size;
 };
@@ -159,6 +160,7 @@ bool module_at(const void* address, Module& out) noexcept {
     out.base = nullptr;
     out.owner = {};
     out.file = {};
+    out.folder = {};
     out.path_size = 0;
     MEMORY_BASIC_INFORMATION info{};
     if (!address || !VirtualQuery(address, &info, sizeof(info)) || info.Type != MEM_IMAGE) return false;
@@ -170,7 +172,17 @@ bool module_at(const void* address, Module& out) noexcept {
     out.owner = classify(path, out.base == g_core, out.base == g_game);
     const auto slash = path.find_last_of(L"\\/");
     out.file = slash == std::wstring_view::npos ? path : path.substr(slash + 1);
+    out.folder = parent_folder(path);
     return true;
+}
+
+// ` (from the folder "X")`, for a module that is not the game's, AL's or
+// Windows': under MO2 the folder is the mod's name.
+void add_folder(Text& text, const Module& module) noexcept {
+    if (module.owner.kind != OwnerKind::other || module.folder.empty()) return;
+    text.add(" (from the folder \"");
+    text.add(module.folder);
+    text.add("\")");
 }
 
 void add_location(Text& text, const void* address, Module& module) noexcept {
@@ -327,6 +339,11 @@ void write(EXCEPTION_POINTERS* info) noexcept {
     add_location(text, address, g_fault);
     text.add(" (");
     add_owner(text, fault);
+    if (fault.kind == OwnerKind::other && !g_fault.folder.empty()) {
+        text.add(", folder \"");
+        text.add(g_fault.folder);
+        text.add("\"");
+    }
     text.add(")\r\nowner=");
     add_owner(text, owner);
     text.add(removable(owner.kind) ? (from_stack ? " (the first plugin on the stack)" : " (the faulting module)")
@@ -379,9 +396,21 @@ void write(EXCEPTION_POINTERS* info) noexcept {
         notice.reset();
         notice.add("The game crashed in your last session, ");
         notice.add(phase_moment(phase));
-        notice.add(", in ");
-        add_owner_phrase(notice, owner);
-        if (from_stack) {
+        // Another mod's or tool's DLL faulted, called from a plugin: name the
+        // DLL first, as either of the two may be at fault.
+        const bool other_first = from_stack && fault.kind == OwnerKind::other;
+        if (other_first) {
+            notice.add(", inside ");
+            notice.add(g_fault.file);
+            add_folder(notice, g_fault);
+            notice.add(", called from ");
+            add_owner_phrase(notice, owner);
+        } else {
+            notice.add(", in ");
+            add_owner_phrase(notice, owner);
+            if (!from_stack) add_folder(notice, g_fault);
+        }
+        if (from_stack && !other_first) {
             notice.add(" (inside ");
             notice.add(g_fault.file.empty() ? std::wstring_view(L"unknown code") : g_fault.file);
             notice.add(", called from it)");
@@ -391,7 +420,11 @@ void write(EXCEPTION_POINTERS* info) noexcept {
         notice.add(" at ");
         add_location(notice, address, g_fault);
         notice.add(".");
-        if (removable(owner.kind)) notice.add(" If it happens again, try the game without that plugin.");
+        if (other_first) {
+            notice.add(" Either of the two may be at fault; if it happens again, try the game without one of them.");
+        } else if (removable(owner.kind)) {
+            notice.add(" If it happens again, try the game without that plugin.");
+        }
         notice.add(" Report: ");
         notice.add(std::wstring_view(g_report_path.data, g_report_path.size));
         g_notice_path.set(g_folder);

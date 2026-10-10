@@ -36,7 +36,8 @@ Owners are read from the module's path:
 - `...\nativePC\plugins\<file>` is a Stracker plugin.
 - `AsteraLoader.dll` and the game exe are recognised by their base address.
 - System32, SysWOW64 and WinSxS are Windows; anything else is listed by
-  name.
+  name, with the folder it is in (under MO2, the mod's name):
+  `at=winmm.dll+0x49a65 (module winmm.dll, folder "SharpPluginLoader 2.0.0")`.
 
 The paths come from `K32GetMappedFileNameW`. That needs no loader lock, and
 under MO2 it gives the real mod folder, which keeps the same layout.
@@ -44,7 +45,12 @@ under MO2 it gives the real mod folder, which keeps the same layout.
 Unless the crash happened after SHUTDOWN, it also writes
 `<logs>\crashes\last-crash.txt`. It is one sentence for the user: when the
 crash happened, which plugin was involved, the exception and the report's
-path. Exit-time crashes, such as `more_auto_shoutouts` reading freed memory
+path. When the faulting module belongs to another mod or tool and a plugin
+is only further down the stack, the notice names that module and its folder
+first, then the plugin, and says either may be at fault. In spl-release-4
+SharpPluginLoader's `winmm.dll` faulted on a thread the DLSS plugin's
+`sl.dlss_g.dll` started, and the notice used to say only "try the game
+without that plugin". Exit-time crashes, such as `more_auto_shoutouts` reading freed memory
 while the game shuts down, are reported but not announced. That covers
 two cases:
 
@@ -127,6 +133,10 @@ the user's to add, since `src/core/startup/` is theirs.
     under `nativePC\plugins\`. A filter set after AL's does not chain.
     The report finds the Stracker plugin on the stack and marks the main
     thread, and the replacing filter still runs after AL's;
+  - a DLL under `mods\Other Mod 1.0\` faults, called from a thread a
+    plugin's DLL started. The report gives the module's folder and the
+    plugin as owner; the notice names the module and its folder first, then
+    the plugin;
   - an exit-time crash with `crash_minidump = small` writes a dump and no
     notice;
   - a plugin thread crashes, the last filter stalls the way error reporting

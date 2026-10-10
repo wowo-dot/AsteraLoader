@@ -60,6 +60,11 @@ void pure() {
     o = owner(L"D:\\Games\\MHW\\AsteraLoader\\plugins\\");
     check(o.kind == OwnerKind::other, "a plugins folder without a plugin name");
     check(owner(L"").kind == OwnerKind::unknown, "no path");
+    check(crash::parent_folder(L"\\Device\\HarddiskVolume3\\MO2\\MHW\\mods\\SharpPluginLoader 2.0.0\\winmm.dll") ==
+              L"SharpPluginLoader 2.0.0", "folder of an MO2 mod's DLL");
+    check(crash::parent_folder(L"C:/Program Files (x86)/Steam/gameoverlayrenderer64.dll") == L"Steam", "forward slashes");
+    check(crash::parent_folder(L"D:\\winmm.dll").empty() && crash::parent_folder(L"winmm.dll").empty() &&
+              crash::parent_folder(L"").empty(), "no folder name");
 
     check(crash::fatal(0xC0000005u) && crash::fatal(0xC00000FDu) && !crash::fatal(0xE06D7363u) &&
               !crash::fatal(0x80000004u) && !crash::fatal(0x80000003u), "fatal codes, not C++ or debug events");
@@ -108,6 +113,16 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
     const HMODULE module = LoadLibraryW(dll.c_str());
     if (!module) return 4;
     using Fn = void (*)();
+    if (mode == L"other") {
+        // Another mod's DLL faults, called from a plugin's thread.
+        const HMODULE other = LoadLibraryW((folder / L"mods/Other Mod 1.0/other.dll").c_str());
+        const auto target = other ? reinterpret_cast<Fn>(GetProcAddress(other, "crash_now")) : nullptr;
+        const auto call = reinterpret_cast<void (*)(Fn)>(GetProcAddress(module, "call_on_thread"));
+        if (!target || !call) return 5;
+        call(target);
+        Sleep(30000);
+        return 6;
+    }
     const auto function = reinterpret_cast<Fn>(GetProcAddress(module, mode == L"replaced" ? "crash_in_windows"
                                                                                           : "crash_on_thread"));
     if (!function) return 5;
@@ -200,6 +215,28 @@ void replaced_filter(const fs::path& work, const fs::path& fixture) {
     if (failures) std::cerr << report << '\n';
 }
 
+void other_module(const fs::path& work, const fs::path& fixture) {
+    const auto folder = prepare(work, L"other_module", L"AsteraLoader/plugins/crashy/crashy.dll", fixture);
+    fs::create_directories(folder / L"mods/Other Mod 1.0");
+    fs::copy_file(fixture, folder / L"mods/Other Mod 1.0/other.dll", fs::copy_options::overwrite_existing);
+    const auto code = run_child(L"other", folder, folder / L"AsteraLoader/plugins/crashy/crashy.dll");
+    check(code == 0xC0000005u, "another module's crash ends the process with its code");
+    const auto report = read_file(find_report(folder, L".txt"));
+    check(has(report, "at=other.dll+0x") && has(report, "(module other.dll, folder \"Other Mod 1.0\")"),
+          "report: the faulting module and its folder");
+    check(has(report, "owner=plugin crashy (the first plugin on the stack)"), "report: the plugin that called it");
+    const auto notice = crash::take_previous((folder / L"logs").wstring());
+    check(notice.find(L"while the game was running, inside other.dll (from the folder \"Other Mod 1.0\"), called from "
+                      L"the Astera Loader plugin \"crashy\": access violation at other.dll+0x") != std::wstring::npos &&
+              notice.find(L"Either of the two may be at fault") != std::wstring::npos &&
+              notice.find(L"try the game without that plugin") == std::wstring::npos,
+          "notice names the other module first, then the plugin");
+    if (failures) {
+        std::cerr << report << '\n';
+        std::wcerr << notice << L'\n';
+    }
+}
+
 void raced_exit(const fs::path& work, const fs::path& fixture) {
     const auto folder = prepare(work, L"raced", L"nativePC/plugins/auto_food.dll", fixture);
     const auto code = run_child(L"raced", folder, folder / L"nativePC/plugins/auto_food.dll");
@@ -235,6 +272,7 @@ int wmain(int argc, wchar_t** argv) {
     fs::create_directories(work);
     plugin_thread(work, argv[1]);
     replaced_filter(work, argv[1]);
+    other_module(work, argv[1]);
     raced_exit(work, argv[1]);
     exiting_with_dump(work, argv[1]);
     if (failures) {
