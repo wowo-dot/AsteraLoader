@@ -38,8 +38,11 @@ LICENSE
    - what AL is, in two lines, and that it replaces Stracker's Loader;
    - install with MO2 (below), manually, and through Steam launch options;
    - "remove Stracker's Loader" (its MO2 mod, or `dinput8.dll` and
-     `loader.dll` from the game folder). With a leftover `loader.dll`,
-     stracker_compat turns itself off and says why;
+     `loader.dll` from the game folder). With leftover files,
+     stracker_compat still loads the plugins and warns at start-up, naming
+     the files to remove (it turns itself off only when another
+     `loader.dll` is already loaded before it). The README in the 0.1.0
+     package still says it turns itself off; corrected after c2f07cd;
    - where logs and crash reports are, and what to send with a bug report;
    - uninstalling: disable the mod or delete the files; nothing else changes.
 2. ~~**A release version.**~~ Done: `dev.py stage --release` (CMake option
@@ -121,27 +124,42 @@ game folder, and start `AsteraLoader.exe`.
 
 From the release archive, not the dev install. The user runs every launch.
 
+0.1.0 (c2f07cd): the user chose to install the release archive into their
+own MO2 setup instead of a fresh instance, and to test the manual install,
+Steam launch options and SPL separately (2026-10-10).
+
 - [ ] **A fresh MO2 instance** (new portable folder, MHW, no other mods):
       install from the archive, add the entry, start. Expect: core log,
       stracker_compat active with no plugins, no warning popup, Exit Game
-      returns cleanly.
-- [ ] **The same with plugins:** the DLSS mod and the user's Stracker plugins.
-- [ ] **A leftover Stracker install** (its MO2 mod enabled, or the files in
-      the game folder): stracker_compat turns itself off, the user is told,
-      the game runs.
+      returns cleanly. Not run for 0.1.0 (see above).
+- [x] **The same with plugins:** the DLSS mod and the user's Stracker
+      plugins. Passed, from the archive in the user's MO2 setup:
+      release-final-1 A.
+- [x] **A leftover Stracker install** (its MO2 mod enabled, or the files in
+      the game folder): stracker_compat loads the plugins, reports the
+      files (degraded, start-up warning), the game runs. Passed:
+      release-final-1 C (the user saw the warning; exit code 0).
 - [ ] **A manual install** into the game folder, then removed (the user's
       test; the game folder is otherwise read-only for this project).
 - [ ] **Steam launch options** with `%command%`.
-- [ ] **SPL force-loaded** alongside.
+- [x] **SPL force-loaded** alongside. Passed without the Stracker plugins
+      (spl-release-3); with 19 Stracker plugins SPL fails without AL too
+      (spl-baseline-1, a known issue).
 - [ ] **Paths:** a game folder with spaces; a Windows user name with
       non-ASCII characters (logs redact the profile path).
-- [ ] **Steam overlay** on and off.
+- [x] **Steam overlay** on and off. Passed: release-final-1 A (on) and B
+      (off in Steam's settings). With the overlay off,
+      gameoverlayrenderer64.dll still loads in this launch path and still
+      patches D3D12; AL handles it the same way.
 - [ ] **Upgrade** over the previous build: the caches keyed by exe hash
       still work, the logs are kept or pruned as designed.
 - [ ] **Uninstall:** disable the mod, start the plain entry; the game runs,
       and nothing of AL is left in the game folder.
-- [ ] **Stability** (decisions.md item 9): loading screens, cutscenes,
+- [x] **Stability** (decisions.md item 9): loading screens, cutscenes,
       menus, alt-tab, resize, full screen, with frame generation on.
+      Passed: release-final-1 A, about 8 minutes, the DLSS mod active
+      (its ini at frame generation 2x; the mod's own log was not
+      collected).
 
 ## Cutting the release
 

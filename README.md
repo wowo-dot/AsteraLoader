@@ -91,8 +91,8 @@ Without them, Steam's Play button starts the game without Astera Loader.
 - **SharpPluginLoader:** works alongside, unchanged.
 
 If Stracker's Loader files are still in the game folder (or its MO2 mod is
-on), Astera Loader's Stracker support turns itself off and says why, so
-plugins are not loaded twice.
+on), Astera Loader shows a warning at start-up naming them. The game still
+runs, but Stracker's Loader starts as well, so remove it.
 
 When a plugin cannot start, Astera Loader shows a warning at start-up and
 keeps the game running.

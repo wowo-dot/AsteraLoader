@@ -49,10 +49,13 @@ VirusTotal for this release's files (`AsteraLoader.exe`, `AsteraLoader.dll`,
 ## Tested
 
 With MHW 421810 (the final version) under Mod Organizer 2, with the Steam
-overlay on: a set of 19 Stracker plugins, a Direct3D 12 plugin in development
-(a DLSS / Frame Generation mod), input capture (keyboard, mouse, XInput pad),
-GAME_READY and a clean Exit Game. SharpPluginLoader 2.0.0 force-loaded beside
-it, without the Stracker plugins: both start and exit cleanly.
+overlay on and off: a set of 19 Stracker plugins, a Direct3D 12 plugin in
+development (a DLSS / Frame Generation mod), input capture (keyboard, mouse,
+XInput pad), GAME_READY and a clean Exit Game, over about 8 minutes of play
+with loading screens, menus, alt-tab and window changes. SharpPluginLoader
+2.0.0 force-loaded beside it, without the Stracker plugins: both start and
+exit cleanly. With Stracker's Loader left installed, Astera Loader warns at
+start-up and the game runs.
 
 Not yet tested with this release: a manual install into the game folder,
 Steam launch options.
@@ -70,6 +73,11 @@ Steam launch options.
   FextyMod) crash while the game exits, on their own threads. The game was
   closing anyway; Astera Loader names them in its crash report and shows no
   notice.
+- If Stracker's Loader is still installed (`dinput8.dll` and `loader.dll` in
+  the game folder, or its MO2 mod enabled), Astera Loader loads the Stracker
+  plugins and shows a warning, but Stracker's Loader starts as well. Remove
+  it. The README in this release says Astera Loader's Stracker support turns
+  itself off in that case; that is wrong, the warning is what happens.
 - Input capture covers the keyboard, the mouse and XInput pads; DirectInput
   pads are not captured. Steam Input has not been tested.
 - DirectX 11 mode: plugins load, but the Direct3D 12 services are
