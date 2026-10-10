@@ -61,6 +61,10 @@ private:
     struct Chain;
 
     bool in_code(const void* address, std::size_t size) const;
+    // Bytes from `address` to the end of its code section, at most `most`.
+    std::size_t code_room(const void* address, std::size_t most) const;
+    // AL's patch on the chain's entry is still the one it wrote.
+    static bool entry_intact(const Chain& chain);
     bool matches_at(const Pattern& pattern, const std::uint8_t* at) const;
     void install(Chain& chain);
     static void link(Chain& chain);

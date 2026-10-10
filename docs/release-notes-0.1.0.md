@@ -65,12 +65,6 @@ Steam launch options.
   its own starts normally. Its log
   (`nativePC\plugins\CSharp\Loader\SharpPluginLoader.log`) shows
   "IP relative memory operand is too far away".
-- With SharpPluginLoader force-loaded, it patches the game's main update
-  function after Astera Loader has hooked it. Astera Loader then refuses
-  further plugin hooks on that function, because it does not treat code
-  another tool rewrote as verified, and the plugin's log says so. With the
-  DLSS mod this means frame generation stays off while SharpPluginLoader is
-  loaded.
 - Some Stracker plugins (seen: auto_food_skill, more_auto_shoutouts,
   FextyMod) crash while the game exits, on their own threads. The game was
   closing anyway; Astera Loader names them in its crash report and shows no
