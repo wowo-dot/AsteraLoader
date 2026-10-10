@@ -53,13 +53,27 @@ frame generation on, input capture (keyboard, mouse, XInput pad), GAME_READY
 and a clean Exit Game.
 
 Not yet tested with this release: a manual install into the game folder,
-Steam launch options, SharpPluginLoader force-loaded beside it.
+Steam launch options, SharpPluginLoader force-loaded beside it without the
+19 Stracker plugins (with them, see Known issues).
 
 ## Known issues
 
-- Some Stracker plugins (seen: auto_food_skill, more_auto_shoutouts) crash
-  while the game exits, on their own threads. The game was closing anyway;
-  Astera Loader names them in its crash report and shows no notice.
+- SharpPluginLoader 2.0.0 together with a large set of Stracker plugins (19
+  in our test) fails to set up some of its own hooks at start-up, and the
+  game then crashes in SharpPluginLoader. This happens without Astera Loader
+  too, with Stracker's own loader and the same plugins; SharpPluginLoader on
+  its own starts normally. Its log
+  (`nativePC\plugins\CSharp\Loader\SharpPluginLoader.log`) shows
+  "IP relative memory operand is too far away".
+- With SharpPluginLoader force-loaded, it patches the game's main update
+  function after Astera Loader has hooked it. Astera Loader then refuses
+  further plugin hooks on that function, because it does not treat code
+  another tool rewrote as verified, and the plugin's log says so. The DLSS
+  mod's hook there is skipped.
+- Some Stracker plugins (seen: auto_food_skill, more_auto_shoutouts,
+  FextyMod) crash while the game exits, on their own threads. The game was
+  closing anyway; Astera Loader names them in its crash report and shows no
+  notice.
 - Input capture covers the keyboard, the mouse and XInput pads; DirectInput
   pads are not captured. Steam Input has not been tested.
 - DirectX 11 mode: plugins load, but the Direct3D 12 services are
