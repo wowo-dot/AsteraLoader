@@ -90,6 +90,15 @@ LICENSE
      and Bkav Pro. `stracker_compat.dll` was not uploaded on its own.
    All are heuristic or machine-learning verdicts, typical for a new
    unsigned loader. Repeat for the release build (new hashes).
+   VirusTotal, release 0.1.0 candidate d50de4c (2026-10-10, with version
+   information and the icon):
+   - `AsteraLoader.exe` (1386cdec...): 1/57, Trapmine "moderate ML score"
+     (57 engines had reported). Arctic Wolf, Bkav, CrowdStrike now clean.
+   - `AsteraLoader.dll` (cde93ff5...): 0/71.
+   - `stracker_compat.dll` (8e444796...): 1/71, Cynet (machine learning).
+   - `loader.dll` (71ca9d73...): 0/71; Kaspersky clean.
+   Every commit changes every binary's hash (the commit is built in), so
+   the final check is on the build that gets tagged.
 
 ## Install instructions to verify
 

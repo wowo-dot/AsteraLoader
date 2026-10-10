@@ -1,0 +1,71 @@
+# Astera Loader 0.1.0
+
+The first public release of Astera Loader, a plugin loader for Monster
+Hunter: World on PC (DirectX 12). It replaces Stracker's Loader: your
+Stracker plugins keep working, with no `dinput8.dll` or `loader.dll` in the
+game folder, and it works alongside SharpPluginLoader.
+
+Two downloads:
+
+- `AsteraLoader-0.1.0.zip`: the loader. Install it as an MO2 mod (see the
+  README).
+- `AsteraLoader-plugin-kit-0.1.0.zip`: for plugin authors. The C header,
+  the plugin guide and a small example plugin that builds with CMake.
+
+## Before you install: Windows Defender
+
+Windows Defender may remove `AsteraLoader.exe` as
+`Behavior:Win32/DefenseEvasion.A!ml`, because the launcher starts the game
+paused and loads its DLL into it, as launcher-style loaders do. Add an
+exclusion for the Astera Loader mod folder; the README shows how. The source
+is open, so you can check what it does.
+
+VirusTotal for this release's files (`AsteraLoader.exe`, `AsteraLoader.dll`,
+`stracker_compat.dll`, `loader.dll`): FILL IN after the final check.
+
+## What it does
+
+- **A launcher**, `AsteraLoader.exe`, that starts the game with Astera
+  Loader. Nothing goes into the game folder, and the game's files and
+  protections are left alone. No administrator rights, no network access.
+- **Stracker plugins**, from `nativePC\plugins` as before, through
+  Astera Loader's own stand-in for Stracker's `loader.dll`.
+- **Astera Loader plugins** in `AsteraLoader\plugins\<name>\`, with a C API
+  (version 1.7):
+  - load phases from before the game's code starts to its shutdown,
+    including GAME_READY (the title screen) and EXITING (the game is
+    quitting: stop your threads);
+  - shared Direct3D 12 and game-function hooks, so several mods can hook
+    the same function in a set order;
+  - a per-frame tick and a task queue on the game thread;
+  - hotkeys, key and pad state, and input capture for in-game menus;
+  - game identity, a cached pattern scanner, per-plugin logs and data
+    folders.
+- **Visible failures:** a plugin that cannot start, or a game version a
+  plugin does not support, gets a warning at start-up instead of a crash.
+  If the game crashes, a report names the plugin whose code faulted.
+
+## Tested
+
+With MHW 421810 (the final version) under Mod Organizer 2, with the Steam
+overlay on: a set of 19 Stracker plugins, the DLSS / Frame Generation mod with
+frame generation on, input capture (keyboard, mouse, XInput pad), GAME_READY
+and a clean Exit Game.
+
+Not yet tested with this release: a manual install into the game folder,
+Steam launch options, SharpPluginLoader force-loaded beside it.
+
+## Known issues
+
+- Some Stracker plugins (seen: auto_food_skill, more_auto_shoutouts) crash
+  while the game exits, on their own threads. The game was closing anyway;
+  Astera Loader names them in its crash report and shows no notice.
+- Input capture covers the keyboard, the mouse and XInput pads; DirectInput
+  pads are not captured. Steam Input has not been tested.
+- DirectX 11 mode: plugins load, but the Direct3D 12 services are
+  unavailable.
+
+## Licence
+
+MIT. Third-party notices (MinHook, Stracker's Loader, SharpPluginLoader) are
+in the `licences` folder.

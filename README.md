@@ -44,11 +44,11 @@ history, open the entry, Actions, Restore. Or install it again after
 adding the exclusion.
 
 **Other antivirus programs** may flag Astera Loader's files too, for the
-same reasons: on VirusTotal a few engines report the launcher, the core
-DLL or the Stracker interface (`AsteraLoader\plugins\stracker_compat\loader.dll`,
-which Kaspersky flags) with generic or machine-learning verdicts. The fix
-is the same: exclude the Astera Loader folder (or the mod's folder under
-MO2) in that program. If `loader.dll` is removed, your Stracker plugins do
+same reasons. On VirusTotal each file of a release gets none or one
+machine-learning verdict from about 70 engines; each release's notes list
+them. The fix is the same: exclude the Astera Loader folder (or the mod's
+folder under MO2) in that program. If an antivirus removes
+`AsteraLoader\plugins\stracker_compat\loader.dll`, your Stracker plugins do
 not load; Astera Loader itself keeps running and says why.
 
 **SmartScreen:** the files are not signed yet, so starting
