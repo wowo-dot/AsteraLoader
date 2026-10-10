@@ -52,12 +52,22 @@ supersedes the handoff where they differ) and `docs/research/entry-slot.md`.
   `Stracker's Loader`.
 - IDA 9.4: `C:\Program Files\IDA Professional 9.4\ida.exe` (the Hex-Rays IDA MCP
   needs 9.4; 9.3 stays installed). Private database:
-  `local\ida\input-20261010\decrypted.i64`.
-- Decoded game image (read in place):
-  `D:\mh world modding\ai\glavenus\MonsterHunterWorld_decrypted.exe`, SHA-256
-  `d78611731e4a5f214e306d1d577d4782b59adaf1c75de54d2983caa45074884c`, decoded from
-  the tested exe `c2ebbbd2…90ea`. The exe on disk has SteamStub-encrypted code,
-  so offline signature checks run on this image.
+  `local\ida\input-20261010\decrypted.i64`. It was built from the old,
+  dirty image (below), so it holds modified bytes at the 29 places listed
+  in `docs/research/clean-image-20261011.md`. None of AL's work is near
+  them. Build new databases from `local\ida\clean-20261011\image.exe`, a
+  copy of the clean image, and open a fresh binary with `-Opdb:off`, so
+  IDA does not ask Microsoft's symbol server for `World300.pdb`.
+- Clean game image (read in place):
+  `D:\mh world modding\CMFM\local\runs\20261011-clean-dump\dump\image.exe`,
+  SHA-256 `a78ea69b0566414a42f16d0f8ff7d729e095041e2ae76a34cc02dbe0939f1d80`.
+  The CMFM session dumped it read-only from an unmodded game started by
+  Steam, at the title screen, from the tested exe `c2ebbbd2…90ea`. The exe
+  on disk has SteamStub-encrypted code, so offline signature checks run on
+  this image. The old image
+  `D:\mh world modding\ai\glavenus\MonsterHunterWorld_decrypted.exe`
+  (`d7861173…884c`) was dumped with mods loaded and differs at 29 places.
+  Do not use it for checks.
 - Claude Code reversing tools: `C:\Users\akifs\.claude\re-tools\` (Python 3.12:
   `py -3.12 -B`); x64dbg: `D:\reverse engine jank\x64dbg\release\x96dbg.exe`.
 - Python 3.10: `C:\Users\akifs\AppData\Local\Programs\Python\Python310\python.exe` (run with `-B`)
@@ -138,7 +148,7 @@ rules come first.
   and comments are saved to the private copy only; exports such as decompiled
   functions go to `local\`.
 - **Signatures** (`py -3.12 -B C:\Users\akifs\.claude\re-tools\sigscan.py`, on
-  the decoded image):
+  the clean image):
   - `audit <image> src probes` before staging a build that adds or changes a
     pattern. A pattern the code searches for must match exactly once. A
     pattern checked only at a pinned address may match elsewhere: on
