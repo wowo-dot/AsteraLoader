@@ -128,6 +128,16 @@ nothing over the other tool's patch. The plugin's log says it joined after
 another tool rewrote the entry, and the summary line shows
 `entry=rewritten_by_another_tool`.
 
+In game (spl-release-4, 2026-10-11) the DLSS plugin's Main:Update layer
+joined this way and frame generation started. The game then crashed inside
+SPL's winmm.dll, on a thread of NVIDIA's sl.dlss_g.dll. The DLSS mod's
+research had predicted SPL's Present hook meeting Streamline's proxy. The
+fix was briefly reverted (3aef447) and reapplied (abaeed2): the refusal had
+only kept frame generation off by accident of timing, since a layer
+registered before SPL's patch would have joined anyway. Keeping frame
+generation off while SPL is loaded is the DLSS mod's job
+(handoff-dlss-spl-20261011.md).
+
 Pattern searches combine the scanner's live matches with verified matches
 at existing chain targets, deduplicate them and still require exactly one.
 Address-based joins use the same validation. The registry lock covers
