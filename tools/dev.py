@@ -14,11 +14,12 @@ Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
                             <build_dir>-release, all tests, then the two release archives
                             local/stage/release-<version>/AsteraLoader-<version>.zip and
                             AsteraLoader-plugin-kit-<version>.zip
-  install-mo2 RUN [--stage COMMIT]
+  install-mo2 RUN [--stage COMMIT | --release]
                             back up the installed loader and example mods into
                             local/runs/RUN/installed-backup, install the staged
-                            build (HEAD's, or an earlier COMMIT's), write
-                            RUN/manifest.json and RUN/logs-before.txt
+                            build (HEAD's, or an earlier COMMIT's, or with --release
+                            the staged release package into the loader mod only),
+                            write RUN/manifest.json and RUN/logs-before.txt
   baseline RUN              write RUN/manifest.json for a run without the loader, started
                             from MO2's plain game entry; installs nothing
   watch RUN [--launch N]    run tools/modwatch.py (read-only) into RUN or RUN/launch-N
@@ -269,15 +270,25 @@ def install_mo2(args: argparse.Namespace) -> None:
     config = settings()
     if game_running():
         fail("the game is running; close it first")
-    label = args.stage or commit_label()
-    package, examples = stage_dirs(label)
-    if not package.exists() or not examples.exists():
-        fail(f"nothing staged for {label}; run 'stage' first")
+    mods = Path(config["mo2_mods"])
+    if args.release:
+        # The release package as published; the examples mod stays as it is.
+        version = project_version(release=True)
+        label = f"release-{version}"
+        package = LOCAL / "stage" / label / f"AsteraLoader-{version}"
+        if not package.exists():
+            fail("no release staged; run 'stage --release' first")
+        targets = {mods / config["loader_mod"]: package}
+    else:
+        version = project_version()
+        label = args.stage or commit_label()
+        package, examples = stage_dirs(label)
+        if not package.exists() or not examples.exists():
+            fail(f"nothing staged for {label}; run 'stage' first")
+        targets = {mods / config["loader_mod"]: package, mods / config["examples_mod"]: examples}
     run_folder = LOCAL / "runs" / args.run
     if (run_folder / "installed-backup").exists():
         fail(f"{run_folder} already has an installed-backup; pick a new run name")
-    mods = Path(config["mo2_mods"])
-    targets = {mods / config["loader_mod"]: package, mods / config["examples_mod"]: examples}
 
     # Back up what is installed now, except the loader's own logs, cache and data.
     for mod in targets:
@@ -295,7 +306,7 @@ def install_mo2(args: argparse.Namespace) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
             installed[f"{mod.name}/{path.relative_to(source).as_posix()}"] = sha256(target)
-        (mod / "meta.ini").write_text(f"[General]\r\nversion={project_version()}\r\ncomments=Astera Loader local dev build "
+        (mod / "meta.ini").write_text(f"[General]\r\nversion={version}\r\ncomments=Astera Loader local build "
                                       f"{label}, installed by tools/dev.py for run {args.run}\r\n",
                                       encoding="utf-8", newline="")
         for extra in sorted(extras):
@@ -313,7 +324,7 @@ def install_mo2(args: argparse.Namespace) -> None:
         "run": args.run,
         "date": datetime.date.today().isoformat(),
         "source_commit": label,
-        "loader_version": project_version(),
+        "loader_version": version,
         "exe_sha256": sha256(Path(config["game_exe"])),
         "installed": installed,
         "mo2_profile": profile,
@@ -474,6 +485,7 @@ def main() -> None:
     install = commands.add_parser("install-mo2")
     install.add_argument("run")
     install.add_argument("--stage", metavar="COMMIT", help="install local/stage/*-COMMIT instead of HEAD's build")
+    install.add_argument("--release", action="store_true", help="install the staged release package (loader mod only)")
     install.set_defaults(function=install_mo2)
     plain = commands.add_parser("baseline")
     plain.add_argument("run")
