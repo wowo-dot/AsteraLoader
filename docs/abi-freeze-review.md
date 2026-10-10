@@ -121,3 +121,19 @@ so before then:
 - reasons and names never NULL; a handle of 0 means failure;
 - callbacks run under AL's fault guard, as al.frame's do;
 - every new struct pinned in `abi_layout.h`, with no implicit padding.
+
+## API 1.7 (GAME_READY): checked 2026-10-11
+
+Checked against the rules above before the first release:
+
+- `al_phase_game_ready_t` is `size`, `source`, `frame`: 16 bytes, no
+  implicit padding, `size` first so it can grow; pinned in `abi_layout.h`.
+- `AL_GAME_READY_TITLE` is 1; 0 stays unused, and later sources are new
+  values.
+- Phases are opt-in through the `phases` bit mask. Bit 5 was documented as
+  reserved since 1.2, so a 1.2 to 1.6 plugin gets GAME_READY only if it asked
+  for that reserved bit. Bits above `AL_PHASE_COUNT` are still refused.
+- It fires at most once, on the frame thread, never after EXITING; the
+  header says when it does not fire.
+
+No fixes needed.
