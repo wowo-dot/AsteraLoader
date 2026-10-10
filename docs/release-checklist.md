@@ -101,6 +101,17 @@ LICENSE
    - `loader.dll` (71ca9d73...): 0/71; Kaspersky clean.
    Every commit changes every binary's hash (the commit is built in), so
    the final check is on the build that gets tagged.
+   VirusTotal, release 0.1.0 (ba04bd1, the tagged build; 2026-10-11).
+   Uploaded by the user: VirusTotal's upload asks for a reCAPTCHA, which
+   Claude may not answer, so Claude only attaches the files (in the
+   minimal interface, /old-browsers/) and reads the results:
+   - `AsteraLoader.exe` (4d24f70a...): 1/75, Trapmine "malicious" (machine
+     learning). Microsoft, Kaspersky, CrowdStrike, ESET, Malwarebytes and
+     the rest clean.
+   - `AsteraLoader.dll` (947934b4...): 0/75.
+   - `stracker_compat.dll` (cee41844...): 1/75, Cynet (machine learning).
+   - `loader.dll` (f2f415a2...): 0/75 (Google's engine reported a failure,
+     not a detection).
 
 ## Install instructions to verify
 

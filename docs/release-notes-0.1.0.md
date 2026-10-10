@@ -20,8 +20,19 @@ paused and loads its DLL into it, as launcher-style loaders do. Add an
 exclusion for the Astera Loader mod folder; the README shows how. The source
 is open, so you can check what it does.
 
-VirusTotal for this release's files (`AsteraLoader.exe`, `AsteraLoader.dll`,
-`stracker_compat.dll`, `loader.dll`): FILL IN after the final check.
+VirusTotal for this release's files (2026-10-11):
+
+| File | SHA-256 | Result |
+|---|---|---|
+| `AsteraLoader.exe` | `4d24f70a21dba904f6c9224048825023a2fffeec161e4e7eb918ec5600548942` | 1/75 (Trapmine, machine learning) |
+| `AsteraLoader\AsteraLoader.dll` | `947934b4ee6f8b063b1aca19a9f9294a377ae61407f036d6edad1f41b315fd83` | 0/75 |
+| `stracker_compat.dll` | `cee418446a796a80f4071afedc2e5ab2f8c00ee2e0118a9e7054d2f00d7a78b4` | 1/75 (Cynet, machine learning) |
+| `loader.dll` | `f2f415a2d2c25c87c531a990df0c13e38b10e143be5972c6e77f76072e64a092` | 0/75 |
+
+Archive `AsteraLoader-0.1.0.zip`: SHA-256
+`62e172ed33eb3b57c5fe1f4e2e8d040d19fbb3e70f7f89cbfa90f7540fa7285a`. Plugin
+kit `AsteraLoader-plugin-kit-0.1.0.zip`: SHA-256
+`200189390ed08f9e11a0472eeba3a04b4f5f1e146a58d0c6d4cfea96c6eafb1c`.
 
 ## What it does
 
