@@ -88,9 +88,10 @@ or assume other contributors use them.
 - Do not commit or redistribute Capcom binaries, decoded images, game assets,
   NVIDIA binaries, other mods' binaries, crash dumps or IDA databases.
 - Never send project data, logs or binaries to external services.
-  - The one exception (decisions.md item 14): the user uploads AL's own
-    release binaries, built from this repository, to VirusTotal. Claude
-    only looks results up by SHA-256 and never uploads.
+  - The one exception (decisions.md item 15): AL's own release binaries,
+    built from this repository, go to VirusTotal. Claude or the user
+    uploads them. Nothing else is uploaded: no NVIDIA DLLs, other mods'
+    binaries, game files, logs, dumps or dev builds.
 - Do not reverse engineer NVIDIA binaries. Third-party mod DLLs (Stracker's,
   SPL, plugins) are studied from their published source where it exists.
   Only inspect a binary's import and export tables when no source exists.

@@ -132,3 +132,11 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     exclusion. No false-positive report to Microsoft for now, and the launch
     method stays. A VirusTotal check of the release binaries shows what
     other antivirus engines make of it.
+15. **Claude may upload AL's release binaries to VirusTotal** (the user's
+    call, 2026-10-11). Until then only the user uploaded, and Claude
+    looked results up by SHA-256: the rule dated from when NVIDIA's DLSS
+    DLLs sat in the same folders. Now Claude can upload the four files of
+    a staged release (`AsteraLoader.exe`, `AsteraLoader.dll`,
+    `stracker_compat.dll`, `loader.dll`) itself. Everything else stays
+    off external services: NVIDIA DLLs, other mods' binaries, game files,
+    logs, crash dumps and dev builds.
