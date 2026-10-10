@@ -50,11 +50,11 @@ VirusTotal for this release's files (`AsteraLoader.exe`, `AsteraLoader.dll`,
 With MHW 421810 (the final version) under Mod Organizer 2, with the Steam
 overlay on: a set of 19 Stracker plugins, the DLSS / Frame Generation mod with
 frame generation on, input capture (keyboard, mouse, XInput pad), GAME_READY
-and a clean Exit Game.
+and a clean Exit Game. SharpPluginLoader 2.0.0 force-loaded beside it, with
+the DLSS mod and no Stracker plugins: both start, clean Exit Game.
 
 Not yet tested with this release: a manual install into the game folder,
-Steam launch options, SharpPluginLoader force-loaded beside it without the
-19 Stracker plugins (with them, see Known issues).
+Steam launch options.
 
 ## Known issues
 
