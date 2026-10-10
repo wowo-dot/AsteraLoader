@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo/astera-loader.svg" width="128" alt="Astera Loader logo"></p>
+
 # Astera Loader
 
 A plugin loader for Monster Hunter: World on PC (DirectX 12). It replaces

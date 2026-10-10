@@ -149,4 +149,7 @@ From the release archive, not the dev install. The user runs every launch.
    Stracker plugins (auto_food_skill, more_auto_shoutouts) crash while the
    game exits. AL names them in its crash report and shows no notice for
    it, since the game was closing anyway.
-7. Pushing and publishing are the user's to do.
+7. Pushing and publishing are the user's to do. The logo's images are in
+   `assets/logo` (made by `tools/make_logo.py`): `social-preview-1280x640.png`
+   for the GitHub repository's social preview (Settings, General) and
+   `nexus-cover-1920x1080.png` plus `astera-loader-512.png` for the Nexus page.

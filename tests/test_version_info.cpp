@@ -36,6 +36,12 @@ int wmain(int argc, wchar_t** argv) {
         if (text(block, L"FileVersion") != AL_BUILD_VERSION) fail("FileVersion differs from the build's version label");
         if (text(block, L"OriginalFilename") != std::filesystem::path(file).filename().wstring()) fail("OriginalFilename differs from the file");
         if (text(block, L"FileDescription").empty() || text(block, L"LegalCopyright").empty()) fail("no description or copyright");
+        // The launcher shows the logo in Explorer and the taskbar.
+        if (std::filesystem::path(file).extension() == L".exe") {
+            const auto module = LoadLibraryExW(file.c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+            if (!module || !FindResourceW(module, MAKEINTRESOURCEW(1), RT_GROUP_ICON)) fail("no icon");
+            if (module) FreeLibrary(module);
+        }
     }
     if (failures) return 1;
     std::cout << "Version information present and consistent in " << (argc - 1) << " shipped binaries\n";
