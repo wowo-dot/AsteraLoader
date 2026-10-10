@@ -257,9 +257,6 @@ if (!handle) { /* the log says why; set DEGRADED */ }
 - AL checks the target's bytes before it touches anything. Either the
   pattern is searched and must match exactly once (target = match +
   offset), or `address` is given and the pattern must match there.
-- If another tool hooks the function after AL (SharpPluginLoader does with
-  the game's main update), later hooks there still join: AL checks them
-  against the bytes it read before hooking, and your log says so.
 - Register from `al_plugin_init` on. Hooks registered before PRE_MAIN ends
   take effect when it ends, before the game's code runs; later ones at once.
 - `*next` is written before the detour can be called. Always continue

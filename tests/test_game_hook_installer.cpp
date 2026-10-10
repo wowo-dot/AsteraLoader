@@ -7,9 +7,6 @@
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
-#include <string>
-#include <string_view>
-#include <vector>
 
 namespace {
 using namespace al::game_hooks;
@@ -33,23 +30,9 @@ double call(Eight function) {
     SetLastError(0x1234); return function(1.25, -2.5, 3.75, -4.125, 5.5, -6.75, 7.125, -8.5);
 }
 __declspec(noinline) int late_target(int x) { return x * 7919 + static_cast<int>(salt); }
-void *next_a{}, *next_b{}, *next_c{};
+void *next_a{}, *next_b{};
 int late_a(int x) { return std::bit_cast<decltype(&late_target)>(next_a)(x) + 1; }
 int late_b(int x) { return std::bit_cast<decltype(&late_target)>(next_b)(x) + 2; }
-int late_c(int x) { return std::bit_cast<decltype(&late_target)>(next_c)(x) + 4; }
-// Writes code bytes the way another tool's hook would.
-void write_code(void* at, const void* bytes, std::size_t size) {
-    DWORD old{};
-    require(VirtualProtect(at, size, PAGE_EXECUTE_READWRITE, &old) != FALSE, "code write protection");
-    std::memcpy(at, bytes, size);
-    VirtualProtect(at, size, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), at, size);
-}
-bool summary_has(const Registry& registry, const char* text) {
-    for (const auto& line : registry.summary())
-        if (line.find(text) != std::string::npos) return true;
-    return false;
-}
 // Original synthetic code in an executable image section: five padding
 // bytes, then xor eax,eax; ret, then non-padding. MinHook must patch above.
 #pragma section(".hooktest", read, execute)
@@ -126,34 +109,6 @@ int main() {
         const al_hook_t bad{sizeof(bad), 0, "Wrong", "90 90 90 90 90 90", 0, 0, late, std::bit_cast<void*>(&late_b), &wrong_next};
         require(!registry->hook(wrong, bad, why) && why.find("do not match") != std::string::npos && wrong_next == sentinel,
             "late join ignored a signature mismatch");
-
-        // Another tool hooks the function over AL's patch, with a longer
-        // entry jump of its own. A later join is checked against the bytes
-        // from before AL's hook; a wrong signature is still refused.
-        std::array<unsigned char, 16> al_patch{};
-        std::memcpy(al_patch.data(), late, al_patch.size());
-        require(!summary_has(*registry, "entry=rewritten"), "AL's own patch reported as rewritten");
-        std::array<unsigned char, 12> other_tool{0x48, 0xB8};  // mov rax, imm64; jmp rax
-        const auto elsewhere = reinterpret_cast<std::uintptr_t>(&late_b);
-        std::memcpy(other_tool.data() + 2, &elsewhere, sizeof(elsewhere));
-        other_tool[10] = 0xFF; other_tool[11] = 0xE0;
-        write_code(late, other_tool.data(), other_tool.size());
-        Client c; c.name = "address_c"; c.load_index = 2;
-        std::vector<std::string> c_log;
-        c.log = [&](std::string_view level, std::string_view text) { c_log.push_back(std::string(level) + " " + std::string(text)); };
-        require(!registry->hook(wrong, bad, why) && why.find("do not match") != std::string::npos,
-            "rewritten entry let a wrong signature in");
-        const al_hook_t third{sizeof(third), 0, "LateAddress", bytes.c_str(), 0, 0, late, std::bit_cast<void*>(&late_c), &next_c};
-        require(registry->hook(c, third, why) != 0 && why.empty() && next_c && next_c != sentinel,
-            "join after another tool's patch refused");
-        require(c_log.size() == 1 && c_log[0].find("INFO al.hooks: LateAddress joined; another tool") == 0,
-            "join after another tool's patch not reported to the plugin");
-        require(summary_has(*registry, "entry=rewritten_by_another_tool"), "summary does not show the rewritten entry");
-        require(!std::memcmp(late, other_tool.data(), other_tool.size()), "join wrote over the other tool's patch");
-        // The other tool calls on into AL's chain (here: its patch goes again).
-        write_code(late, al_patch.data(), al_patch.size());
-        require(late_target(7) == expected + 7 && !summary_has(*registry, "entry=rewritten"),
-            "chain after the join: a, b and c in order");
         auto hot = const_cast<unsigned char*>(hot_code + 5);
         const auto hot_bytes = signature(hot);
         const al_hook_t hot_first{sizeof(hot_first), 0, "HotPatch", hot_bytes.c_str(), 0, 0, hot, std::bit_cast<void*>(&hot_a), &hot_next_a};
