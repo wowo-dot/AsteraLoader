@@ -17,7 +17,13 @@ Output, per watched process, in --out:
   report-<pid>.txt      the entry-slot table: key modules relative to device
                         creation
 
-Run with: python -B tools/modwatch.py --out local/runs/<name>
+With --map, it also records the address-space layout around the game image
+(VirtualQueryEx with the same access rights; region metadata only, no memory
+contents): "map" events in the .jsonl when a region appears, changes or goes,
+and map-<pid>.json with the last layout. That shows what occupies the +/-2GB
+around the game's code, where hook libraries place their trampolines.
+
+Run with: python -B tools/modwatch.py --out local/runs/<name> [--map]
 """
 
 from __future__ import annotations
@@ -101,6 +107,11 @@ REPORT_MODULES = [
 ]
 DEVICE_MARKERS = ["nvwgf2umx.dll", "amdxc64.dll", "igd12umd64.dll", "d3d12core.dll"]
 
+MEM_FREE = 0x10000
+MAP_STATES = {0x1000: "commit", 0x2000: "reserve"}
+MAP_TYPES = {0x20000: "private", 0x40000: "mapped", 0x1000000: "image"}
+GRANULARITY = 0x10000
+
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 ntdll = ctypes.WinDLL("ntdll")
 version = ctypes.WinDLL("version", use_last_error=True)
@@ -132,6 +143,24 @@ class PROCESS_BASIC_INFORMATION(ctypes.Structure):
     ]
 
 
+class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BaseAddress", ctypes.c_void_p),
+        ("AllocationBase", ctypes.c_void_p),
+        ("AllocationProtect", wt.DWORD),
+        ("PartitionId", wt.WORD),
+        ("RegionSize", ctypes.c_size_t),
+        ("State", wt.DWORD),
+        ("Protect", wt.DWORD),
+        ("Type", wt.DWORD),
+    ]
+
+
+kernel32.VirtualQueryEx.argtypes = [
+    wt.HANDLE, ctypes.c_void_p, ctypes.POINTER(MEMORY_BASIC_INFORMATION), ctypes.c_size_t]
+kernel32.VirtualQueryEx.restype = ctypes.c_size_t
+kernel32.K32GetMappedFileNameW.argtypes = [wt.HANDLE, ctypes.c_void_p, wt.LPWSTR, wt.DWORD]
+kernel32.K32GetMappedFileNameW.restype = wt.DWORD
 kernel32.CreateToolhelp32Snapshot.restype = wt.HANDLE
 kernel32.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
 kernel32.Process32FirstW.argtypes = [wt.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
@@ -238,6 +267,33 @@ class Target:
             return ""
         return buf.value
 
+    def regions(self, low: int, high: int) -> list[tuple] | None:
+        """Allocated regions overlapping [low, high), or None if a query failed.
+
+        Each is (base, size, allocation_base, state, type, protect).
+        """
+        mbi = MEMORY_BASIC_INFORMATION()
+        address = low
+        found = []
+        while address < high:
+            if not kernel32.VirtualQueryEx(self.handle, ctypes.c_void_p(address),
+                                           ctypes.byref(mbi), ctypes.sizeof(mbi)):
+                return None
+            base = mbi.BaseAddress or 0
+            if mbi.RegionSize == 0:
+                return None
+            if mbi.State != MEM_FREE:
+                found.append((base, mbi.RegionSize, mbi.AllocationBase or 0, mbi.State,
+                              mbi.Type, mbi.Protect))
+            address = base + mbi.RegionSize
+        return found
+
+    def mapped_name(self, address: int) -> str | None:
+        buf = ctypes.create_unicode_buffer(1024)
+        if not kernel32.K32GetMappedFileNameW(self.handle, ctypes.c_void_p(address), buf, 1024):
+            return None
+        return buf.value
+
     def peb(self) -> int | None:
         pbi = PROCESS_BASIC_INFORMATION()
         got = wt.ULONG(0)
@@ -331,13 +387,21 @@ class Watch:
     """Watches one process from attach to exit."""
 
     def __init__(self, pid: int, out: Path, fast_seconds: float, fast_interval: float,
-                 slow_interval: float):
+                 slow_interval: float, map_margin: int = 0, map_interval: float = 0.05):
         self.target = Target(pid)
         self.pid = pid
         self.out = out
         self.fast_seconds = fast_seconds
         self.fast_interval = fast_interval
         self.slow_interval = slow_interval
+        self.map_margin = map_margin
+        self.map_interval = map_interval
+        self.map_window: tuple[int, int, int, int] | None = None
+        self.map_last: dict[int, tuple] = {}
+        self.map_names: dict[int, str | None] = {}
+        self.map_polls = 0
+        self.map_torn = 0
+        self.map_due = 0.0
         self.events = open(out / f"modules-{pid}.jsonl", "w", encoding="utf-8")
         self.known: dict = {}
         self.order: list = []
@@ -417,6 +481,51 @@ class Watch:
                            "base": hex(entry["base"]),
                            "seen_ms": ms_since(self.creation, now_filetime())})
         self.last_complete = modules
+        if self.map_margin and self.map_window is None and modules:
+            # The first loader entry is the executable itself.
+            exe = modules[0]
+            low = max(GRANULARITY, exe["base"] - self.map_margin)
+            high = min(exe["base"] + exe["size"] + self.map_margin, 0x7FFFFFFF0000)
+            self.map_window = (low, high, exe["base"], exe["size"])
+            self.emit({"event": "map_window", "low": hex(low), "high": hex(high),
+                       "image": hex(exe["base"]), "image_size": exe["size"],
+                       "seen_ms": ms_since(self.creation, now_filetime())})
+
+    def region_record(self, region: tuple) -> dict:
+        base, size, allocation, state, kind, protect = region
+        if kind in (0x40000, 0x1000000) and allocation not in self.map_names:
+            self.map_names[allocation] = self.target.mapped_name(allocation)
+        return {
+            "base": hex(base),
+            "size": size,
+            "allocation": hex(allocation),
+            "state": MAP_STATES.get(state, hex(state)),
+            "type": MAP_TYPES.get(kind, hex(kind)),
+            "protect": hex(protect),
+            "name": self.map_names.get(allocation),
+        }
+
+    def poll_map(self) -> None:
+        low, high, _image, _size = self.map_window
+        regions = self.target.regions(low, high)
+        if regions is None:
+            self.map_torn += 1
+            return
+        first = self.map_polls == 0
+        self.map_polls += 1
+        seen_ms = ms_since(self.creation, now_filetime())
+        current = {r[0]: r for r in regions}
+        for base, region in current.items():
+            if self.map_last.get(base) != region:
+                change = "initial" if first else (
+                    "changed" if base in self.map_last else "new")
+                self.emit({"event": "map", "change": change, **self.region_record(region),
+                           "seen_ms": seen_ms})
+        for base, region in self.map_last.items():
+            if base not in current:
+                self.emit({"event": "map", "change": "gone", "base": hex(base),
+                           "size": region[1], "seen_ms": seen_ms})
+        self.map_last = current
 
     def run(self) -> int:
         peb = None
@@ -428,10 +537,15 @@ class Watch:
                 peb = self.target.peb()
             if peb:
                 self.poll(peb)
-            elapsed = time.perf_counter() - self.attach_perf
+            now = time.perf_counter()
+            if self.map_window and now >= self.map_due:
+                self.poll_map()
+                self.map_due = now + self.map_interval
+            elapsed = now - self.attach_perf
             time.sleep(self.fast_interval if elapsed < self.fast_seconds else self.slow_interval)
         self.emit({"event": "exit", "exit_code": code, "polls": self.polls, "torn": self.torn,
                    "modules_seen": len(self.order), "layout_suspect": self.layout_suspect,
+                   "map_polls": self.map_polls, "map_torn": self.map_torn,
                    "watched_s": round(time.perf_counter() - self.attach_perf, 1)})
         self.events.close()
         self.target.close()
@@ -465,8 +579,54 @@ class Watch:
         }
         (self.out / f"modules-{self.pid}.json").write_text(
             json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")
-        (self.out / f"report-{self.pid}.txt").write_text(
-            report(summary), encoding="utf-8")
+        text = report(summary)
+        if self.map_window:
+            layout = self.map_layout()
+            (self.out / f"map-{self.pid}.json").write_text(
+                json.dumps(layout, indent=1, ensure_ascii=False), encoding="utf-8")
+            text += map_report(layout)
+        (self.out / f"report-{self.pid}.txt").write_text(text, encoding="utf-8")
+
+    def map_layout(self) -> dict:
+        """The last recorded layout: allocated regions and the free gaps between."""
+        low, high, image, image_size = self.map_window
+        regions = [self.region_record(r) for _, r in sorted(self.map_last.items())]
+        gaps = []
+        cursor = low
+        for base, size, *_ in sorted(self.map_last.values()):
+            if base > cursor:
+                gaps.append((cursor, base))
+            cursor = max(cursor, base + size)
+        if cursor < high:
+            gaps.append((cursor, high))
+        return {
+            "window": [hex(low), hex(high)],
+            "image": hex(image),
+            "image_size": image_size,
+            "map_polls": self.map_polls,
+            "regions": regions,
+            "free": [{"low": hex(a), "high": hex(b), "size": b - a} for a, b in gaps],
+        }
+
+
+def map_report(layout: dict) -> str:
+    image = int(layout["image"], 16)
+    lines = ["", f"Address space around the game image {layout['image']} "
+             f"(window {layout['window'][0]}-{layout['window'][1]}, last of "
+             f"{layout['map_polls']} polls):"]
+    for region in layout["regions"]:
+        base = int(region["base"], 16)
+        if image <= base < image + layout["image_size"]:
+            continue
+        lines.append(f"  {region['base']:>14} {region['size']:>12,} {region['type']:<8} "
+                     f"{region['state']:<8} {region['protect']:<6} "
+                     f"{(base - image) / 2**30:+7.3f} GiB from image  "
+                     f"{region['name'] or ''}")
+    lines.append("Free gaps of 64 KiB or more:")
+    for gap in layout["free"]:
+        if gap["size"] >= GRANULARITY:
+            lines.append(f"  {gap['low']:>14}-{gap['high']:<14} {gap['size']:>14,}")
+    return "\n".join(lines) + "\n"
 
 
 def report(summary: dict) -> str:
@@ -521,6 +681,11 @@ def main() -> int:
     parser.add_argument("--fast-interval", type=float, default=0.01)
     parser.add_argument("--slow-interval", type=float, default=0.5)
     parser.add_argument("--find-interval", type=float, default=0.02)
+    parser.add_argument("--map", action="store_true",
+                        help="also record the address-space layout around the game image")
+    parser.add_argument("--map-margin", type=lambda v: int(v, 0), default=0x90000000,
+                        help="bytes recorded below and above the image (default 2.25 GiB)")
+    parser.add_argument("--map-interval", type=float, default=0.05)
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -541,7 +706,8 @@ def main() -> int:
         seen.add(pid)
         try:
             watch = Watch(pid, args.out, args.fast_seconds, args.fast_interval,
-                          args.slow_interval)
+                          args.slow_interval, args.map_margin if args.map else 0,
+                          args.map_interval)
         except OSError as error:
             print(f"pid {pid}: cannot open: {error}", flush=True)
             continue
