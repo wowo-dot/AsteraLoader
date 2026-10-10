@@ -42,17 +42,21 @@ LICENSE
      stracker_compat turns itself off and says why;
    - where logs and crash reports are, and what to send with a bug report;
    - uninstalling: disable the mod or delete the files; nothing else changes.
-2. **A release version.** `project()` says 0.1.0, and every build is
+2. ~~**A release version.**~~ Done: `dev.py stage --release` (CMake option
+   `AL_RELEASE`) builds 0.1.0 without `-dev`. Before: `project()` said 0.1.0, and every build was
    stamped `-dev` (`AL_BUILD_VERSION` in CMakeLists.txt, `project_version()`
    in dev.py). Needed: a release switch that drops `-dev`, and a version
    number. The loader's version is separate from the plugin API's (1.6).
    Decided: 0.x until the test matrix is done (decisions.md item 13).
-3. **Version info in the binaries.** Neither file has a Windows version
+3. ~~**Version info in the binaries.**~~ Done: `al_version_resource` gives the
+   exe and the three DLLs one each (test `version_info`). Before: neither file had a Windows version
    resource, so Explorer's Properties tab and Windows' own crash reports
    show no product, version or origin. A small `.rc` for each:
    FileVersion, ProductName "Astera Loader", OriginalFilename,
    LegalCopyright.
-4. **A plugin author package:** `include/al/al_plugin.h`,
+4. ~~**A plugin author package:**~~ Done: the `sdk` install component, the
+   plugin kit archive, which builds its example on its own (test
+   `sdk_package`). It holds `include/al/al_plugin.h`,
    `examples/hello`, `docs/plugin-guide.md` and `LICENSE`, as a second
    archive or a folder in the repository's release.
 5. ~~**Retire the probes** from the default build~~: done. `site_probe`
@@ -135,7 +139,10 @@ From the release archive, not the dev install. The user runs every launch.
 1. `al.input` and GAME_READY are in, tested in game, and the docs cover
    them (plugin guide, header overview).
 2. The ABI-freeze fixes are in; every test passes.
-3. Stage from a clean tree: `dev.py stage` must not say `-dirty`.
+3. Stage from a clean tree: `dev.py stage --release` refuses a dirty tree,
+   builds in its own folder, runs every test and writes
+   `local/stage/release-<version>/AsteraLoader-<version>.zip` and
+   `AsteraLoader-plugin-kit-<version>.zip`. Check them on VirusTotal.
 4. Run the clean install tests above from that archive.
 5. Tag the tested commit (annotated `vX.Y.Z`).
 6. Write release notes: what works; known issues. One already: some

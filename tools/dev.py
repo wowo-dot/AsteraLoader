@@ -5,10 +5,15 @@ Run from anywhere with Python 3.10+:  python -B tools/dev.py <command> ...
   build                     configure (records the git commit) and build Release
   test                      run CTest
   check                     build, then test
-  stage                     build, then install the loader package and the examples into
-                            local/stage/<version>-<commit>[-dirty] and
-                            local/stage/examples-<commit>[-dirty]; print hashes and
-                            check that the DLLs import only KERNEL32
+  stage                     build, then install the loader package, the examples and the
+                            plugin author package into local/stage/<version>-<commit>[-dirty],
+                            local/stage/examples-<commit>[-dirty] and
+                            local/stage/sdk-<commit>[-dirty]; print hashes and check
+                            that the DLLs import only KERNEL32
+  stage --release           from a clean tree only: a release build (no "-dev") in
+                            <build_dir>-release, all tests, then the two release archives
+                            local/stage/release-<version>/AsteraLoader-<version>.zip and
+                            AsteraLoader-plugin-kit-<version>.zip
   install-mo2 RUN [--stage COMMIT]
                             back up the installed loader and example mods into
                             local/runs/RUN/installed-backup, install the staged
@@ -86,9 +91,9 @@ def commit_label() -> str:
     return label + ("-dirty" if git("status", "--porcelain") else "")
 
 
-def project_version() -> str:
+def project_version(release: bool = False) -> str:
     found = re.search(r"project\(astera_loader VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text(encoding="utf-8"))
-    return (found.group(1) if found else "0.0.0") + "-dev"
+    return (found.group(1) if found else "0.0.0") + ("" if release else "-dev")
 
 
 def sha256(path: Path) -> str:
@@ -140,15 +145,24 @@ def files_under(folder: Path, skip: tuple[str, ...] = ()) -> list[Path]:
 
 # Commands ---------------------------------------------------------------
 
-def build(_: argparse.Namespace) -> None:
-    build_dir = settings()["build_dir"]
-    run(["cmake", "-S", ".", "-B", build_dir, "-A", "x64"], stdout=subprocess.DEVNULL)
+def build_in(build_dir: str, release: bool = False) -> None:
+    # The flag is always given, so a dev build never inherits a release setting.
+    run(["cmake", "-S", ".", "-B", build_dir, "-A", "x64", f"-DAL_RELEASE={'ON' if release else 'OFF'}"],
+        stdout=subprocess.DEVNULL)
     # MSBuild prints every project; quiet keeps warnings and errors only.
     run(["cmake", "--build", build_dir, "--config", "Release", "--parallel", "--", "/nologo", "/v:quiet"])
 
 
+def test_in(build_dir: str) -> None:
+    run(["ctest", "--test-dir", build_dir, "-C", "Release", "--output-on-failure"])
+
+
+def build(_: argparse.Namespace) -> None:
+    build_in(settings()["build_dir"])
+
+
 def test(_: argparse.Namespace) -> None:
-    run(["ctest", "--test-dir", settings()["build_dir"], "-C", "Release", "--output-on-failure"])
+    test_in(settings()["build_dir"])
 
 
 def check(args: argparse.Namespace) -> None:
@@ -156,21 +170,56 @@ def check(args: argparse.Namespace) -> None:
     test(args)
 
 
+def install_component(build_dir: str, prefix: Path, component: str | None = None) -> None:
+    command = ["cmake", "--install", build_dir, "--config", "Release", "--prefix", str(prefix)]
+    run(command + (["--component", component] if component else []), stdout=subprocess.DEVNULL)
+
+
 def stage(args: argparse.Namespace) -> None:
+    if args.release:
+        stage_release()
+        return
     # Build first: the binaries record the commit at configure time, and the
     # stage folder is named after HEAD; both must agree.
     build(args)
     build_dir = settings()["build_dir"]
     package, examples = stage_dirs()
+    sdk = LOCAL / "stage" / f"sdk-{commit_label()}"
     if commit_label().endswith("-dirty"):
         print("warning: staging uncommitted changes; the label says -dirty")
-    for folder in (package, examples):
+    for folder in (package, examples, sdk):
         shutil.rmtree(folder, ignore_errors=True)
-    run(["cmake", "--install", build_dir, "--config", "Release", "--prefix", str(package)], stdout=subprocess.DEVNULL)
-    run(["cmake", "--install", build_dir, "--config", "Release", "--component", "examples", "--prefix", str(examples)],
-        stdout=subprocess.DEVNULL)
+    install_component(build_dir, package)
+    install_component(build_dir, examples, "examples")
+    install_component(build_dir, sdk, "sdk")
+    report_staged((package, examples, sdk))
+
+
+def stage_release() -> None:
+    if commit_label().endswith("-dirty"):
+        fail("a release stages from a clean tree: commit first")
+    # Its own build tree, so the dev build stays a dev build.
+    build_dir = settings()["build_dir"] + "-release"
+    build_in(build_dir, release=True)
+    test_in(build_dir)
+    version = project_version(release=True)
+    folder = LOCAL / "stage" / f"release-{version}"
+    shutil.rmtree(folder, ignore_errors=True)
+    package, kit = folder / f"AsteraLoader-{version}", folder / f"AsteraLoader-plugin-kit-{version}"
+    install_component(build_dir, package)
+    install_component(build_dir, kit, "sdk")
+    report_staged((package, kit))
+    # The archives' root is the game folder (MO2 installs it as the mod root).
+    for tree in (package, kit):
+        archive = Path(shutil.make_archive(str(tree), "zip", root_dir=tree))
+        print(f"\n{archive.relative_to(ROOT)}\n  {sha256(archive)}")
+    print(f"\nrelease {version} from commit {git('rev-parse', '--short=12', 'HEAD')}: "
+          "run the clean install tests from these archives, then tag the commit")
+
+
+def report_staged(folders: tuple[Path, ...]) -> None:
     problems = []
-    for folder in (package, examples):
+    for folder in folders:
         print(f"\n{folder.relative_to(ROOT)}")
         for path in files_under(folder):
             line = f"  {sha256(path)}  {path.relative_to(folder).as_posix()}"
@@ -417,8 +466,11 @@ def collect(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name, function in (("build", build), ("test", test), ("check", check), ("stage", stage)):
+    for name, function in (("build", build), ("test", test), ("check", check)):
         commands.add_parser(name).set_defaults(function=function)
+    staging = commands.add_parser("stage")
+    staging.add_argument("--release", action="store_true", help="a release build from a clean tree, with its archives")
+    staging.set_defaults(function=stage)
     install = commands.add_parser("install-mo2")
     install.add_argument("run")
     install.add_argument("--stage", metavar="COMMIT", help="install local/stage/*-COMMIT instead of HEAD's build")

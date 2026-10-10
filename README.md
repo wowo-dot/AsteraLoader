@@ -41,6 +41,14 @@ If Defender already removed it: Virus & threat protection, Protection
 history, open the entry, Actions, Restore. Or install it again after
 adding the exclusion.
 
+**Other antivirus programs** may flag Astera Loader's files too, for the
+same reasons: on VirusTotal a few engines report the launcher, the core
+DLL or the Stracker interface (`AsteraLoader\plugins\stracker_compat\loader.dll`,
+which Kaspersky flags) with generic or machine-learning verdicts. The fix
+is the same: exclude the Astera Loader folder (or the mod's folder under
+MO2) in that program. If `loader.dll` is removed, your Stracker plugins do
+not load; Astera Loader itself keeps running and says why.
+
 **SmartScreen:** the files are not signed yet, so starting
 `AsteraLoader.exe` after unpacking it with Explorer may show "Windows
 protected your PC". Choose "More info", then "Run anyway". Installs

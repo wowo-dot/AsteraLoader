@@ -35,6 +35,15 @@ if(GIT_FOUND)
         ERROR_QUIET)
 endif()
 
+# Release builds drop "-dev" (dev.py stage --release, from a clean tree).
+# The loader stays at 0.x until the test matrix is done (decisions.md item 13).
+option(AL_RELEASE "Build a release: the version without -dev" OFF)
+if(AL_RELEASE)
+    set(AL_VERSION_LABEL "${PROJECT_VERSION}")
+else()
+    set(AL_VERSION_LABEL "${PROJECT_VERSION}-dev")
+endif()
+
 # Project code builds with warnings as errors. Third-party code, when there is
 # some, gets its own targets without these options.
 function(al_project_target target)
@@ -43,9 +52,31 @@ function(al_project_target target)
         "$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<BOOL:$<TARGET_PROPERTY:AL_TEST_C_EXCEPTIONS>>,/EHs,/EHsc>>")
     target_compile_definitions(${target} PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00
-        AL_BUILD_VERSION=L"${PROJECT_VERSION}-dev"
+        AL_BUILD_VERSION=L"${AL_VERSION_LABEL}"
         AL_GIT_COMMIT=L"${AL_GIT_COMMIT}")
     target_link_options(${target} PRIVATE /WX)
+endfunction()
+
+# Windows version information for a shipped binary: Explorer's Properties
+# tab and Windows' own crash reports show the product, version and origin.
+function(al_version_resource target description)
+    get_target_property(AL_RC_NAME ${target} OUTPUT_NAME)
+    get_target_property(type ${target} TYPE)
+    if(type STREQUAL "EXECUTABLE")
+        set(AL_RC_TYPE VFT_APP)
+        set(AL_RC_FILENAME "${AL_RC_NAME}.exe")
+    else()
+        set(AL_RC_TYPE VFT_DLL)
+        set(AL_RC_FILENAME "${AL_RC_NAME}.dll")
+    endif()
+    set(AL_RC_DESCRIPTION "${description}")
+    if(AL_RELEASE)
+        set(AL_RC_FLAGS 0)
+    else()
+        set(AL_RC_FLAGS VS_FF_PRERELEASE)
+    endif()
+    configure_file("${CMAKE_SOURCE_DIR}/src/common/version.rc.in" "${CMAKE_BINARY_DIR}/version/${target}.rc" @ONLY)
+    target_sources(${target} PRIVATE "${CMAKE_BINARY_DIR}/version/${target}.rc")
 endfunction()
 
 # Install layout: dist/<config>/AsteraLoader.exe and dist/<config>/AsteraLoader/AsteraLoader.dll.
@@ -153,11 +184,13 @@ add_executable(al_launcher WIN32 src/launcher/main.cpp)
 target_link_libraries(al_launcher PRIVATE al_common shell32 user32)
 al_project_target(al_launcher)
 set_target_properties(al_launcher PROPERTIES OUTPUT_NAME AsteraLoader RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}")
+al_version_resource(al_launcher "Astera Loader launcher: starts Monster Hunter: World with Astera Loader")
 
 add_library(al_loader SHARED src/core/dllmain.cpp)
 target_link_libraries(al_loader PRIVATE al_startup)
 al_project_target(al_loader)
 set_target_properties(al_loader PROPERTIES OUTPUT_NAME AsteraLoader RUNTIME_OUTPUT_DIRECTORY "${AL_DIST}/AsteraLoader")
+al_version_resource(al_loader "Astera Loader: plugin loader for Monster Hunter: World")
 
 # Package only production binaries and the licence, never stand-ins or fixtures.
 install(FILES "$<TARGET_FILE:al_launcher>" DESTINATION .)
@@ -187,6 +220,7 @@ al_project_target(al_stracker_loader)
 set_target_properties(al_stracker_loader PROPERTIES
     OUTPUT_NAME loader
     RUNTIME_OUTPUT_DIRECTORY "${AL_STRACKER_DIST}")
+al_version_resource(al_stracker_loader "Astera Loader: Stracker's Loader interface for Stracker plugins")
 
 add_library(al_stracker_compat SHARED plugins/stracker_compat/stracker_compat.cpp)
 target_link_libraries(al_stracker_compat PRIVATE al_api)
@@ -195,6 +229,7 @@ al_project_target(al_stracker_compat)
 set_target_properties(al_stracker_compat PROPERTIES
     OUTPUT_NAME stracker_compat
     RUNTIME_OUTPUT_DIRECTORY "${AL_STRACKER_DIST}")
+al_version_resource(al_stracker_compat "Astera Loader: runs Stracker plugins")
 
 install(FILES "$<TARGET_FILE:al_stracker_compat>" "$<TARGET_FILE:al_stracker_loader>"
     DESTINATION AsteraLoader/plugins/stracker_compat)
@@ -211,6 +246,14 @@ set_target_properties(al_hello PROPERTIES
     OUTPUT_NAME hello
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/$<CONFIG>/AsteraLoader/plugins/hello")
 install(FILES "$<TARGET_FILE:al_hello>" DESTINATION AsteraLoader/plugins/hello COMPONENT examples EXCLUDE_FROM_ALL)
+
+# The plugin author package: `cmake --install <build> --component sdk`. The
+# header, the hello example with a CMake project that builds it on its own,
+# the plugin guide and the licence.
+install(FILES include/al/al_plugin.h DESTINATION include/al COMPONENT sdk EXCLUDE_FROM_ALL)
+install(FILES examples/hello/hello.c DESTINATION examples/hello COMPONENT sdk EXCLUDE_FROM_ALL)
+install(FILES docs/plugin-guide.md DESTINATION docs COMPONENT sdk EXCLUDE_FROM_ALL)
+install(FILES sdk/CMakeLists.txt sdk/README.md LICENSE DESTINATION . COMPONENT sdk EXCLUDE_FROM_ALL)
 
 # probes/site_probe.cpp found the frame and exit sites for API 1.5, and
 # probes/input_probe.cpp the input the game reads for API 1.6. al.frame and
@@ -339,6 +382,20 @@ target_link_libraries(al_input_host_tests PRIVATE al_plugins)
 al_project_target(al_input_host_tests)
 add_test(NAME input_host COMMAND al_input_host_tests "$<TARGET_FILE:al_input_fixture>" "${CMAKE_BINARY_DIR}/input_host")
 set_tests_properties(input_host PROPERTIES TIMEOUT 30)
+
+# Release packaging: version information in every shipped binary, and the
+# plugin author package building its example on its own.
+add_executable(al_version_info_tests tests/test_version_info.cpp)
+target_link_libraries(al_version_info_tests PRIVATE version)
+al_project_target(al_version_info_tests)
+target_compile_definitions(al_version_info_tests PRIVATE AL_TEST_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    AL_TEST_VERSION_MINOR=${PROJECT_VERSION_MINOR} AL_TEST_VERSION_PATCH=${PROJECT_VERSION_PATCH})
+add_test(NAME version_info COMMAND al_version_info_tests "$<TARGET_FILE:al_launcher>" "$<TARGET_FILE:al_loader>"
+    "$<TARGET_FILE:al_stracker_compat>" "$<TARGET_FILE:al_stracker_loader>")
+add_test(NAME sdk_package COMMAND "${CMAKE_COMMAND}" "-DBUILD=${CMAKE_BINARY_DIR}" "-DCONFIG=$<CONFIG>"
+    "-DGENERATOR=${CMAKE_GENERATOR}" "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}" "-DWORK=${CMAKE_BINARY_DIR}/sdk_package"
+    -P "${CMAKE_SOURCE_DIR}/tests/sdk_package.cmake")
+set_tests_properties(version_info sdk_package PROPERTIES TIMEOUT 180)
 
 add_executable(al_frame_layer_tests tests/test_frame_layer.cpp)
 target_link_libraries(al_frame_layer_tests PRIVATE al_startup)
