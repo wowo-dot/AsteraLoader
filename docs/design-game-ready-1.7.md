@@ -1,7 +1,9 @@
 # Design: AL_PHASE_GAME_READY (API 1.7)
 
-Status 2026-10-10: implemented (2e93056), tested outside the game; the
-in-game run is next. Roadmap "path to v1" step 3.
+Status 2026-10-10: implemented (2e93056) and confirmed in MHW: game-ready-1,
+tag v0.1.0-dev.17. GAME_READY fired once on the frame thread 21.6 s after
+start, when the title screen came up (the user saw the title's add-on
+check popup at about 20 s). Roadmap "path to v1" step 3.
 
 ## What it means
 
@@ -70,10 +72,10 @@ c2ebbbd2...). RVAs from the image base.
 
 ## Open
 
-- The in-game run: GAME_READY should come when the title screen appears,
-  and not again on a return to the title. Unverified: that sArea's update
-  runs inside Main:Update on the frame thread. If it runs elsewhere, the
-  flag still reaches the next frame's end.
+- Not yet seen in game: no second GAME_READY after a return to the title
+  (covered by the fake-game test). The core log's shutdown summary now
+  says `game_ready fired=1 title_starts=N`, so a run with a return to the
+  title shows it.
 - A mod that skipped the title screen would leave GAME_READY silent. None
   is known for MHW (intro skips skip the logos, not the title). A fallback
   could watch for the first started area of any kind.

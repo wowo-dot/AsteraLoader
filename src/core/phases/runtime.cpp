@@ -90,6 +90,7 @@ std::wstring widen(std::string_view text) {
 void report_game_hooks() {
     for (const auto& line : g->host->game_hooks().summary()) log(widen(line));
     for (const auto& line : g->host->frame_clock().summary()) log(widen(line));
+    if (g->frame) log(widen(g->frame->ready_summary()));
     for (const auto& line : g->host->input_service().summary()) log(widen(line));
 }
 void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {

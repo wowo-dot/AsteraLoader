@@ -133,8 +133,9 @@ void Layer::ready() noexcept {
     try {
         al_frame_status_t status{}; status.size = sizeof(status); host_.frame_clock().status(status);
         const al_phase_game_ready_t payload{sizeof(payload), AL_GAME_READY_TITLE, status.frames ? status.frames - 1 : 0};
-        if (host_.raise_game_ready(payload))
-            note("phase_game_ready source=title frame=" + std::to_string(payload.frame) + " thread_id=" + std::to_string(GetCurrentThreadId()));
+        if (!host_.raise_game_ready(payload)) return;
+        ready_fired_ = true;
+        note("phase_game_ready source=title frame=" + std::to_string(payload.frame) + " thread_id=" + std::to_string(GetCurrentThreadId()));
     } catch (...) {}
 }
 // aTitle's start runs once the title area has loaded, and again after a
@@ -142,8 +143,13 @@ void Layer::ready() noexcept {
 std::uintptr_t Layer::title(void* area, void* a2, void* a3, void* a4) {
     auto& layer = *active;
     const auto result = std::bit_cast<Update>(layer.title_next_)(area, a2, a3, a4);
+    layer.title_starts_.fetch_add(1, std::memory_order_relaxed);
     if (layer.ready_armed_.load(std::memory_order_acquire)) layer.title_started_.store(true, std::memory_order_release);
     return result;
+}
+std::string Layer::ready_summary() const {
+    return "game_ready fired=" + std::to_string(ready_fired_ ? 1 : 0) + " title_starts=" +
+        std::to_string(title_starts_.load(std::memory_order_relaxed)) + (ready_problem_.empty() ? "" : " reason=" + ready_problem_);
 }
 void Layer::exiting(void* main) {
     auto& layer = *active;

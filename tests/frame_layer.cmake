@@ -36,7 +36,8 @@ list(LENGTH exits count)
 string(REGEX MATCHALL "phase_game_ready source=title frame=1 " readies "${core}")
 list(LENGTH readies ready_count)
 if(NOT ready_count EQUAL 1 OR NOT core MATCHES "game_ready_armed site=Area:TitleStart" OR
-    NOT core MATCHES "name=Area:TitleStart state=active layers=AsteraLoader")
+    NOT core MATCHES "name=Area:TitleStart state=active layers=AsteraLoader" OR
+    NOT core MATCHES "game_ready fired=1 title_starts=2")
     message(FATAL_ERROR "GAME_READY summaries failed: ${core}")
 endif()
 if(NOT count EQUAL 1 OR NOT core MATCHES "frame_state=stopped frames=3" OR

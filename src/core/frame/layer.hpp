@@ -19,6 +19,8 @@ public:
     void win_main(std::uint32_t thread) noexcept;
     // Why GAME_READY cannot fire, or "" once its hook is active.
     const std::string& ready_problem() const noexcept { return ready_problem_; }
+    // For the core log: whether GAME_READY fired, and how often the title started.
+    std::string ready_summary() const;
     Layer(const Layer&) = delete;
     Layer& operator=(const Layer&) = delete;
 private:
@@ -41,7 +43,8 @@ private:
     // GAME_READY: the hook marks the title's start; the frame thread
     // dispatches at that frame's end, once.
     std::atomic<bool> ready_armed_{false}, title_started_{false};
-    bool ready_done_{false};
+    std::atomic<std::uint32_t> title_starts_{0};
+    std::atomic<bool> ready_done_{false}, ready_fired_{false};
     std::string ready_problem_{"not prepared"};
     std::atomic<std::uint32_t> win_main_{0}, frame_thread_{0};
 };
