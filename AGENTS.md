@@ -19,7 +19,10 @@ and run records use that name for the loader (`decisions.md` item 11).
   - Makes Stracker's Loader unnecessary: existing Stracker plugins run
     unchanged with no `dinput8.dll` or `loader.dll` in the game folder.
 - **CMFM:** the in-game settings menu, a plugin of the loader. Plugins
-  register typed settings, status pages and warning popups.
+  register typed settings, status pages and warning popups. Since
+  2026-10-11 it has its own repository and sessions (`decisions.md` item
+  16): `D:\mh world modding\CMFM`. Its requests for AL arrive in its
+  `docs/al-requests.md`.
 
 The user's guiding principle: fewer loaders, proxy DLLs and bandaids over the
 exe. AL replaces Stracker's Loader. It coexists with SharpPluginLoader (SPL)
@@ -40,6 +43,7 @@ supersedes the handoff where they differ) and `docs/research/entry-slot.md`.
 
 - Repository: `D:\mh world modding\AsteraLoader`
 - Sibling DLSS mod (read-only reference from here): `D:\mh world modding\dlssupdate`
+- Sibling CMFM, the menu plugin (read-only reference from here): `D:\mh world modding\CMFM`
 - Sibling CPU project (read-only reference): `D:\mh world modding\cpuopt`
 - Game directory: `D:\SteamLibrary\steamapps\common\Monster Hunter World`
 - Game executable: `D:\SteamLibrary\steamapps\common\Monster Hunter World\MonsterHunterWorld.exe`

@@ -140,3 +140,11 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     `stracker_compat.dll`, `loader.dll`) itself. Everything else stays
     off external services: NVIDIA DLLs, other mods' binaries, game files,
     logs, crash dumps and dev builds.
+16. **CMFM gets its own repository** (the user's call, 2026-10-11, after
+    the 0.1.0 release). The menu plugin is developed in
+    `D:\mh world modding\CMFM` with its own sessions, like the DLSS mod.
+    Its base (rules, handoff, AL 0.1.0 header, a skeleton plugin) was set
+    up from here. AL treats it as a read-only sibling, and CMFM's needs
+    from AL arrive in its `docs/al-requests.md`. Item 11 still holds: CMFM
+    is an AL plugin. Whether AL's package bundles it is an open question
+    for when CMFM ships.
