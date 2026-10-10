@@ -116,9 +116,11 @@ LICENSE
 3. Start the game with that entry from now on.
 
 **Manual:** copy `AsteraLoader.exe` and the `AsteraLoader` folder into the
-game folder, and start `AsteraLoader.exe`.
-
-**Steam:** launch options `"<path>\AsteraLoader.exe" %command%`.
+game folder, and set Steam's launch options to
+`"<path>\AsteraLoader.exe" %command%`. Starting `AsteraLoader.exe`
+directly does not work for a Steam copy: the game exits during Steam's
+start-up stub (exit code 53) and Steam starts it again without AL
+(manual-release-1). AL leaves that check alone.
 
 ## Clean install tests
 
@@ -139,9 +141,12 @@ Steam launch options and SPL separately (2026-10-10).
       the game folder): stracker_compat loads the plugins, reports the
       files (degraded, start-up warning), the game runs. Passed:
       release-final-1 C (the user saw the warning; exit code 0).
-- [ ] **A manual install** into the game folder, then removed (the user's
+- [x] **A manual install** into the game folder, then removed (the user's
       test; the game folder is otherwise read-only for this project).
-- [ ] **Steam launch options** with `%command%`.
+      Started directly it does not run AL (manual-release-1, above); with
+      Steam launch options it does (steam-options-1).
+- [x] **Steam launch options** with `%command%`. Passed: steam-options-1
+      (game_path_source=argument, GAME_READY, EXITING, exit code 0).
 - [x] **SPL force-loaded** alongside. Passed without the Stracker plugins
       (spl-release-3); with 19 Stracker plugins SPL fails without AL too
       (spl-baseline-1, a known issue).

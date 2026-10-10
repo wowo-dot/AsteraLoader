@@ -57,8 +57,8 @@ with loading screens, menus, alt-tab and window changes. SharpPluginLoader
 exit cleanly. With Stracker's Loader left installed, Astera Loader warns at
 start-up and the game runs.
 
-Not yet tested with this release: a manual install into the game folder,
-Steam launch options.
+A manual install into the game folder, started with Steam's launch options
+(`"<game folder>\AsteraLoader.exe" %command%`): starts and exits cleanly.
 
 ## Known issues
 

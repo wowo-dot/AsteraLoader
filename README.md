@@ -71,18 +71,19 @@ through MO2 usually do not see this.
 4. Start the game with that entry from now on. The plain "Monster Hunter:
    World" entry starts the game without Astera Loader.
 
-### Manual (not yet tested)
+### Manual, with Steam launch options
 
 1. Remove Stracker's Loader: delete `dinput8.dll` and `loader.dll` from the
    game folder. Keep `nativePC\plugins`.
 2. Copy `AsteraLoader.exe` and the `AsteraLoader` folder into the game
    folder.
-3. Start the game with `AsteraLoader.exe`.
+3. In Steam: Monster Hunter: World, Properties, General, Launch options:
+   `"<game folder>\AsteraLoader.exe" %command%` (with the quotes).
+4. Start the game with Steam's Play button.
 
-### Steam launch options (not yet tested)
-
-Set the game's launch options to `"<path>\AsteraLoader.exe" %command%`.
-Without them, Steam's Play button starts the game without Astera Loader.
+Starting `AsteraLoader.exe` directly does not work: Steam closes that game
+and starts it again itself, without Astera Loader. Without the launch
+options, Steam's Play button also starts the game without Astera Loader.
 
 ## Plugins
 
@@ -105,8 +106,8 @@ They are in the `AsteraLoader\logs` folder next to `AsteraLoader.exe`
 - `core.<pid>.log`: Astera Loader's own log, one per game launch;
 - `launcher.<pid>.log`: the launcher's log;
 - `plugins\<name>.log`: each plugin's log;
-- `crashes\`: if the game crashes, a report naming the plugin whose code
-  faulted. You are told at the next launch.
+- `crashes\`: if the game crashes, a report naming the plugin, or the
+  other mod's DLL, whose code faulted. You are told at the next launch.
 
 For a bug report, send the core log, the launcher log and the crash report
 from that launch. Astera Loader logs no key presses or typed text, and its
