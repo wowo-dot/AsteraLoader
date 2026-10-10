@@ -76,8 +76,7 @@ A manual install into the game folder, started with Steam's launch options
 - If Stracker's Loader is still installed (`dinput8.dll` and `loader.dll` in
   the game folder, or its MO2 mod enabled), Astera Loader loads the Stracker
   plugins and shows a warning, but Stracker's Loader starts as well. Remove
-  it. The README in this release says Astera Loader's Stracker support turns
-  itself off in that case; that is wrong, the warning is what happens.
+  it.
 - Input capture covers the keyboard, the mouse and XInput pads; DirectInput
   pads are not captured. Steam Input has not been tested.
 - DirectX 11 mode: plugins load, but the Direct3D 12 services are

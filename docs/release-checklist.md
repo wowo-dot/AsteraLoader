@@ -41,8 +41,7 @@ LICENSE
      `loader.dll` from the game folder). With leftover files,
      stracker_compat still loads the plugins and warns at start-up, naming
      the files to remove (it turns itself off only when another
-     `loader.dll` is already loaded before it). The README in the 0.1.0
-     package still says it turns itself off; corrected after c2f07cd;
+     `loader.dll` is already loaded before it);
    - where logs and crash reports are, and what to send with a bug report;
    - uninstalling: disable the mod or delete the files; nothing else changes.
 2. ~~**A release version.**~~ Done: `dev.py stage --release` (CMake option
@@ -126,9 +125,14 @@ start-up stub (exit code 53) and Steam starts it again without AL
 
 From the release archive, not the dev install. The user runs every launch.
 
-0.1.0 (c2f07cd): the user chose to install the release archive into their
-own MO2 setup instead of a fresh instance, and to test the manual install,
-Steam launch options and SPL separately (2026-10-10).
+0.1.0: the user chose to install the release archive into their own MO2
+setup instead of a fresh instance, and to test the manual install, Steam
+launch options and SPL separately (2026-10-10). The runs below tested the
+c2f07cd build. Its README had two mistakes (the manual steps, and what
+happens with a leftover Stracker's Loader), so 0.1.0 is rebuilt from the
+commit that adds this paragraph: README and docs only, the code is
+unchanged. release-final-2 confirms that build with one MO2 launch and one
+Steam launch-options launch.
 
 - [ ] **A fresh MO2 instance** (new portable folder, MHW, no other mods):
       install from the archive, add the entry, start. Expect: core log,
