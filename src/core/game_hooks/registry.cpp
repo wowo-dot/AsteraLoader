@@ -50,6 +50,13 @@ struct Registry::Chain {
     const std::uint8_t* saved_at = nullptr;
     std::size_t saved_size = 0;
     std::array<std::uint8_t, 10> before{}, patched{};
+    // The function's first bytes as read just before AL hooked it. Another
+    // tool may later hook the function over AL's patch (SharpPluginLoader
+    // does on Main:Update); joins are then checked against these bytes,
+    // which AL verified, never against the other tool's.
+    const std::uint8_t* entry_at = nullptr;
+    std::size_t entry_size = 0;
+    std::array<std::uint8_t, 64> entry_before{};
 };
 
 Registry::Registry(const void* image, Finder find)
@@ -76,6 +83,19 @@ bool Registry::in_code(const void* address, std::size_t size) const {
     });
 }
 
+std::size_t Registry::code_room(const void* address, std::size_t most) const {
+    const auto begin = reinterpret_cast<std::uintptr_t>(address);
+    for (const auto& range : code_) {
+        if (begin >= range.first && begin < range.second) return (std::min)(most, range.second - begin);
+    }
+    return 0;
+}
+
+bool Registry::entry_intact(const Chain& chain) {
+    return readable(chain.saved_at, chain.saved_size) &&
+           !std::memcmp(chain.saved_at, chain.patched.data(), chain.saved_size);
+}
+
 bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const {
     if (!in_code(at, pattern.bytes.size()) || !readable(at, pattern.bytes.size())) return false;
     std::vector<std::uint8_t> bytes(at, at + pattern.bytes.size());
@@ -86,11 +106,19 @@ bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const 
         const auto first = (std::max)(begin, saved);
         const auto last = (std::min)(begin + bytes.size(), saved + chain->saved_size);
         if (first >= last) continue;
-        // Only undo our known patch for validation. Later modifications are
-        // not silently treated as the previously verified original bytes.
-        if (!readable(chain->saved_at, chain->saved_size) ||
-            std::memcmp(chain->saved_at, chain->patched.data(), chain->saved_size)) return false;
-        std::memcpy(bytes.data() + first - begin, chain->before.data() + first - saved, last - first);
+        // Our own patch is still there: undo only it; the rest stays live.
+        if (entry_intact(*chain)) {
+            std::memcpy(bytes.data() + first - begin, chain->before.data() + first - saved, last - first);
+            continue;
+        }
+        // Another tool has rewritten the entry since. Check against the bytes
+        // read before AL hooked it, never against the other tool's; a window
+        // that copy does not cover fails.
+        const auto entry = reinterpret_cast<std::uintptr_t>(chain->entry_at);
+        if (!chain->entry_size || first < entry || last > entry + chain->entry_size) return false;
+        const auto from = (std::max)(begin, entry);
+        const auto to = (std::min)(begin + bytes.size(), entry + chain->entry_size);
+        std::memcpy(bytes.data() + from - begin, chain->entry_before.data() + from - entry, to - from);
     }
     for (std::size_t k = 0; k < bytes.size(); ++k)
         if ((bytes[k] & pattern.mask[k]) != (pattern.bytes[k] & pattern.mask[k])) return false;
@@ -177,10 +205,16 @@ std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string&
                                                                          : a.client->load_index < b.client->load_index;
                                            });
     const auto handle = layer.handle;
+    const auto label = layer.name.empty() ? std::string("a hook") : layer.name;
     chain->layers.insert(position, std::move(layer));
 
     if (chain->state == AL_HOOK_ACTIVE) {
         link(*chain);
+        if (chain->saved_size && !entry_intact(*chain) && client.log) {
+            client.log("INFO", "al.hooks: " + label +
+                                   " joined; another tool has rewritten this function's entry since Astera Loader "
+                                   "hooked it, so the pattern was checked against the bytes from before");
+        }
     } else if (installer_) {
         install(*chain);
         if (chain->state == AL_HOOK_FAILED) problem = "that function could not be hooked: " + chain->problem;
@@ -208,6 +242,11 @@ void Registry::install(Chain& chain) {
     if (!in_code(chain.saved_at, chain.saved_size)) { chain.saved_at = static_cast<const std::uint8_t*>(chain.target); chain.saved_size = 5; }
     if (readable(chain.saved_at, chain.saved_size)) std::memcpy(chain.before.data(), chain.saved_at, chain.saved_size);
     else chain.saved_size = 0;
+    chain.entry_at = static_cast<const std::uint8_t*>(chain.target);
+    chain.entry_size = code_room(chain.entry_at, chain.entry_before.size());
+    if (chain.entry_size && readable(chain.entry_at, chain.entry_size))
+        std::memcpy(chain.entry_before.data(), chain.entry_at, chain.entry_size);
+    else chain.entry_size = 0;
     auto problem = installer_->create(chain.target, &chain.head, &chain.original);
     if (problem.empty() && !chain.original) problem = "the hook layer returned no original";
     if (problem.empty()) {
@@ -304,6 +343,9 @@ std::vector<std::string> Registry::summary() const {
             line += (k ? "," : "") + layer.client->name + (layer.enabled ? "" : "(off)");
         }
         if (chain->state == AL_HOOK_FAILED) line += " reason=" + chain->problem;
+        if (chain->state == AL_HOOK_ACTIVE && chain->saved_size && !entry_intact(*chain)) {
+            line += " entry=rewritten_by_another_tool";
+        }
         lines.push_back(std::move(line));
     }
     return lines;

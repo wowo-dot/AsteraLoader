@@ -114,17 +114,19 @@ above and two at entry for its hotpatch form). Signature validation overlays
 only that footprint with the pre-AL bytes, after checking the live patch
 still matches AL's recorded patch. Bytes outside it remain live checks.
 
-A join after another tool has rewritten AL's patch is refused. With
-SharpPluginLoader force-loaded, SPL hooks Main:Update after AL's frame layer,
-so the DLSS plugin's Main:Update layer is refused and frame generation stays
-off (spl-release-3, 2026-10-10). 7cf2e6c let such joins through, checked
-against a copy of the function's first 64 bytes taken before AL hooked it.
-The join worked, frame generation started, and the game crashed inside SPL's
-winmm.dll on a thread of NVIDIA's sl.dlss_g.dll (spl-release-4, 2026-10-11).
-The DLSS mod's research had predicted SPL's Present hook meeting
-Streamline's proxy. 7cf2e6c was reverted for 0.1.0. Bring it back (revert the
-revert) once the DLSS mod handles SharpPluginLoader itself, for example by
-keeping frame generation off with a visible notice while SPL is loaded.
+Another tool may hook the same function after AL, over AL's patch: with
+SharpPluginLoader force-loaded, it hooks Main:Update after AL's frame layer,
+and AL's chain keeps running behind it (spl-release-3, 2026-10-10). Before
+0.1.0 such a join was refused, and the DLSS plugin's Main:Update layer with
+it, so frame generation stayed off. The registry now also copies the
+function's first 64 bytes (to the end of the code section) just before AL
+hooks it. When AL's footprint no longer holds AL's patch, the part of a
+pattern inside that copy is checked against it, never against the other
+tool's bytes; a pattern whose overlap with the footprint lies outside the
+copy fails as before. The join is still only a pointer update; AL writes
+nothing over the other tool's patch. The plugin's log says it joined after
+another tool rewrote the entry, and the summary line shows
+`entry=rewritten_by_another_tool`.
 
 Pattern searches combine the scanner's live matches with verified matches
 at existing chain targets, deduplicate them and still require exactly one.
@@ -187,5 +189,7 @@ region does not bypass the game-function chain.
 `game_hook_installer` checks inactive creation, head publication, all four
 XMM argument registers and stack arguments, last-error preservation,
 duplicate/invalid requests, an unrelocatable LOOP instruction, an
-address-based late join, an incorrect late signature and a synthetic
+address-based late join, an incorrect late signature, a join after another
+tool's longer entry jump over AL's patch (accepted, reported, the wrong
+signature still refused, the other tool's bytes untouched) and a synthetic
 executable-image function requiring MinHook's hotpatch-above form.

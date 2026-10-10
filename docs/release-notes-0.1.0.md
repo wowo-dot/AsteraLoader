@@ -51,8 +51,7 @@ With MHW 421810 (the final version) under Mod Organizer 2, with the Steam
 overlay on: a set of 19 Stracker plugins, the DLSS / Frame Generation mod with
 frame generation on, input capture (keyboard, mouse, XInput pad), GAME_READY
 and a clean Exit Game. SharpPluginLoader 2.0.0 force-loaded beside it, with
-the DLSS mod and no Stracker plugins: both start, clean Exit Game (frame
-generation stays off; see Known issues).
+the DLSS mod and no Stracker plugins: both start, clean Exit Game.
 
 Not yet tested with this release: a manual install into the game folder,
 Steam launch options.
@@ -66,14 +65,6 @@ Steam launch options.
   its own starts normally. Its log
   (`nativePC\plugins\CSharp\Loader\SharpPluginLoader.log`) shows
   "IP relative memory operand is too far away".
-- With SharpPluginLoader force-loaded, it patches the game's main update
-  function after Astera Loader has hooked it. Astera Loader then refuses
-  further plugin hooks on that function, because it does not treat code
-  another tool rewrote as verified, and the plugin's log says so. With the
-  DLSS mod this means frame generation stays off while SharpPluginLoader is
-  loaded. That is the safe outcome for now: in a test build that let the
-  hook join, frame generation started and the game then crashed inside
-  SharpPluginLoader, on NVIDIA's frame-generation thread.
 - Some Stracker plugins (seen: auto_food_skill, more_auto_shoutouts,
   FextyMod) crash while the game exits, on their own threads. The game was
   closing anyway; Astera Loader names them in its crash report and shows no
