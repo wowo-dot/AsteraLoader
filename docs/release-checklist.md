@@ -34,7 +34,7 @@ LICENSE
 
 ## Gaps before v1
 
-1. **A README for players.** There is none. It needs:
+1. ~~**A README for players.**~~ Done: `README.md`, shipped in the package. It covers:
    - what AL is, in two lines, and that it replaces Stracker's Loader;
    - install with MO2 (below), manually, and through Steam launch options;
    - "remove Stracker's Loader" (its MO2 mod, or `dinput8.dll` and
@@ -71,8 +71,9 @@ LICENSE
    second after it resumed the game, and quarantined it (input-check-3);
    fresh builds in the build folder too. The user's machine now has folder
    exclusions for the repository and the MO2 dev mod. Players with
-   Defender's defaults would lose the launcher. To decide: a false-positive
-   report to Microsoft, signing earlier, or another way to load the DLL.
+   Defender's defaults would lose the launcher. Decided (decisions.md item
+   14): the README explains it and asks for a Defender exclusion; a
+   VirusTotal check of the release binaries.
 
 ## Install instructions to verify
 

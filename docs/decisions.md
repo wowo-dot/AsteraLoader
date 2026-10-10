@@ -123,3 +123,12 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     call). The first public release is a 0.x version; 1.0.0 comes after
     the launch-setup test matrix (item 9) passes. The loader's version is
     separate from the plugin API's (1.6).
+14. **Windows Defender: the README asks for an exclusion** (the user's call,
+    after Defender quarantined the launcher in input-check-3 as
+    `Behavior:Win32/DefenseEvasion.A!ml`). The launcher does what every
+    launcher-style loader does: it starts the game paused and loads its DLL
+    into it, which behaviour detection flags. AL is open source, so users
+    can check what it does. The README explains this and how to add the
+    exclusion. No false-positive report to Microsoft for now, and the launch
+    method stays. A VirusTotal check of the release binaries shows what
+    other antivirus engines make of it.

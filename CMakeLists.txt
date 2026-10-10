@@ -162,7 +162,7 @@ set_target_properties(al_loader PROPERTIES OUTPUT_NAME AsteraLoader RUNTIME_OUTP
 # Package only production binaries and the licence, never stand-ins or fixtures.
 install(FILES "$<TARGET_FILE:al_launcher>" DESTINATION .)
 install(FILES "$<TARGET_FILE:al_loader>" DESTINATION AsteraLoader)
-install(FILES LICENSE DESTINATION .)
+install(FILES LICENSE README.md DESTINATION .)
 install(FILES third_party/minhook/LICENSE.txt DESTINATION licences RENAME MinHook-BSD-2.txt)
 install(FILES third_party/notices/SharpPluginLoader-MIT.txt DESTINATION licences)
 
