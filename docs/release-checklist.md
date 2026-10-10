@@ -80,9 +80,10 @@ LICENSE
      SecureAge "Malicious". Microsoft, Kaspersky, Malwarebytes, McAfee,
      Sophos, Avast and Google clean.
    - `AsteraLoader.dll` (176132fa...): 1/71, Cynet (machine learning).
-   - The package zip (ce069c6f...): 2/67, Kaspersky
-     `VHO:Trojan.Win32.Agent.gen` and Bkav Pro. Kaspersky flags neither the
-     exe nor the core DLL, so its hit is on a Stracker DLL or the archive.
+   - `loader.dll`, the Stracker shim (25c7eaea...): 1/71, Kaspersky
+     `VHO:Trojan.Win32.Agent.gen`, a generic heuristic.
+   - The package zip (ce069c6f...): 2/67, Kaspersky (from `loader.dll`)
+     and Bkav Pro. `stracker_compat.dll` was not uploaded on its own.
    All are heuristic or machine-learning verdicts, typical for a new
    unsigned loader. Repeat for the release build (new hashes).
 
