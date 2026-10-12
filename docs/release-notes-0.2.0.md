@@ -19,7 +19,19 @@ As with 0.1.0, Windows Defender may remove `AsteraLoader.exe` as
 paused and loads its DLL into it. An exclusion for the Astera Loader mod
 folder covers the new files too; the README shows how.
 
-VirusTotal for this release's files: (to be filled in)
+VirusTotal for this release's files (2026-10-12):
+
+| File | SHA-256 | Result |
+|---|---|---|
+| `AsteraLoader.exe` | `325462bac6a8267d70d7c23ae223d62a725e6c7f21e6a6f162e0320fe528a358` | 2/75 (Bkav, Trapmine) |
+| `AsteraLoader\AsteraLoader.dll` | `480e296a4d8152e20c28c0d83bec742d050f47ffb1f0894c52b4ebab4e97392e` | 0/75 |
+| `stracker_compat.dll` | `75c14dca9677d030da250c7c41af8b6bb4b8a7912203d1c66a65913a1882944f` | 1/75 (Cynet) |
+| `loader.dll` | `7a0ce70730c79a5ffe800e3c2c7db8f382d15cdfcedad295ae5f3515826272c2` | 0/75 |
+
+Archive `AsteraLoader-0.2.0.zip`: SHA-256
+`8b51f054c433b442404526af6aa3277e8c69dec167cd45a0084d350db70bbc29`. Plugin
+kit `AsteraLoader-plugin-kit-0.2.0.zip`: SHA-256
+`c78a6c5b53a24569ce403f148e6af550822cb00dead0202a94fe64e49738d4e5`.
 
 ## What is new
 
@@ -45,10 +57,12 @@ VirusTotal for this release's files: (to be filled in)
 
 ## Tested
 
-With MHW 421810 under Mod Organizer 2, Steam overlay on: CMFM changing
-its two Start menu values through al.patch, the DLSS / Frame Generation
-mod in development, and 17 Stracker plugins; every game hook in place, a
-clean exit. Outside the game, the test suite covers every refusal, the
+With MHW 421810 under Mod Organizer 2, Steam overlay on, this release's
+package installed over the previous build: CMFM changing its two Start
+menu values through al.patch, the DLSS / Frame Generation mod in
+development, and 17 Stracker plugins; every game hook in place, the game
+exiting with code 0. Launch setups and stability were tested for 0.1.0;
+the launcher is unchanged since. Outside the game, the test suite covers every refusal, the
 ownership rules, writes while another thread runs the changed code, and a
 full launch through the launcher.
 
