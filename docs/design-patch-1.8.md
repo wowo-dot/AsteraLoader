@@ -1,7 +1,11 @@
 # Design: "al.patch", checked byte changes in the game (API 1.8)
 
-Status 2026-10-12: design, agreed with the user ("the general version").
-Nothing is implemented yet.
+Status 2026-10-12: agreed with the user ("the general version"),
+implemented (87b010f) and tested outside the game: the registry with a
+stand-in writer (`test_patch.cpp`), the native writer (`test_patch_writer.cpp`),
+the crash report (`test_crash.cpp`) and end to end through the launcher
+and core (`patch_native`). Not yet run in the game; CMFM's Start menu
+pointers are the first in-game client.
 
 ## Why
 
@@ -148,6 +152,12 @@ which al.patch refuses). So no range has to be reserved for them.
   checks that no paused thread is stopped inside the bytes being changed
   (a thread exactly at their first byte is fine) and retries a few times
   before failing with the reason. Then AL flushes the instruction cache.
+- **What the pause does not cover:** AL checks where each paused thread
+  is, not the return addresses on its stack. A thread inside a function
+  called from the changed range comes back into it after the write. So
+  plugins change whole instructions and keep an instruction boundary
+  wherever a call in the range returns (single-byte NOPs always do). The
+  header and the plugin guide say so.
 - **Read-only pages** get write access for the write and their old
   protection back after it, whatever it was.
 - One lock serializes every write AL makes to the game's image: hooks

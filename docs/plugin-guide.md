@@ -1,6 +1,6 @@
 # Writing an Astera Loader plugin
 
-For plugin API 1.7. The header `include/al/al_plugin.h` is the reference;
+For plugin API 1.8. The header `include/al/al_plugin.h` is the reference;
 this guide explains how its parts fit together. The smallest working plugin
 is `examples/hello/hello.c`.
 
@@ -182,6 +182,7 @@ if (!frame) { /* this AL has no al.frame 1.0 or newer: run without it */ }
 | `al.hooks` | 1.4 | Detours on functions in the game's own code, shared between plugins. |
 | `al.frame` | 1.5 | Callbacks on the game thread every frame; tasks posted to it. |
 | `al.input` | 1.6 | Hotkeys, key and pad state, the game window's messages, input capture for menus. |
+| `al.patch` | 1.8 | Checked byte changes in the game's code and data, one owner per byte. |
 
 ### al.game
 
@@ -267,6 +268,78 @@ if (!handle) { /* the log says why; set DEGRADED */ }
 - `set_enabled` takes a detour out of its chain and puts it back. `order`
   decides the position: lower runs first, further from the original.
 - Detours run directly in the chain, so AL cannot catch their faults.
+
+### al.patch: byte changes
+
+For changes that are not a detour at a function's entry: NOPs, a flipped
+jump, a constant, a pointer in a table, a call sent to the plugin. AL
+checks the bytes before it changes them and records which plugin owns
+them. Logs and crash reports name that plugin.
+
+```c
+/* A pointer in the game's read-only data, by address. */
+void* const old_table = *(void* const*)slot; /* slot: where the game keeps it */
+void* const new_table = &g_my_table;
+al_patch_t swap = {sizeof(al_patch_t)};
+swap.kind = AL_PATCH_DATA;
+swap.name = "Start menu: System tab items";
+swap.address = (void*)slot;
+swap.length = 8;
+swap.expected = &old_table;
+swap.replacement = &new_table;
+g_menu = patches->apply(self, &swap);
+
+/* A conditional jump made unconditional, found by pattern. */
+static const uint8_t jz[1] = {0x74}, jmp[1] = {0xEB};
+al_patch_t flip = {sizeof(al_patch_t)};
+flip.kind = AL_PATCH_CODE;
+flip.name = "Example:SkipCheck";
+flip.pattern = "84 C0 74 ?? 48 8B 0D"; /* illustrative bytes */
+flip.offset = 2;
+flip.length = 1;
+flip.expected = jz;
+flip.replacement = jmp;
+if (!patches->apply(self, &flip)) { /* the log says why; set DEGRADED */ }
+```
+
+- **Kinds:** CODE and CALL go in the exe's code sections, DATA in its
+  other sections, read-only or writable. AL refuses everything else: the
+  PE headers, the data directories (imports and the IAT, exports,
+  exception data, relocations, resources, TLS, load config, debug), the
+  DRM stub's section, and every other module.
+- **Finding the bytes:** as with `al.hooks`, a pattern that matches
+  exactly once (target = match + offset), or an address, where a pattern
+  given too must match. Either way the `length` bytes there must equal
+  `expected`. That is the final check. With an address alone, name your
+  game exes in `exe_sha256`. Patterns see the game's original bytes where
+  another plugin's change or hook covers some.
+- **One owner per byte:** a change that overlaps another plugin's change,
+  or the bytes a hook takes, is refused, and the log names the holder.
+  `al.hooks` refuses a hook over a change the same way.
+- **Timing:** as with `al.hooks`. Changes made before PRE_MAIN ends are
+  checked and claimed at once and written when it ends; later ones are
+  written before `apply` returns. AL copies everything it needs during
+  `apply`, so `expected` and `replacement` may live on the stack.
+- **Writing:** naturally aligned DATA of 1, 2, 4 or 8 bytes is one atomic
+  step. Everything else is written with the game's other threads paused,
+  never while one of them is inside the changed code. Change whole
+  instructions, and keep an instruction boundary wherever a call inside
+  the range returns: a thread inside the called function comes back to
+  that byte.
+- **CALL:** the target holds `E8` (call) or `E9` (jmp) and a rel32, and
+  `expected` is those 5 bytes. AL places a small read-and-execute stub
+  within reach that jumps to `function`, and writes the old target to
+  `*original` first, so you can call through it.
+- **Off and on:** `set_enabled(self, handle, 0)` puts the expected bytes
+  back, and `1` writes the replacement again. If something outside AL
+  changed the bytes in between, AL leaves them alone, and the change
+  becomes FAILED with the reason in your log.
+- **The end:** a plugin disabled after a fault keeps its changes. At
+  SHUTDOWN, after your own SHUTDOWN, AL puts back DATA changes that are
+  still active; code and call changes stay, as hooks do. AL never unloads
+  your DLL, so a pointer into it stays valid.
+- The game checks parts of its own code. AL does nothing about those
+  checks, and a change there is visible to them, as with any mod.
 
 ### al.d3d12: Direct3D 12
 
@@ -369,7 +442,8 @@ if (g_input) {
 - Any result other than `AL_OK` is a failure (test `!= AL_OK`, not
   `== AL_ERROR`); a handle of 0 is a failure.
 - Do not patch the game exe or its files on disk. Use `al.hooks` and
-  `al.d3d12` rather than hooking functions yourself. Never stack a second
+  `al.d3d12` rather than hooking functions yourself, and `al.patch` rather
+  than writing to the game's code or data yourself. Never stack a second
   inline patch on a function AL or another plugin hooks.
 - Do not put proxy DLLs (`dinput8.dll`, `dxgi.dll`, `winmm.dll` and the
   like) in the game folder. AL needs none.

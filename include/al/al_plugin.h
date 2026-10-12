@@ -754,7 +754,10 @@ typedef struct al_input_t {
  * written when it ends, before the game's own code starts; later ones are
  * written before apply returns. Naturally aligned DATA of 1, 2, 4 or 8
  * bytes is written in one atomic step; everything else with the game's
- * other threads paused, never while one is inside the changed code.
+ * other threads paused, never while one is inside the changed code. Change
+ * whole instructions, and keep an instruction boundary where a call inside
+ * the range returns: a thread inside the called function comes back there.
+ * AL copies what it needs during apply; only *original is written to.
  *
  * AL_PATCH_CALL: the target holds E8 (call) or E9 (jmp) and a rel32, and
  * `expected` is those 5 bytes. AL points it at a stub within reach that

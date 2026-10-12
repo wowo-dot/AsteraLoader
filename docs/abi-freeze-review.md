@@ -137,3 +137,37 @@ Checked against the rules above before the first release:
   header says when it does not fire.
 
 No fixes needed.
+
+## API 1.8 (al.patch): checked 2026-10-12
+
+Checked against the rules above before AL 0.2.0:
+
+- `al_patch_t` is 72 bytes and `al_patches_t` 32, with no implicit
+  padding and `size` first; both pinned in `abi_layout.h`. AL reads at
+  most al.patch 1.0's 72 bytes and refuses a smaller `size`, so fields
+  added later land past it.
+- Kinds are 0 to 2; any other kind is refused, so new kinds (a
+  mid-function hook, say) are additive. `AL_PATCH_MAX_LENGTH` is 64, and
+  longer changes are refused, so raising it later changes nothing for
+  plugins built today.
+- A handle of 0 is a failure, with the reason in the plugin's log. State
+  numbers match al.hooks (0 pending, 1 active, 2 disabled, 3 failed), and
+  `state` reports FAILED for an unknown handle or another plugin's.
+- AL copies `name`, `pattern`, `expected` and `replacement` during
+  `apply`; it writes only `*original`, and only then. Nothing the plugin
+  passes has to outlive the call.
+- `function` and `original` mean something only for AL_PATCH_CALL, and
+  `replacement` only for the other kinds; AL ignores them elsewhere.
+  Their meaning stays tied to the kind, so later kinds can define their
+  own use without touching these.
+- Behaviour that becomes part of 1.x: changes made before PRE_MAIN ends
+  are written when it ends; a plugin disabled after a fault keeps its
+  changes; at SHUTDOWN, AL puts back DATA changes and leaves code and
+  call changes.
+- al.hooks (1.4) changes only where al.patch is used: a hook over a
+  plugin's change is refused, and patterns see the game's bytes under a
+  change. A hook's claim covers only what MinHook writes and copies (it
+  is narrowed after install), so hooks that worked on 1.7 still work
+  when no plugin uses al.patch.
+
+No fixes needed.
