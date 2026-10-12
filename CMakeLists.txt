@@ -674,6 +674,26 @@ add_test(NAME game_hooks_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_
     -P "${CMAKE_SOURCE_DIR}/tests/game_hooks_native.cmake")
 set_tests_properties(game_hooks_native PROPERTIES TIMEOUT 45)
 
+# "al.patch" end to end: the production launcher and core, a fake game and
+# the plugin patchy.
+add_executable(fake_patch_game WIN32 tests/fake_patch_game.cpp tests/fake_packed_entry.cpp)
+target_link_libraries(fake_patch_game PRIVATE al_common)
+target_compile_definitions(fake_patch_game PRIVATE AL_FAKE_PHASES)
+target_link_options(fake_patch_game PRIVATE /ENTRY:al_test_packed_entry)
+al_project_target(fake_patch_game)
+set_target_properties(fake_patch_game PROPERTIES OUTPUT_NAME MonsterHunterWorld
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_patch_game/$<CONFIG>"
+    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/fake_patch_game/$<CONFIG>")
+add_library(al_patch_plugin SHARED tests/patch_plugin.cpp)
+target_link_libraries(al_patch_plugin PRIVATE al_api)
+al_project_target(al_patch_plugin)
+set_target_properties(al_patch_plugin PROPERTIES OUTPUT_NAME patchy RUNTIME_OUTPUT_DIRECTORY "${AL_PLUGIN_FIXTURES}")
+add_test(NAME patch_native COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+    "-DCORE=$<TARGET_FILE:al_loader>" "-DFAKE_GAME=$<TARGET_FILE:fake_patch_game>"
+    "-DPLUGIN=$<TARGET_FILE:al_patch_plugin>" "-DWORK=${CMAKE_BINARY_DIR}/patch_native"
+    -P "${CMAKE_SOURCE_DIR}/tests/patch_native.cmake")
+set_tests_properties(patch_native PROPERTIES TIMEOUT 45)
+
 # A stand-in named MonsterHunterWorld.exe, so the launcher's whole path
 # (suspended start, injection, confirmation, exit code) runs outside the game.
 add_executable(fake_game WIN32 tests/fake_game.cpp)

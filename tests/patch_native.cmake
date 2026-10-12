@@ -1,0 +1,41 @@
+cmake_minimum_required(VERSION 3.25)
+string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef run)
+set(WORK "${WORK}/${run}")
+file(MAKE_DIRECTORY "${WORK}/launcher/AsteraLoader" "${WORK}/game/AsteraLoader/plugins/patchy")
+file(COPY_FILE "${LAUNCHER}" "${WORK}/launcher/AsteraLoader.exe")
+file(COPY_FILE "${CORE}" "${WORK}/launcher/AsteraLoader/AsteraLoader.dll")
+file(COPY_FILE "${FAKE_GAME}" "${WORK}/game/MonsterHunterWorld.exe")
+file(COPY_FILE "${PLUGIN}" "${WORK}/game/AsteraLoader/plugins/patchy/patchy.dll")
+set(ENV{AL_FAKE_OUTPUT} "${WORK}/fake.log")
+execute_process(COMMAND "${WORK}/launcher/AsteraLoader.exe" "${WORK}/game/MonsterHunterWorld.exe"
+    WORKING_DIRECTORY "${WORK}" RESULT_VARIABLE result TIMEOUT 30)
+if(NOT result STREQUAL "37")
+    message(FATAL_ERROR "al.patch fixture exited ${result}; inspect ${WORK}")
+endif()
+file(READ "${WORK}/fake.log" fake)
+if(NOT fake MATCHES "patch_valid=1")
+    message(FATAL_ERROR "Missing al.patch validation: ${fake}")
+endif()
+file(READ "${WORK}/launcher/AsteraLoader/logs/plugins/patchy.log" plugin)
+foreach(marker IN ITEMS "init_pending=1 entry_refused=1" "pending_written=1" "win_main_written=1"
+    "cannot make \"Entry\": the bytes lie in the DRM stub's section"
+    "al.patch: handle [0-9]+ off" "al.patch: handle [0-9]+ on")
+    if(NOT plugin MATCHES "${marker}")
+        message(FATAL_ERROR "Missing ${marker}: ${plugin}")
+    endif()
+endforeach()
+file(GLOB logs "${WORK}/launcher/AsteraLoader/logs/core.*.log")
+list(GET logs 0 log)
+file(READ "${log}" core)
+foreach(marker IN ITEMS
+    "phase_shutdown_enter.*patch target=exe\\+0x[0-9a-f]+ name=Start menu kind=data length=8 owner=patchy state=put_back_at_shutdown"
+    "phase_shutdown_enter.*name=Constant kind=code length=4 owner=patchy state=active"
+    "phase_shutdown_enter.*name=Caller kind=call length=5 owner=patchy state=active"
+    "phase_shutdown_enter.*name=Table entry kind=data length=1 owner=patchy state=put_back_at_shutdown")
+    if(NOT core MATCHES "${marker}")
+        message(FATAL_ERROR "Missing ${marker}: ${core}")
+    endif()
+endforeach()
+if(core MATCHES "patch target[^\n]*state=failed|warning:")
+    message(FATAL_ERROR "al.patch fixture reported a failure: ${core}")
+endif()
