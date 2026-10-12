@@ -6,8 +6,8 @@ A plugin loader for Monster Hunter: World on PC (DirectX 12). It replaces
 Stracker's Loader: your Stracker plugins keep working, with no
 `dinput8.dll` or `loader.dll` in the game folder. It works alongside
 SharpPluginLoader. Plugins written for Astera Loader get a C API with load
-phases, shared game and Direct3D 12 hooks, a per-frame tick, hotkeys and
-input capture.
+phases, shared game and Direct3D 12 hooks, checked changes to the game's
+code and data, a per-frame tick, hotkeys and input capture.
 
 Astera Loader starts the game through its own launcher, `AsteraLoader.exe`,
 and puts nothing into the game folder itself.
@@ -107,7 +107,8 @@ They are in the `AsteraLoader\logs` folder next to `AsteraLoader.exe`
 - `launcher.<pid>.log`: the launcher's log;
 - `plugins\<name>.log`: each plugin's log;
 - `crashes\`: if the game crashes, a report naming the plugin, or the
-  other mod's DLL, whose code faulted. You are told at the next launch.
+  other mod's DLL, whose code faulted, or the plugin whose change to the
+  game's code it was in. You are told at the next launch.
 
 For a bug report, send the core log, the launcher log and the crash report
 from that launch. Astera Loader logs no key presses or typed text, and its
