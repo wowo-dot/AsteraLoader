@@ -4,6 +4,7 @@
 #include "core/phases/debug_slot.hpp"
 #include "core/graphics/installer.hpp"
 #include "core/game_hooks/installer.hpp"
+#include "core/patch/writer.hpp"
 #include "core/frame/layer.hpp"
 #include "core/frame/clock.hpp"
 #include "core/input/native.hpp"
@@ -57,6 +58,7 @@ struct State {
     Warning warning{};
     graphics::NativeInstaller* graphics{};
     game_hooks::NativeInstaller* game_hooks{};
+    patch::NativeWriter* patches{};
     frame::Layer* frame{};
     input::Native* input{};
     Image image;
@@ -89,6 +91,7 @@ std::wstring widen(std::string_view text) {
 }
 void report_game_hooks() {
     for (const auto& line : g->host->game_hooks().summary()) log(widen(line));
+    for (const auto& line : g->host->patches().summary()) log(widen(line));
     for (const auto& line : g->host->frame_clock().summary()) log(widen(line));
     if (g->frame) log(widen(g->frame->ready_summary()));
     for (const auto& line : g->host->input_service().summary()) log(widen(line));
@@ -465,6 +468,10 @@ void arm(plugins::Host& host,Log logger,Warning warning,const void* crt_wrapper)
         g->input->prepare(host.game_hooks(), input::game_sites(identity, GetModuleHandleW(nullptr)));
         g->game_hooks = new game_hooks::NativeInstaller([](std::string_view text) { log(widen(text)); });
         host.game_hooks().set_installer(g->game_hooks);
+        // al.patch (1.8): changes made so far are written now, before the
+        // game's own code starts; later ones at once.
+        g->patches = new patch::NativeWriter();
+        host.patches().set_writer(g->patches);
         g->frame->installed();
         if (!g->frame->ready_problem().empty() && host.subscribed(AL_PHASE_GAME_READY) && g->warning)
             g->warning(L"Astera Loader cannot announce GAME_READY: " + widen(g->frame->ready_problem()));

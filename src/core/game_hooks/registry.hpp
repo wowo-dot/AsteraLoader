@@ -8,6 +8,7 @@
 #include "al/al_plugin.h"
 #include "common/pattern.hpp"
 #include "core/graphics/hub.hpp"  // Client
+#include "core/image/claims.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -38,8 +39,11 @@ using Finder = std::function<std::vector<const void*>(const Pattern&)>;
 
 class Registry {
 public:
-    // `image` is the game exe; `find` searches its code sections.
-    Registry(const void* image, Finder find);
+    // `image` is the game exe; `find` searches its code sections. With
+    // `claims`, each chain claims the bytes its hook takes, a hook over
+    // another claim is refused, and patterns see the original bytes under
+    // al.patch changes (1.8).
+    Registry(const void* image, Finder find, image::Claims* claims = nullptr);
     ~Registry();
     Registry(const Registry&) = delete;
     Registry& operator=(const Registry&) = delete;
@@ -72,6 +76,7 @@ private:
     const std::uint8_t* image_;
     std::vector<std::pair<std::uintptr_t, std::uintptr_t>> code_;  // executable sections [begin, end)
     Finder find_;
+    image::Claims* claims_ = nullptr;
     mutable std::mutex mutex_;
     Installer* installer_ = nullptr;
     std::vector<std::unique_ptr<Chain>> chains_;

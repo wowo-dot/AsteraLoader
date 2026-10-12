@@ -9,6 +9,8 @@
 #include "core/input/service.hpp"
 #include "core/game_hooks/registry.hpp"
 #include "core/graphics/hub.hpp"
+#include "core/image/claims.hpp"
+#include "core/patch/registry.hpp"
 #include "core/plugins/abi_sizes.hpp"
 #include "core/plugins/discovery.hpp"
 #include "core/plugins/guard.hpp"
@@ -140,12 +142,19 @@ struct HostState {
         : scanner(GetModuleHandleW(nullptr), scan_cache_file(options)),
           game(GetModuleHandleW(nullptr), options.exe_sha256, options.game_folder, &scanner),
           hooks(GetModuleHandleW(nullptr),
-                [this](const Pattern& pattern) { return scanner.find(pattern, AL_SCAN_CODE).matches; }) {}
+                [this](const Pattern& pattern) { return scanner.find(pattern, AL_SCAN_CODE).matches; }, &claims),
+          patches(GetModuleHandleW(nullptr),
+                  [this](const Pattern& pattern, bool code) {
+                      return scanner.find(pattern, code ? AL_SCAN_CODE : AL_SCAN_IMAGE).matches;
+                  },
+                  claims) {}
 
     Scanner scanner;  // before game, which uses it
     GameService game;
     graphics::Hub hub;
+    image::Claims claims;  // before hooks and patches, which share it
     game_hooks::Registry hooks;
+    patch::Registry patches;
     frame::Clock clock;
     input::Service input;
     std::atomic<bool> frame_requested{false};
@@ -387,6 +396,51 @@ al_hook_state_t AL_CALL hooks_state(al_plugin_t* self, std::uint32_t handle) noe
 
 const al_hooks_t kHooks{sizeof(al_hooks_t), AL_HOOKS_VERSION, hooks_hook, hooks_set_enabled, hooks_state};
 
+std::uint32_t AL_CALL patches_apply(al_plugin_t* self, const al_patch_t* patch) noexcept {
+    if (!self || !self->state || !patch) return 0;
+    try {
+        auto& client = graphics_client(*self);
+        std::string problem;
+        const auto handle = self->state->patches.apply(client, *patch, problem);
+        const auto name = patch->size >= kPatchSize10 && patch->name ? "\"" + plugin_text(patch->name, 128) + "\""
+                                                                       : std::string("a change");
+        if (handle) {
+            const auto state = self->state->patches.state(client, handle);
+            note(*self, "INFO", "al.patch: " + name + " (handle " + std::to_string(handle) + ", " +
+                                    (state == AL_PATCH_ACTIVE ? "written" : "written when PRE_MAIN ends") + ")");
+        } else {
+            note(*self, "WARN", "al.patch: cannot make " + name + ": " + problem);
+        }
+        return handle;
+    } catch (...) {
+        return 0;
+    }
+}
+
+al_result_t AL_CALL patches_set_enabled(al_plugin_t* self, std::uint32_t handle, std::uint32_t enabled) noexcept {
+    if (!self || !self->state) return AL_ERROR;
+    try {
+        const auto problem = self->state->patches.set_enabled(graphics_client(*self), handle, enabled != 0);
+        note(*self, problem.empty() ? "INFO" : "WARN",
+             problem.empty() ? "al.patch: handle " + std::to_string(handle) + (enabled ? " on" : " off")
+                             : "al.patch: cannot switch handle " + std::to_string(handle) + ": " + problem);
+        return problem.empty() ? AL_OK : AL_ERROR;
+    } catch (...) {
+        return AL_ERROR;
+    }
+}
+
+al_patch_state_t AL_CALL patches_state(al_plugin_t* self, std::uint32_t handle) noexcept {
+    if (!self || !self->state) return AL_PATCH_FAILED;
+    try {
+        return self->state->patches.state(graphics_client(*self), handle);
+    } catch (...) {
+        return AL_PATCH_FAILED;
+    }
+}
+
+const al_patches_t kPatches{sizeof(al_patches_t), AL_PATCH_VERSION, patches_apply, patches_set_enabled, patches_state};
+
 const char* frame_event_name(al_frame_event_t event) {
     return event == AL_FRAME_BEGIN ? "begin" : event == AL_FRAME_END ? "end" : "an unknown event";
 }
@@ -497,6 +551,7 @@ const void* AL_CALL api_get_interface(al_plugin_t* self, const char* name, std::
         if (wanted == AL_SCANNER_INTERFACE) return compatible(AL_SCANNER_VERSION, version) ? &kScanner : nullptr;
         if (wanted == AL_D3D12_INTERFACE) return compatible(AL_D3D12_VERSION, version) ? &kD3d12 : nullptr;
         if (wanted == AL_HOOKS_INTERFACE) return compatible(AL_HOOKS_VERSION, version) ? &kHooks : nullptr;
+        if (wanted == AL_PATCH_INTERFACE) return compatible(AL_PATCH_VERSION, version) ? &kPatches : nullptr;
         if (wanted == AL_INPUT_INTERFACE) {
             if(!compatible(AL_INPUT_VERSION,version)) return nullptr;
             state.input.request(); state.frame_requested=true; return &kInput;
@@ -816,6 +871,8 @@ void Host::dispatch(al_phase_t phase, const void* data) {
     // Plugins have had their SHUTDOWN; game-thread tasks still queued will
     // never run, and their plugins are told.
     if (phase == AL_PHASE_SHUTDOWN && state_) state_->clock.close();
+    // After the plugins' own SHUTDOWN: their DATA changes go back (1.8).
+    if (phase == AL_PHASE_SHUTDOWN && state_) state_->patches.finish();
     if ((phase == AL_PHASE_EXITING || phase == AL_PHASE_SHUTDOWN) && state_) state_->input.stop();
 }
 
@@ -840,6 +897,10 @@ std::vector<std::wstring> Host::notices() const {
 
 ::al::game_hooks::Registry& Host::game_hooks() {
     return state_->hooks;
+}
+
+::al::patch::Registry& Host::patches() {
+    return state_->patches;
 }
 
 ::al::graphics::Hub& Host::graphics() {

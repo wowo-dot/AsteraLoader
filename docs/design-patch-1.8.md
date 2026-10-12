@@ -57,6 +57,7 @@ typedef struct al_patch_t {
 } al_patch_t;
 
 typedef uint32_t al_patch_state_t;
+#define AL_PATCH_PENDING 0u  /* made before PRE_MAIN ended; written when it ends */
 #define AL_PATCH_ACTIVE 1u   /* the replacement is in place */
 #define AL_PATCH_DISABLED 2u /* switched off with set_enabled: the expected bytes are back */
 #define AL_PATCH_FAILED 3u   /* AL will not touch it again; the plugin's log says why */
@@ -65,7 +66,8 @@ typedef struct al_patches_t {
     uint32_t size;
     uint32_t version; /* AL_PATCH_VERSION */
     /* Checks and makes one change; its handle, or 0 with the reason in the
-     * plugin's log. Takes effect before it returns. */
+     * plugin's log. Before PRE_MAIN ends the change is checked and claimed
+     * now and written when PRE_MAIN ends; later, before apply returns. */
     uint32_t(AL_CALL* apply)(al_plugin_t* self, const al_patch_t* patch);
     /* Puts the expected bytes back (0), or the replacement again (1). Only
      * the plugin that made the change. */
@@ -75,9 +77,14 @@ typedef struct al_patches_t {
 } al_patches_t;
 ```
 
-State numbers match `al.hooks` (1 active, 2 disabled, 3 failed). There is no
-pending state: plugins start in PRE_MAIN, after the game's code is
-unpacked, so every change can be made at once.
+State numbers match `al.hooks` (0 pending, 1 active, 2 disabled, 3 failed),
+and so does the timing: changes made before PRE_MAIN ends are checked and
+claimed at once and written when it ends, before the game's own code
+starts; later ones are written before `apply` returns. AL's start-up
+wrapper is still on the game's entry while plugins start, and it is gone
+by then. AL's other start-up observers change no code bytes (the WinMain
+observer uses a debug register; DEVICE_CREATED uses the import table,
+which al.patch refuses). So no range has to be reserved for them.
 
 ## Rules
 
@@ -127,9 +134,8 @@ unpacked, so every change can be made at once.
   it copies into its trampoline: decoded with the same disassembler
   (hde64), at least 5 bytes. A change to those copied bytes would never
   run, and putting it back later would overwrite the hook.
-- **AL's own changes** are claims of "Astera Loader" while they exist:
-  its start-up changes until it removes them (PRE_MAIN, WIN_MAIN), and its
-  frame, exit, title and input hooks for good.
+- **AL's own hooks** (frame, exit, title, input) are ordinary `al.hooks`
+  chains, so their claims name "Astera Loader".
 - A patch inside a hooked function but outside the hook's claim is fine.
 
 ### Writing

@@ -14,7 +14,7 @@
 #define AL_ABI_CHECK(expression) _Static_assert(expression, #expression)
 #endif
 
-AL_ABI_CHECK(AL_API_VERSION == 0x00010007u);
+AL_ABI_CHECK(AL_API_VERSION == 0x00010008u);
 
 /* 1.0 fields: unchanged since 1.0, so 1.0 plugins keep working. */
 AL_ABI_CHECK(sizeof(al_plugin_info_t) == 80);
@@ -180,5 +180,25 @@ AL_ABI_CHECK(sizeof(al_pad_state_t) == 24 && offsetof(al_pad_state_t, buttons) =
 AL_ABI_CHECK(offsetof(al_pad_state_t, left_x) == 16 && offsetof(al_pad_state_t, right_x) == 20);
 AL_ABI_CHECK(sizeof(al_input_status_t) == 32 && offsetof(al_input_status_t, window) == 16);
 AL_ABI_CHECK(sizeof(al_input_t) == 96 && offsetof(al_input_t, status) == 88);
+
+/* 1.8: "al.patch" (additive; all earlier tables stay unchanged). */
+AL_ABI_CHECK(AL_PATCH_VERSION == 0x00010000u);
+AL_ABI_CHECK(AL_PATCH_CODE == 0 && AL_PATCH_DATA == 1 && AL_PATCH_CALL == 2 && AL_PATCH_MAX_LENGTH == 64);
+AL_ABI_CHECK(AL_PATCH_PENDING == 0 && AL_PATCH_ACTIVE == 1 && AL_PATCH_DISABLED == 2 && AL_PATCH_FAILED == 3);
+AL_ABI_CHECK(sizeof(al_patch_t) == 72);
+AL_ABI_CHECK(offsetof(al_patch_t, kind) == 4);
+AL_ABI_CHECK(offsetof(al_patch_t, name) == 8);
+AL_ABI_CHECK(offsetof(al_patch_t, pattern) == 16);
+AL_ABI_CHECK(offsetof(al_patch_t, offset) == 24);
+AL_ABI_CHECK(offsetof(al_patch_t, length) == 28);
+AL_ABI_CHECK(offsetof(al_patch_t, address) == 32);
+AL_ABI_CHECK(offsetof(al_patch_t, expected) == 40);
+AL_ABI_CHECK(offsetof(al_patch_t, replacement) == 48);
+AL_ABI_CHECK(offsetof(al_patch_t, function) == 56);
+AL_ABI_CHECK(offsetof(al_patch_t, original) == 64);
+AL_ABI_CHECK(sizeof(al_patches_t) == 32);
+AL_ABI_CHECK(offsetof(al_patches_t, apply) == 8);
+AL_ABI_CHECK(offsetof(al_patches_t, set_enabled) == 16);
+AL_ABI_CHECK(offsetof(al_patches_t, state) == 24);
 
 #endif

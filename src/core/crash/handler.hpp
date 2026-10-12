@@ -8,6 +8,7 @@
 
 #include "al/al_plugin.h"
 
+#include <cstddef>
 #include <string>
 
 namespace al::crash {
@@ -25,6 +26,12 @@ void install(const Options& options) noexcept;
 bool installed() noexcept;
 // The last phase AL dispatched, for the report.
 void note_phase(al_phase_t phase) noexcept;
+
+// A change a plugin made to the game's bytes through al.patch (1.8), while it
+// is in place: every report lists it, and names its plugin when the crash is
+// inside changed code. Up to 128 at a time; owner and name are copied.
+void note_change(const void* begin, std::size_t size, const char* owner, const char* name, bool code) noexcept;
+void end_change(const void* begin) noexcept;
 
 // The previous session's crash notice for the user, once: reads
 // <logs>\crashes\last-crash.txt and renames it last-crash.seen.txt. Empty

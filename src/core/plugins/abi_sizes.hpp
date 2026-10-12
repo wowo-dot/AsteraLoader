@@ -18,7 +18,10 @@ inline constexpr std::size_t kHookSize10 = offsetof(al_hook_t, next) + sizeof(vo
 inline constexpr std::size_t kHotkeySize10 = offsetof(al_hotkey_t, name) + sizeof(void*);
 inline constexpr std::size_t kPadHotkeySize10 = offsetof(al_pad_hotkey_t, name) + sizeof(void*);
 
-static_assert(kHookSize10 == 56 && kHotkeySize10 == 24 && kPadHotkeySize10 == 24,
+// al.patch 1.0 (API 1.8)
+inline constexpr std::size_t kPatchSize10 = offsetof(al_patch_t, original) + sizeof(void*);
+
+static_assert(kHookSize10 == 56 && kHotkeySize10 == 24 && kPadHotkeySize10 == 24 && kPatchSize10 == 72,
               "a struct's 1.0 size is fixed for all of 1.x");
 
 }  // namespace al::plugins

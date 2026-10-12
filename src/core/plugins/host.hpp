@@ -14,6 +14,9 @@ class Hub;
 namespace al::game_hooks {
 class Registry;
 }
+namespace al::patch {
+class Registry;
+}
 namespace al::frame {
 class Clock;
 }
@@ -83,6 +86,11 @@ public:
     // The "al.hooks" service, for the hook layer: hand it the installer
     // after PRE_MAIN with set_installer. Valid after load_all.
     ::al::game_hooks::Registry& game_hooks();
+
+    // The "al.patch" service (1.8), for the hook layer: hand it the writer
+    // after PRE_MAIN with set_writer, as with game_hooks. dispatch(SHUTDOWN)
+    // puts back its DATA changes. Valid after load_all.
+    ::al::patch::Registry& patches();
 
     // The "al.frame" service, for the frame layer: begin_frame/end_frame
     // around each game frame, last_frame when the game leaves its loop,

@@ -1,4 +1,4 @@
-/* AL plugin API, version 1.7. C ABI, 64-bit Windows.
+/* AL plugin API, version 1.8. C ABI, 64-bit Windows.
  *
  * A plugin is one DLL in its own folder:  <game>\AsteraLoader\plugins\<name>\<name>.dll
  * Other files in that folder (its own DLLs, config, data) belong to the
@@ -23,7 +23,9 @@
  *   - The info struct and everything it points to stay valid while the
  *     plugin is loaded (use static data).
  *   - No C++ exceptions cross this boundary.
- *   - Once al_plugin_init has been called, AL never unloads the plugin.
+ *   - Once al_plugin_init has been called, AL never unloads the plugin, so
+ *     a hook's detour or a value written through al.patch may point into
+ *     the plugin's DLL until the process exits.
  *   - The api and init pointers, and the strings they hold, stay valid until
  *     the process exits. API functions may be called from any thread.
  *
@@ -69,6 +71,9 @@
  *
  * Game ready (1.7): AL_PHASE_GAME_READY fires once the game has booted and
  * its title screen starts.
+ *
+ * Byte changes (1.8): the "al.patch" service changes bytes in the game's
+ * code and data, checked and with one owner per byte, shared with al.hooks.
  */
 #ifndef AL_PLUGIN_H
 #define AL_PLUGIN_H
@@ -85,7 +90,7 @@ extern "C" {
 #define AL_VERSION_MINOR(version) ((uint32_t)(version) & 0xffffu)
 
 #define AL_API_VERSION_MAJOR 1u
-#define AL_API_VERSION_MINOR 7u
+#define AL_API_VERSION_MINOR 8u
 #define AL_API_VERSION AL_MAKE_VERSION(AL_API_VERSION_MAJOR, AL_API_VERSION_MINOR)
 
 /* x64 Windows has one calling convention; this names it for readers. */
@@ -524,8 +529,10 @@ typedef struct al_hooks_t {
     uint32_t version; /* AL_HOOKS_VERSION */
     /* Registers one detour and returns its handle, or 0 with the reason in
      * the plugin's log: a pattern that does not match exactly once, a target
-     * outside the game's code, bytes that differ, no detour or next, or the
-     * same plugin hooking the same function twice. */
+     * outside the game's code, bytes that differ, no detour or next, the
+     * same plugin hooking the same function twice, or (1.8) entry bytes a
+     * plugin has changed through al.patch. Patterns are checked against the
+     * game's original bytes where al.patch changed some (1.8). */
     uint32_t(AL_CALL* hook)(al_plugin_t* self, const al_hook_t* hook);
     /* Takes the detour out of its chain, or puts it back in its place.
      * Calls already inside it finish normally. */
@@ -720,6 +727,92 @@ typedef struct al_input_t {
     /* Fills *out up to out->size. */
     void(AL_CALL* status)(al_plugin_t*, al_input_status_t* out);
 } al_input_t;
+
+/* "al.patch" 1.0 (API 1.8): byte changes in the game, checked and owned.
+ *
+ * For changes that are not a hook at a function's entry: NOPs, a flipped
+ * jump, a constant, a pointer in a table, a call sent elsewhere. AL checks
+ * the bytes before it changes them, records which plugin owns them, and
+ * refuses a change that overlaps another plugin's change or a hook (and
+ * al.hooks refuses a hook over a change). Logs and crash reports list the
+ * changes and their owners.
+ *
+ * Only the game exe: CODE and CALL in its executable sections, DATA in its
+ * other sections (read-only or writable). Never its headers, its data
+ * directories (imports, exports, exception data, relocations, resources,
+ * TLS, load config, debug), the DRM stub's section, or another module.
+ *
+ * The bytes: `address`, or `pattern` searched as in al.hooks (exactly one
+ * match, in the code for CODE and CALL, in the data sections for DATA;
+ * target = match + offset). With both, the pattern must match at
+ * address - offset. Either way the `length` bytes at the target must equal
+ * `expected`, the final check. A plugin that gives only an address should
+ * name its game exes in exe_sha256. Patterns are checked against the
+ * game's original bytes where a hook or another change covers some.
+ *
+ * Changes made before PRE_MAIN ends are checked and claimed at once and
+ * written when it ends, before the game's own code starts; later ones are
+ * written before apply returns. Naturally aligned DATA of 1, 2, 4 or 8
+ * bytes is written in one atomic step; everything else with the game's
+ * other threads paused, never while one is inside the changed code.
+ *
+ * AL_PATCH_CALL: the target holds E8 (call) or E9 (jmp) and a rel32, and
+ * `expected` is those 5 bytes. AL points it at a stub within reach that
+ * jumps to `function`; *original gets the old target first, so the plugin
+ * can call through.
+ *
+ * When a plugin is disabled after a fault, its changes stay. At SHUTDOWN,
+ * after the plugins' own SHUTDOWN, AL puts back DATA changes that are still
+ * active; code and call changes stay, as hooks do. The game checks parts
+ * of its own code; AL does nothing about that, and a change there is
+ * visible to it, as with any mod. */
+#define AL_PATCH_INTERFACE "al.patch"
+#define AL_PATCH_VERSION AL_MAKE_VERSION(1, 0)
+
+#define AL_PATCH_CODE 0u /* bytes in the game's code: NOPs, a flipped jump, any same-length change */
+#define AL_PATCH_DATA 1u /* bytes in the game's data: a pointer, a constant, a table entry */
+#define AL_PATCH_CALL 2u /* a call or jmp rel32 in the game's code, sent to `function` */
+
+#define AL_PATCH_MAX_LENGTH 64u
+
+typedef struct al_patch_t {
+    uint32_t size;           /* sizeof(al_patch_t) */
+    uint32_t kind;           /* AL_PATCH_CODE, AL_PATCH_DATA or AL_PATCH_CALL */
+    const char* name;        /* for logs and reports, e.g. "Start menu: System tab items"; may be NULL */
+    const char* pattern;     /* in al.scanner's syntax, or NULL with an address */
+    int32_t offset;          /* target = where the pattern matches + offset */
+    uint32_t length;         /* bytes changed: 1 to AL_PATCH_MAX_LENGTH; 5 for AL_PATCH_CALL */
+    void* address;           /* the target, or NULL to search for pattern */
+    const void* expected;    /* the `length` bytes that must be there now */
+    const void* replacement; /* the `length` bytes to write; NULL for AL_PATCH_CALL */
+    void* function;          /* AL_PATCH_CALL: where the call should go; else NULL */
+    void** original;         /* AL_PATCH_CALL: where AL stores the old target; may be NULL */
+} al_patch_t;
+
+typedef uint32_t al_patch_state_t;
+#define AL_PATCH_PENDING 0u  /* made before PRE_MAIN ended; written when it ends */
+#define AL_PATCH_ACTIVE 1u   /* the replacement is in place */
+#define AL_PATCH_DISABLED 2u /* switched off with set_enabled: the expected bytes are back */
+#define AL_PATCH_FAILED 3u   /* AL will not touch it again; the plugin's log says why */
+
+typedef struct al_patches_t {
+    uint32_t size;
+    uint32_t version; /* AL_PATCH_VERSION */
+    /* Checks and claims one change and returns its handle, or 0 with the
+     * reason in the plugin's log: a pattern that does not match once, bytes
+     * that differ from `expected`, a place AL does not change, a length out
+     * of range, a CALL target without E8/E9, or bytes another plugin's
+     * change or hook holds (the log names it). Any thread, from
+     * al_plugin_init on. */
+    uint32_t(AL_CALL* apply)(al_plugin_t* self, const al_patch_t* patch);
+    /* 0 puts the expected bytes back if the replacement is still there; 1
+     * writes the replacement again if the expected bytes are still there. If
+     * something outside AL changed the bytes since, AL leaves them and the
+     * state becomes FAILED. Only the plugin that made the change. */
+    al_result_t(AL_CALL* set_enabled)(al_plugin_t* self, uint32_t handle, uint32_t enabled);
+    /* The change's state; AL_PATCH_FAILED for an unknown handle. */
+    al_patch_state_t(AL_CALL* state)(al_plugin_t* self, uint32_t handle);
+} al_patches_t;
 
 typedef const al_plugin_info_t*(AL_CALL* al_plugin_info_fn)(void);
 typedef al_result_t(AL_CALL* al_plugin_init_fn)(const al_api_t* api, const al_init_t* init);

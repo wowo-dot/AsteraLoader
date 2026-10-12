@@ -8,8 +8,8 @@ static const al_plugin_info_t info = {
 };
 
 int main(void) {
-    return info.api_version == AL_MAKE_VERSION(1, 7) && AL_VERSION_MAJOR(info.api_version) == 1 &&
-                   AL_VERSION_MINOR(info.api_version) == 7
+    return info.api_version == AL_MAKE_VERSION(1, 8) && AL_VERSION_MAJOR(info.api_version) == 1 &&
+                   AL_VERSION_MINOR(info.api_version) == 8
                ? 0
                : 1;
 }

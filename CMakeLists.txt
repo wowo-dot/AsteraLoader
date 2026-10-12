@@ -121,6 +121,16 @@ add_library(al_plugins STATIC
     src/core/frame/clock.hpp
     src/core/game_hooks/registry.cpp
     src/core/game_hooks/registry.hpp
+    src/core/image/claims.cpp
+    src/core/image/claims.hpp
+    src/core/image/footprint.cpp
+    src/core/image/footprint.hpp
+    src/core/image/layout.cpp
+    src/core/image/layout.hpp
+    src/core/patch/registry.cpp
+    src/core/patch/registry.hpp
+    src/core/patch/writer.cpp
+    src/core/patch/writer.hpp
     src/core/graphics/hub.cpp
     src/core/graphics/hub.hpp
     src/core/graphics/layers.cpp
@@ -136,7 +146,9 @@ add_library(al_plugins STATIC
     src/core/plugins/manifest.hpp
     src/core/plugins/services.cpp
     src/core/plugins/services.hpp)
-target_link_libraries(al_plugins PUBLIC al_api al_common)
+target_link_libraries(al_plugins PUBLIC al_api al_common PRIVATE al_minhook al_thread_snapshot)
+# MinHook's disassembler (hde64), for the bytes a hook takes (image/footprint).
+target_include_directories(al_plugins PRIVATE third_party/minhook/src)
 al_project_target(al_plugins)
 
 # Process-only thread IDs for MinHook; project code keeps /W4 /WX.

@@ -116,6 +116,23 @@ struct Module {
     DWORD path_size;
 };
 
+// The game's bytes plugins have changed through al.patch. A slot is free (0),
+// being filled (1) or listed (2); the crash path reads listed slots only.
+struct Change {
+    std::atomic<int> state{0};
+    std::uintptr_t begin = 0, end = 0;
+    bool code = false;
+    char owner[64] = {};
+    char name[96] = {};
+};
+Change g_changes[128];
+
+void copy_text(char* to, std::size_t size, const char* from) noexcept {
+    std::size_t k = 0;
+    for (; from && from[k] && k + 1 < size; ++k) to[k] = from[k];
+    to[k] = 0;
+}
+
 Text g_report;
 Text g_notice;
 Path g_report_path;
@@ -201,6 +218,42 @@ void add_owner(Text& text, const Owner& owner) noexcept {
         owner.kind == OwnerKind::windows) {
         text.add(" ");
         text.add(owner.name);
+    }
+}
+
+// The listed code change holding `address`, if any.
+const Change* change_at(const void* address) noexcept {
+    const auto at = reinterpret_cast<std::uintptr_t>(address);
+    for (const auto& change : g_changes) {
+        if (change.state.load(std::memory_order_acquire) == 2 && change.code && at >= change.begin && at < change.end) {
+            return &change;
+        }
+    }
+    return nullptr;
+}
+
+void add_change(Text& text, const Change& change) noexcept {
+    text.add("the plugin ");
+    text.add(change.owner);
+    text.add("'s change \"");
+    text.add(change.name);
+    text.add("\"");
+}
+
+// Every listed change: where, how long, whose.
+void add_changes(Text& text) noexcept {
+    bool any = false;
+    for (const auto& change : g_changes) {
+        if (change.state.load(std::memory_order_acquire) != 2) continue;
+        if (!any) text.add("changes (al.patch):\r\n");
+        any = true;
+        text.add("  exe+");
+        text.hex(static_cast<std::uint64_t>(change.begin - reinterpret_cast<std::uintptr_t>(g_game)));
+        text.add(" length ");
+        text.dec(static_cast<std::uint64_t>(change.end - change.begin));
+        text.add(change.code ? " code, " : " data, ");
+        add_change(text, change);
+        text.add("\r\n");
     }
 }
 
@@ -344,6 +397,11 @@ void write(EXCEPTION_POINTERS* info) noexcept {
         text.add(g_fault.folder);
         text.add("\"");
     }
+    const auto* changed = change_at(address);
+    if (changed) {
+        text.add(", inside ");
+        add_change(text, *changed);
+    }
     text.add(")\r\nowner=");
     add_owner(text, owner);
     text.add(removable(owner.kind) ? (from_stack ? " (the first plugin on the stack)" : " (the faulting module)")
@@ -362,7 +420,9 @@ void write(EXCEPTION_POINTERS* info) noexcept {
         }
     }
     if (!origin) text.add("unknown");
-    text.add("\r\nstack:\r\n");
+    text.add("\r\n");
+    add_changes(text);
+    text.add("stack:\r\n");
     for (int k = 0; k < g_frame_count; ++k) {
         text.add("  ");
         text.dec(static_cast<std::uint64_t>(k), 2);
@@ -414,6 +474,10 @@ void write(EXCEPTION_POINTERS* info) noexcept {
             notice.add(" (inside ");
             notice.add(g_fault.file.empty() ? std::wstring_view(L"unknown code") : g_fault.file);
             notice.add(", called from it)");
+        }
+        if (changed) {
+            notice.add(", inside ");
+            add_change(notice, *changed);
         }
         notice.add(": ");
         notice.add(exception_name(code));
@@ -590,6 +654,32 @@ void note_phase(al_phase_t phase) noexcept {
     line.reset();
     line.add("afterwards=the game still returned from WinMain: the crash happened while it was exiting; no notice\r\n");
     save(g_report_path, line, OPEN_EXISTING, FILE_APPEND_DATA);
+}
+
+void note_change(const void* begin, std::size_t size, const char* owner, const char* name, bool code) noexcept {
+    for (auto& change : g_changes) {
+        int free = 0;
+        if (!change.state.compare_exchange_strong(free, 1, std::memory_order_acq_rel)) continue;
+        change.begin = reinterpret_cast<std::uintptr_t>(begin);
+        change.end = change.begin + size;
+        change.code = code;
+        copy_text(change.owner, sizeof(change.owner), owner);
+        copy_text(change.name, sizeof(change.name), name);
+        change.state.store(2, std::memory_order_release);
+        return;
+    }
+}
+
+void end_change(const void* begin) noexcept {
+    const auto at = reinterpret_cast<std::uintptr_t>(begin);
+    for (auto& change : g_changes) {
+        int listed = 2;
+        if (change.begin == at && change.state.compare_exchange_strong(listed, 1, std::memory_order_acq_rel)) {
+            change.begin = change.end = 0;
+            change.state.store(0, std::memory_order_release);
+            return;
+        }
+    }
 }
 
 std::wstring take_previous(const std::wstring& logs_folder) {

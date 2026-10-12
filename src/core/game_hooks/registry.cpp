@@ -1,6 +1,7 @@
 #include "core/game_hooks/registry.hpp"
 
 #include "common/memory.hpp"
+#include "core/image/footprint.hpp"
 #include "core/plugins/abi_sizes.hpp"
 
 #include <windows.h>
@@ -57,10 +58,13 @@ struct Registry::Chain {
     const std::uint8_t* entry_at = nullptr;
     std::size_t entry_size = 0;
     std::array<std::uint8_t, 64> entry_before{};
+    // The bytes this chain holds in the shared claims (1.8), 0 without them.
+    std::uint64_t claim = 0;
+    std::uintptr_t claim_begin = 0, claim_end = 0;
 };
 
-Registry::Registry(const void* image, Finder find)
-    : image_(static_cast<const std::uint8_t*>(image)), find_(std::move(find)) {
+Registry::Registry(const void* image, Finder find, image::Claims* claims)
+    : image_(static_cast<const std::uint8_t*>(image)), find_(std::move(find)), claims_(claims) {
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image_);
     if (!image_ || !readable(dos, sizeof(*dos)) || dos->e_magic != IMAGE_DOS_SIGNATURE) return;
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image_ + dos->e_lfanew);
@@ -100,6 +104,8 @@ bool Registry::matches_at(const Pattern& pattern, const std::uint8_t* at) const 
     if (!in_code(at, pattern.bytes.size()) || !readable(at, pattern.bytes.size())) return false;
     std::vector<std::uint8_t> bytes(at, at + pattern.bytes.size());
     const auto begin = reinterpret_cast<std::uintptr_t>(at);
+    // al.patch changes: the game's bytes from before them.
+    if (claims_) claims_->overlay(begin, bytes, false);
     for (const auto& chain : chains_) {
         if (chain->state != AL_HOOK_ACTIVE || !chain->saved_size) continue;
         const auto saved = reinterpret_cast<std::uintptr_t>(chain->saved_at);
@@ -161,6 +167,17 @@ std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string&
             const auto at = shifted(chain->target, -static_cast<std::int64_t>(hook.offset));
             if (matches_at(pattern, at) && std::find(found.begin(), found.end(), at) == found.end()) found.push_back(at);
         }
+        // Matches the search of the current bytes cannot see: patterns over
+        // bytes an al.patch change holds.
+        if (claims_) {
+            for (const auto start : claims_->windows(pattern.bytes.size())) {
+                const auto* at = reinterpret_cast<const std::uint8_t*>(start);
+                if (in_code(at, pattern.bytes.size()) && matches_at(pattern, at) &&
+                    std::find(found.begin(), found.end(), at) == found.end()) {
+                    found.push_back(at);
+                }
+            }
+        }
         if (found.size() != 1) {
             problem = "the pattern matches " + std::to_string(found.size()) + " times in the game's code, not once";
             return 0;
@@ -171,6 +188,14 @@ std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string&
         problem = "the target lies outside the game's code";
         return 0;
     }
+
+    Layer layer;
+    layer.handle = next_handle_++;
+    layer.client = &client;
+    layer.order = hook.order;
+    layer.detour = hook.detour;
+    layer.next = hook.next;
+    layer.name = hook.name ? std::string(hook.name, strnlen(hook.name, 128)) : std::string();
 
     auto found = std::find_if(chains_.begin(), chains_.end(),
                               [&](const auto& chain) { return chain->target == target; });
@@ -186,18 +211,31 @@ std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string&
             return 0;
         }
     } else {
+        // A new chain claims the bytes its hook will take; nothing else may
+        // hold them (1.8).
+        image::Claim claim;
+        if (claims_) {
+            const auto entry = reinterpret_cast<std::uintptr_t>(target);
+            const auto footprint = image::hook_footprint(target, code_room(target, 32));
+            const bool above_in_code =
+                footprint.begin >= entry || in_code(reinterpret_cast<const void*>(footprint.begin), entry - footprint.begin);
+            claim.begin = above_in_code ? footprint.begin : entry;
+            claim.end = footprint.end;
+            claim.hook = true;
+            claim.holder = "the hook on " + (layer.name.empty() ? std::string("a game function") : layer.name) +
+                           " (plugin " + client.name + ")";
+            if (const auto other = claims_->add(claim)) {
+                problem = "the function's first bytes overlap " + other->holder;
+                return 0;
+            }
+        }
         chains_.push_back(std::make_unique<Chain>());
         chain = chains_.back().get();
         chain->target = const_cast<std::uint8_t*>(target);
+        chain->claim = claim.id;
+        chain->claim_begin = claim.begin;
+        chain->claim_end = claim.end;
     }
-
-    Layer layer;
-    layer.handle = next_handle_++;
-    layer.client = &client;
-    layer.order = hook.order;
-    layer.detour = hook.detour;
-    layer.next = hook.next;
-    layer.name = hook.name ? std::string(hook.name, strnlen(hook.name, 128)) : std::string();
     publish(layer.next, nullptr);
     const auto position = std::upper_bound(chain->layers.begin(), chain->layers.end(), layer,
                                            [](const Layer& a, const Layer& b) {
@@ -207,6 +245,13 @@ std::uint32_t Registry::hook(Client& client, const al_hook_t& hook, std::string&
     const auto handle = layer.handle;
     const auto label = layer.name.empty() ? std::string("a hook") : layer.name;
     chain->layers.insert(position, std::move(layer));
+    if (claims_ && chain->claim) {
+        std::string holder = "the hook on " + label + (chain->layers.size() > 1 ? " (plugins " : " (plugin ");
+        for (std::size_t k = 0; k < chain->layers.size(); ++k) {
+            holder += (k ? ", " : "") + chain->layers[k].client->name;
+        }
+        claims_->set_holder(chain->claim, holder + ")");
+    }
 
     if (chain->state == AL_HOOK_ACTIVE) {
         link(*chain);
@@ -247,11 +292,25 @@ void Registry::install(Chain& chain) {
     if (chain.entry_size && readable(chain.entry_at, chain.entry_size))
         std::memcpy(chain.entry_before.data(), chain.entry_at, chain.entry_size);
     else chain.entry_size = 0;
-    auto problem = installer_->create(chain.target, &chain.head, &chain.original);
-    if (problem.empty() && !chain.original) problem = "the hook layer returned no original";
-    if (problem.empty()) {
-        link(chain);
-        problem = installer_->enable(chain.target);
+    // The game's bytes over the claim and MinHook's footprint, before it
+    // writes: the original bytes al.patch's pattern checks see (1.8).
+    const auto entry = reinterpret_cast<std::uintptr_t>(chain.target);
+    const auto from = (std::min)(chain.claim_begin ? chain.claim_begin : entry, chain.saved_size ? reinterpret_cast<std::uintptr_t>(chain.saved_at) : entry);
+    const auto to = (std::max)(chain.claim_end, entry + 5);
+    std::vector<std::uint8_t> game_bytes;
+    if (claims_ && chain.claim && to > from && readable(reinterpret_cast<const void*>(from), to - from)) {
+        game_bytes.assign(reinterpret_cast<const std::uint8_t*>(from), reinterpret_cast<const std::uint8_t*>(to));
+    }
+    std::string problem;
+    {
+        // One writer on the game's image at a time (al.patch writes too).
+        std::unique_lock writes = claims_ ? std::unique_lock(claims_->writes()) : std::unique_lock<std::recursive_mutex>();
+        problem = installer_->create(chain.target, &chain.head, &chain.original);
+        if (problem.empty() && !chain.original) problem = "the hook layer returned no original";
+        if (problem.empty()) {
+            link(chain);
+            problem = installer_->enable(chain.target);
+        }
     }
     if (problem.empty()) {
         if (chain.saved_size) {
@@ -269,8 +328,28 @@ void Registry::install(Chain& chain) {
                 }
             }
         }
+        // The claim now covers what MinHook took, with the game's bytes
+        // from before it.
+        if (claims_ && chain.claim && !game_bytes.empty()) {
+            const auto saved = reinterpret_cast<std::uintptr_t>(chain.saved_at);
+            auto begin = chain.claim_begin, end = chain.claim_end;
+            if (chain.saved_size) {
+                begin = (std::min)(begin, saved);
+                end = (std::max)(end, saved + chain.saved_size);
+            }
+            begin = (std::max)(begin, from);
+            end = (std::min)(end, to);
+            chain.claim_begin = begin;
+            chain.claim_end = end;
+            claims_->update(chain.claim, begin, end,
+                            std::vector<std::uint8_t>(game_bytes.begin() + (begin - from), game_bytes.begin() + (end - from)));
+        }
         chain.state = AL_HOOK_ACTIVE;
         return;
+    }
+    if (claims_ && chain.claim) {
+        claims_->remove(chain.claim);
+        chain.claim = 0;
     }
     chain.state = AL_HOOK_FAILED;
     chain.problem = problem;
