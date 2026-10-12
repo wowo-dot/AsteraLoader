@@ -101,6 +101,14 @@ LONG WINAPI replacing_filter(EXCEPTION_POINTERS* info) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// Stand-in game code that a plugin changed through al.patch, and faults.
+__declspec(noinline) void game_changed_code() {
+    volatile int* nowhere = nullptr;
+    *nowhere = 9;
+}
+void (*volatile g_changed_code)() = &game_changed_code;
+std::uint64_t g_changed_pointer = 0x1234;
+
 int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll) {
     SetErrorMode(SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS);
     g_case = folder;
@@ -113,6 +121,14 @@ int child(const std::wstring& mode, const fs::path& folder, const fs::path& dll)
     const HMODULE module = LoadLibraryW(dll.c_str());
     if (!module) return 4;
     using Fn = void (*)();
+    if (mode == L"changed") {
+        crash::note_change(&g_changed_pointer, 8, "patchy", "a pointer", false);
+        crash::note_change(reinterpret_cast<const void*>(&game_changed_code), 32, "patchy", "skip a check", true);
+        crash::note_change(&g_changed_pointer + 1, 8, "gone", "put back", false);
+        crash::end_change(&g_changed_pointer + 1);
+        g_changed_code();
+        return 6;
+    }
     if (mode == L"other") {
         // Another mod's DLL faults, called from a plugin's thread.
         const HMODULE other = LoadLibraryW((folder / L"mods/Other Mod 1.0/other.dll").c_str());
@@ -237,6 +253,27 @@ void other_module(const fs::path& work, const fs::path& fixture) {
     }
 }
 
+void changed_code(const fs::path& work, const fs::path& fixture) {
+    const auto folder = prepare(work, L"changed", L"AsteraLoader/plugins/patchy/patchy.dll", fixture);
+    const auto code = run_child(L"changed", folder, folder / L"AsteraLoader/plugins/patchy/patchy.dll");
+    check(code == 0xC0000005u, "a crash in changed game code ends the process with its code");
+    const auto report = read_file(find_report(folder, L".txt"));
+    check(has(report, ", inside the plugin patchy's change \"skip a check\")\r\nowner="),
+          "report: the fault is inside a plugin's change");
+    check(has(report, "changes (al.patch):\r\n  exe+") &&
+              has(report, " length 8 data, the plugin patchy's change \"a pointer\"") &&
+              has(report, " length 32 code, the plugin patchy's change \"skip a check\"") && !has(report, "put back"),
+          "report: the active changes and their owners");
+    const auto notice = crash::take_previous((folder / L"logs").wstring());
+    check(notice.find(L", inside the plugin patchy's change \"skip a check\": access violation at ") != std::wstring::npos &&
+              notice.find(L"try the game without that plugin") != std::wstring::npos,
+          "notice: the change's owner");
+    if (failures) {
+        std::cerr << report << '\n';
+        std::wcerr << notice << L'\n';
+    }
+}
+
 void raced_exit(const fs::path& work, const fs::path& fixture) {
     const auto folder = prepare(work, L"raced", L"nativePC/plugins/auto_food.dll", fixture);
     const auto code = run_child(L"raced", folder, folder / L"nativePC/plugins/auto_food.dll");
@@ -273,6 +310,7 @@ int wmain(int argc, wchar_t** argv) {
     plugin_thread(work, argv[1]);
     replaced_filter(work, argv[1]);
     other_module(work, argv[1]);
+    changed_code(work, argv[1]);
     raced_exit(work, argv[1]);
     exiting_with_dump(work, argv[1]);
     if (failures) {

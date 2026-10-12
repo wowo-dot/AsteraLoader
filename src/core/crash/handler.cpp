@@ -486,7 +486,7 @@ void write(EXCEPTION_POINTERS* info) noexcept {
         notice.add(".");
         if (other_first) {
             notice.add(" Either of the two may be at fault; if it happens again, try the game without one of them.");
-        } else if (removable(owner.kind)) {
+        } else if (removable(owner.kind) || changed) {
             notice.add(" If it happens again, try the game without that plugin.");
         }
         notice.add(" Report: ");
