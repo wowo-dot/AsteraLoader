@@ -200,7 +200,9 @@ std::uint32_t Registry::apply(Client& client, const al_patch_t& patch, std::stri
     if (writer_) {
         const auto outcome = write(added, true, problem);
         if (outcome != Outcome::done) {
+            // Refused like the checks above: no handle, nothing kept.
             fail(added, problem);
+            changes_.pop_back();
             return 0;
         }
     }

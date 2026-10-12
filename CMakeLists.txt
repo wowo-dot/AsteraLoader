@@ -370,6 +370,12 @@ target_link_libraries(al_game_hooks_tests PRIVATE al_plugins)
 al_project_target(al_game_hooks_tests)
 add_test(NAME game_hooks COMMAND al_game_hooks_tests)
 
+# "al.patch" core side with a stand-in writer: checks, claims, states, SHUTDOWN.
+add_executable(al_patch_tests tests/test_patch.cpp)
+target_link_libraries(al_patch_tests PRIVATE al_plugins)
+al_project_target(al_patch_tests)
+add_test(NAME patch_registry COMMAND al_patch_tests)
+
 # "al.frame" core side: order, threads, faults, the last frame, no allocation per frame.
 add_executable(al_frame_clock_tests tests/test_frame_clock.cpp)
 target_link_libraries(al_frame_clock_tests PRIVATE al_plugins)
