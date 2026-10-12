@@ -4,8 +4,11 @@ Status 2026-10-12: agreed with the user ("the general version"),
 implemented (87b010f) and tested outside the game: the registry with a
 stand-in writer (`test_patch.cpp`), the native writer (`test_patch_writer.cpp`),
 the crash report (`test_crash.cpp`) and end to end through the launcher
-and core (`patch_native`). Not yet run in the game; CMFM's Start menu
-pointers are the first in-game client.
+and core (`patch_native`). Confirmed in MHW (v0.2.0-dev.1): patch-1 with
+no al.patch users (every hook chain still active), patch-2 with CMFM
+cda17c3 changing its two Start menu pointers through al.patch (written at
+WIN_MAIN, switched off by CMFM at SHUTDOWN, listed in the core log and in
+an exit-time crash report with their owner).
 
 ## Why
 

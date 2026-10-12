@@ -22,7 +22,7 @@ menu: CMFM is a separate track, the first large plugin built on AL.
 | 1.5 | "al.frame" and AL_PHASE_EXITING | frame-input-1 (dev.15) |
 | 1.6 | "al.input": hotkeys, key and pad state, window messages, capture | input-check-3 (dev.16) |
 | 1.7 | AL_PHASE_GAME_READY: the title screen started | game-ready-1 (dev.17) |
-| 1.8 | "al.patch": checked byte changes in the game's code and data | not yet (tests only; CMFM is the first client) |
+| 1.8 | "al.patch": checked byte changes in the game's code and data | patch-1, patch-2 with CMFM (v0.2.0-dev.1) |
 
 The DLSS mod 0.15.0 runs on 1.3 and 1.4 with frame generation on.
 
