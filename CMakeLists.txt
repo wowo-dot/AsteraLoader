@@ -375,6 +375,10 @@ add_executable(al_patch_tests tests/test_patch.cpp)
 target_link_libraries(al_patch_tests PRIVATE al_plugins)
 al_project_target(al_patch_tests)
 add_test(NAME patch_registry COMMAND al_patch_tests)
+add_executable(al_patch_writer_tests tests/test_patch_writer.cpp)
+target_link_libraries(al_patch_writer_tests PRIVATE al_plugins)
+al_project_target(al_patch_writer_tests)
+add_test(NAME patch_writer COMMAND al_patch_writer_tests)
 
 # "al.frame" core side: order, threads, faults, the last frame, no allocation per frame.
 add_executable(al_frame_clock_tests tests/test_frame_clock.cpp)
