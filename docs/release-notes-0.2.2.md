@@ -61,7 +61,7 @@ kit `AsteraLoader-plugin-kit-0.2.2.zip`: SHA-256
 
 With MHW 421810:
 
-- Started from a shortcut, without Steam or Mod Organizer 2: the game
+- Started from a shortcut, not through Steam or Mod Organizer 2: the game
   stayed up, reached the title screen and exited with code 0.
 - Under Mod Organizer 2, this package in the DLSS mod's closed-beta bundle
   (CMFM 0.1.0-beta.3, the DLSS mod 0.28.5) with a full set of other mods:
