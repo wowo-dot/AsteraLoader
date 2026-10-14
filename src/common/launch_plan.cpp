@@ -74,8 +74,9 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
             error = std::wstring(kGameExeName) + L" was not found next to the launcher (" +
                     std::wstring(launcher_dir) + L") or in the current folder (" +
                     std::wstring(current_dir) +
-                    L").\nPass the game's path as the first argument, for example as Steam "
-                    L"launch options: \"<path>\\AsteraLoader.exe\" %command%";
+                    L").\nPut AsteraLoader.exe and the AsteraLoader folder right next to " +
+                    std::wstring(kGameExeName) + L", not in a folder of their own, or pass the "
+                    L"game's path as the first argument.";
             return false;
         }
     }
@@ -86,6 +87,24 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
         plan.command_line += quote_argument(arguments[i]);
     }
     plan.working_dir = std::wstring(directory_of(plan.exe));
+    return true;
+}
+
+bool plan_steam(std::wstring_view inherited, const std::function<bool()>& steam_running,
+                SteamPlan& plan, std::wstring& error) {
+    plan = {};
+    error.clear();
+    if (!inherited.empty()) {
+        plan.app_id = inherited;
+        plan.source = L"inherited";
+        return true;
+    }
+    if (!steam_running()) {
+        error = L"Steam is not running. Start Steam, then start Astera Loader again.";
+        return false;
+    }
+    plan.app_id = kSteamAppId;
+    plan.source = L"launcher";
     return true;
 }
 

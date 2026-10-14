@@ -32,6 +32,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     if (!length || length >= cwd.size()) return 92;
     cwd.resize(length);
     log.line(L"cwd=" + cwd);
+    log.line(L"steam_app_id=" + al::environment(L"SteamAppId"));
     int argc = 0;
     auto argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv) return 93;

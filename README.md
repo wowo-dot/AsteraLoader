@@ -71,19 +71,19 @@ through MO2 usually do not see this.
 4. Start the game with that entry from now on. The plain "Monster Hunter:
    World" entry starts the game without Astera Loader.
 
-### Manual, with Steam launch options
+### Manual
 
 1. Remove Stracker's Loader: delete `dinput8.dll` and `loader.dll` from the
    game folder. Keep `nativePC\plugins`.
 2. Copy `AsteraLoader.exe` and the `AsteraLoader` folder into the game
-   folder.
-3. In Steam: Monster Hunter: World, Properties, General, Launch options:
-   `"<game folder>\AsteraLoader.exe" %command%` (with the quotes).
-4. Start the game with Steam's Play button.
+   folder, right next to `MonsterHunterWorld.exe` (not into a folder of
+   their own).
+3. With Steam running, start `AsteraLoader.exe`, or a shortcut to it.
 
-Starting `AsteraLoader.exe` directly does not work: Steam closes that game
-and starts it again itself, without Astera Loader. Without the launch
-options, Steam's Play button also starts the game without Astera Loader.
+Steam's Play button still starts the game without Astera Loader. To have it
+start Astera Loader too, set the launch options in Steam: Monster Hunter:
+World, Properties, General, Launch options:
+`"<game folder>\AsteraLoader.exe" %command%` (with the quotes).
 
 ## Plugins
 

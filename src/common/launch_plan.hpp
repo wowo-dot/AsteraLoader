@@ -33,4 +33,22 @@ bool plan_launch(const std::vector<std::wstring>& arguments, std::wstring_view l
                  const std::function<bool(const std::wstring&)>& file_exists, LaunchPlan& plan,
                  std::wstring& error);
 
+// Monster Hunter: World's Steam app id.
+inline constexpr std::wstring_view kSteamAppId = L"582010";
+
+struct SteamPlan {
+    std::wstring app_id;  // the SteamAppId the game starts with
+    std::wstring source;  // "inherited" (Steam or MO2 set it) or "launcher"
+};
+
+// Decides the Steam app id the game starts with. Steam (with launch
+// options) and MO2 start the launcher with SteamAppId set, and the game
+// inherits it. Without it, the game's Steam start-up has Steam start the
+// game again, without Astera Loader (exit code 53), so a launcher started
+// any other way gives the game MHW's id, as they do. Steam still checks
+// that the game is owned, which needs Steam running: `steam_running` is
+// asked only then.
+bool plan_steam(std::wstring_view inherited, const std::function<bool()>& steam_running,
+                SteamPlan& plan, std::wstring& error);
+
 }  // namespace al

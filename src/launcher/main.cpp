@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <psapi.h>
 #include <shellapi.h>
+#include <tlhelp32.h>
 
 #include <bit>
 #include <cstdint>
@@ -45,6 +46,19 @@ void log_exe_hash(al::LogFile& log, const std::wstring& exe) noexcept {
             log.line(L"warning: exe SHA-256 logging failed; game continues");
         } catch (...) { /* Keep waiting for the game even if the log cannot be written. */ }
     }
+}
+
+// Whether the Steam client runs, by process name as MO2 checks it; no
+// process is opened. If the list cannot be read, assume it runs.
+bool steam_running() {
+    al::Handle snapshot(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
+    if (!snapshot) return true;
+    PROCESSENTRY32W entry{sizeof(entry)};
+    for (BOOL more = Process32FirstW(snapshot.get(), &entry); more;
+         more = Process32NextW(snapshot.get(), &entry)) {
+        if (al::iequals(entry.szExeFile, L"steam.exe")) return true;
+    }
+    return GetLastError() != ERROR_NO_MORE_FILES;
 }
 
 struct CreatedGame {
@@ -342,6 +356,15 @@ DWORD launch() {
         log.line(L"dll_sha256=" + dll_hash);
         log.line(L"game_path_source=" + plan.source);
         log.line(L"MO2 profile and force-load: record in the run manifest; not inferred here");
+        // The game inherits the launcher's environment.
+        al::SteamPlan steam;
+        if (!al::plan_steam(al::environment(L"SteamAppId"), steam_running, steam, error)) {
+            throw Failure{error};
+        }
+        if (steam.source == L"launcher" && !SetEnvironmentVariableW(L"SteamAppId", steam.app_id.c_str())) {
+            fail(L"Set the game's Steam app id");
+        }
+        log.line(L"steam_app_id=" + steam.app_id + L" source=" + steam.source);
 
         STARTUPINFOW startup{sizeof(STARTUPINFOW)};
         PROCESS_INFORMATION process{};

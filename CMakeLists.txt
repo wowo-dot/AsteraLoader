@@ -782,7 +782,14 @@ add_test(NAME launcher_failures
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_failures"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_failures.cmake")
-set_tests_properties(launcher_injection launcher_failures PROPERTIES TIMEOUT 60)
+add_test(NAME launcher_steam
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:al_test_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
+        "-DWORK=${CMAKE_BINARY_DIR}/launcher_steam"
+        -P "${CMAKE_SOURCE_DIR}/tests/launcher_steam.cmake")
+set_tests_properties(launcher_injection launcher_failures launcher_steam PROPERTIES TIMEOUT 60)
 
 foreach(mode IN ITEMS 1 2 3 4)
     add_library(al_fixture_${mode} SHARED tests/core_fixture.cpp)
@@ -810,4 +817,10 @@ foreach(mode IN ITEMS 1 2 3 4)
             -P "${CMAKE_SOURCE_DIR}/tests/launcher_continuation.cmake")
     set_tests_properties(launcher_core_failure_${mode} PROPERTIES TIMEOUT 45)
 endforeach()
+
+# Steam and MO2 start the launcher with Steam's app id. The tests do too, so
+# they pass whether Steam runs or not; launcher_steam covers the launcher
+# started without it.
+get_property(al_all_tests DIRECTORY PROPERTY TESTS)
+set_property(TEST ${al_all_tests} APPEND PROPERTY ENVIRONMENT "SteamAppId=582010")
 endif()

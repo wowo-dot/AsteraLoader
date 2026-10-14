@@ -126,11 +126,14 @@ LICENSE
 3. Start the game with that entry from now on.
 
 **Manual:** copy `AsteraLoader.exe` and the `AsteraLoader` folder into the
-game folder, and set Steam's launch options to
-`"<path>\AsteraLoader.exe" %command%`. Starting `AsteraLoader.exe`
-directly does not work for a Steam copy: the game exits during Steam's
-start-up stub (exit code 53) and Steam starts it again without AL
-(manual-release-1). AL leaves that check alone.
+game folder and start `AsteraLoader.exe` with Steam running. Steam's launch
+options (`"<path>\AsteraLoader.exe" %command%`) make the Play button start
+it too. Before 0.2.2, starting `AsteraLoader.exe` directly did not work:
+the game exited during Steam's start-up stub (exit code 53) and Steam
+started it again without AL (manual-release-1, and a closed-beta tester on
+2026-10-14). Steam and MO2 give the game Steam's app id (`SteamAppId`);
+since 0.2.2 the launcher gives it when nothing else did (decisions.md
+item 17).
 
 ## Clean install tests
 
@@ -160,6 +163,11 @@ Steam launch-options launch.
       test; the game folder is otherwise read-only for this project).
       Started directly it does not run AL (manual-release-1, above); with
       Steam launch options it does (steam-options-1).
+- [ ] **Started directly** (0.2.2): the launcher started by double-click
+      or a shortcut, neither Steam nor MO2. Expect
+      `steam_app_id=582010 source=launcher`, GAME_READY, exit code 0;
+      under MO2 and Steam launch options, `source=inherited`. With Steam
+      closed: the launcher says so and starts nothing.
 - [x] **Steam launch options** with `%command%`. Passed: steam-options-1
       (game_path_source=argument, GAME_READY, EXITING, exit code 0).
 - [x] **SPL force-loaded** alongside. Passed without the Stracker plugins

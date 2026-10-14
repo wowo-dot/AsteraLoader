@@ -87,6 +87,24 @@ void planning() {
                              exists, plan, error), "ambiguous drive-relative path rejected");
 }
 
+void steam() {
+    int asked = 0;
+    const auto running = [&asked] { ++asked; return true; };
+    const auto stopped = [&asked] { ++asked; return false; };
+    al::SteamPlan plan;
+    std::wstring error = L"stale";
+    check(al::plan_steam(L"582010", stopped, plan, error) && plan.app_id == L"582010" &&
+          plan.source == L"inherited" && error.empty() && asked == 0,
+          "an inherited app id is kept and Steam is not checked");
+    check(al::plan_steam(L"4242", running, plan, error) && plan.app_id == L"4242",
+          "an inherited app id is never replaced");
+    check(al::plan_steam(L"", running, plan, error) && plan.app_id == L"582010" &&
+          plan.source == L"launcher" && asked == 1, "started directly: MHW's app id");
+    check(!al::plan_steam(L"", stopped, plan, error) && asked == 2 && plan.app_id.empty() &&
+          error.find(L"Steam is not running") != std::wstring::npos,
+          "started directly without Steam: an explanation, no app id");
+}
+
 void paths() {
     check(al::iequals(L"ASTERALOADER.DLL", L"AsteraLoader.dll"), "case-insensitive filename");
     check(al::file_name_of(L"C:/mods/AsteraLoader.dll") == L"AsteraLoader.dll", "filename");
@@ -125,7 +143,7 @@ void hashes() {
 }  // namespace
 
 int main() {
-    quoting(); planning(); paths(); hashes();
+    quoting(); planning(); steam(); paths(); hashes();
     check(al::to_utf8(L"日本語") == "日本語", "UTF-8 log conversion");
     check(sizeof(al::StartupRequest) == 16, "startup ABI size");
     if (!failures) std::cout << "All common tests passed\n";

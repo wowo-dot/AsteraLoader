@@ -148,3 +148,24 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     from AL arrive in its `docs/al-requests.md`. Item 11 still holds: CMFM
     is an AL plugin. Whether AL's package bundles it is an open question
     for when CMFM ships.
+
+## 2026-10-14
+
+17. **The launcher gives the game Steam's app id when nothing else did**
+    (requested from the DLSS mod's closed beta:
+    `dlssupdate/docs/handoff-astera-loader-20261014-launch.md`).
+    - Started by double-click, the game exited during SteamStub with code
+      53 and Steam started it again without AL (manual-release-1, and a
+      tester). Steam with launch options and MO2 start the launcher with
+      `SteamAppId` set, and the game inherits it: that is why those
+      launches work. MO2 sets it from its game plugin (`spawn.cpp`,
+      `SteamAPPId`; 582010 for MHW).
+    - Since 0.2.2 the launcher sets `SteamAppId=582010` for the game when
+      it inherited none, and keeps an inherited one unchanged. Its log
+      says which (`steam_app_id=... source=inherited|launcher`).
+    - Nothing in SteamStub or the game's Steam code is changed or skipped:
+      the game starts with the environment Steam and MO2 give it, and Steam
+      still checks that the game is owned. That needs Steam running, so the
+      launcher looks for `steam.exe` by name, as MO2 does, and otherwise
+      says so and starts nothing.
+    - Steam's Play button still needs the launch options to start AL.
