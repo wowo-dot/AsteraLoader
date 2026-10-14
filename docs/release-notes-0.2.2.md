@@ -45,13 +45,21 @@ folder covers the new files too; the README shows how.
 
 ## Tested
 
-With MHW 421810 under Mod Organizer 2: CMFM and the DLSS mod 0.28.4 with
-frame generation at 2x, which hands the game that swap chain; Astera Loader
-found the game window, its input layer received the window's messages, and
-the game exited with code 0. Outside the game, the test suite covers the
-window behind such a swap chain, an ordinary swap chain, and neither, each
-through a resize; and the launcher started directly, with and without an
-app id from Steam or MO2.
+With MHW 421810:
+
+- Started from a shortcut, without Steam or Mod Organizer 2: the game
+  stayed up, reached the title screen and exited with code 0.
+- Under Mod Organizer 2, this package in the DLSS mod's closed-beta bundle
+  (CMFM 0.1.0-beta.3, the DLSS mod 0.28.5) with a full set of other mods:
+  all plugins active, Astera Loader found the game window behind the DLSS
+  mod's swap chain, exit code 0.
+- The input fix (0.2.1, same code): CMFM and the DLSS mod 0.28.4 with frame
+  generation at 2x; the input layer received the window's messages.
+
+Outside the game, the test suite covers the window behind such a swap
+chain, an ordinary swap chain, and neither, each through a resize; and the
+launcher started directly, with and without an app id from Steam or MO2,
+and with Steam closed.
 
 ## Known issues
 

@@ -163,11 +163,12 @@ Steam launch-options launch.
       test; the game folder is otherwise read-only for this project).
       Started directly it does not run AL (manual-release-1, above); with
       Steam launch options it does (steam-options-1).
-- [ ] **Started directly** (0.2.2): the launcher started by double-click
-      or a shortcut, neither Steam nor MO2. Expect
-      `steam_app_id=582010 source=launcher`, GAME_READY, exit code 0;
-      under MO2 and Steam launch options, `source=inherited`. With Steam
-      closed: the launcher says so and starts nothing.
+- [x] **Started directly** (0.2.2): the launcher started by a shortcut,
+      neither Steam nor MO2. Passed: direct-start-1
+      (`steam_app_id=582010 source=launcher`, no restart by Steam,
+      GAME_READY, exit code 0). Under MO2, release-0.2.2-1 logged
+      `source=inherited`. Not run in game: Steam closed (the launcher
+      should say so and start nothing; unit-tested).
 - [x] **Steam launch options** with `%command%`. Passed: steam-options-1
       (game_path_source=argument, GAME_READY, EXITING, exit code 0).
 - [x] **SPL force-loaded** alongside. Passed without the Stracker plugins
