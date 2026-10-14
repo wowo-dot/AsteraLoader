@@ -1,0 +1,44 @@
+name: Bug report
+description: Astera Loader or one of its plugins does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The logs are in the `AsteraLoader\logs` folder next to `AsteraLoader.exe`
+        (under Mod Organizer 2, inside the mod's folder). They show your Windows
+        user folder as `%USERPROFILE%` and contain no key presses or typed text.
+  - type: input
+    id: version
+    attributes:
+      label: Astera Loader version
+      description: The first line of the core log, for example `Astera Loader 0.2.2 commit=1e0ab01998a9`.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you start the game
+      options:
+        - Mod Organizer 2, the Astera Loader executable
+        - Manual install, AsteraLoader.exe started directly
+        - Manual install, Steam's Play button with launch options
+        - Other (say below)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Name the plugins and other mods involved (Stracker plugins, SharpPluginLoader, the DLSS mod, ...).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Drag the files from that launch in here: `core.<pid>.log`, `launcher.<pid>.log`,
+        and, if the game crashed, the report in `crashes\`. Plugin logs are in `plugins\`.
+    validations:
+      required: true

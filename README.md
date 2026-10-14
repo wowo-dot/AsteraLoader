@@ -13,8 +13,11 @@ Astera Loader starts the game through its own launcher, `AsteraLoader.exe`,
 and puts nothing into the game folder itself.
 
 **Status:** version 0.x, in development. Tested with MHW 421810 (the final
-version) under Mod Organizer 2. Nothing else to install: no Visual C++
-runtime, no .NET.
+version) under Mod Organizer 2 and as a manual install. Nothing else to
+install: no Visual C++ runtime, no .NET.
+
+**Download:** `AsteraLoader-<version>.zip` from the
+[Releases](https://github.com/wowo-dot/AsteraLoader/releases) page.
 
 ## Windows Defender
 
@@ -110,8 +113,9 @@ They are in the `AsteraLoader\logs` folder next to `AsteraLoader.exe`
   other mod's DLL, whose code faulted, or the plugin whose change to the
   game's code it was in. You are told at the next launch.
 
-For a bug report, send the core log, the launcher log and the crash report
-from that launch. Astera Loader logs no key presses or typed text, and its
+For a bug report ([Issues](https://github.com/wowo-dot/AsteraLoader/issues)),
+attach the core log, the launcher log and the crash report from that
+launch. Astera Loader logs no key presses or typed text, and its
 own logs show your Windows user folder as `%USERPROFILE%`.
 
 ## Uninstall
