@@ -26,7 +26,7 @@ foreach(family IN ITEMS 1 2 3 4 5)
     endif()
 endforeach()
 foreach(marker IN ITEMS "d3d12_existing_patch[^\n]*module=graphics_owner.dll"
-    "phase_shutdown_enter.*d3d12_state=running presentation_owner=graphics_owner frames=4"
+    "phase_shutdown_enter.*d3d12_state=running presentation_owner=graphics_owner frames=4 swapchain_window=chain"
     "d3d12_chain[^\n]*layers=graphics_probe,graphics_owner installed=yes"
     "d3d12_event plugin=graphics_probe event=pre_present[^\n]*calls=4"
     "d3d12_event plugin=graphics_probe event=post_resize[^\n]*calls=2")

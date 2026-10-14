@@ -356,6 +356,11 @@ Two ways in:
   Only one plugin holds it: the one that routes presentation, such as frame
   generation.
 
+The swap chain's `window` is the window the game created it for. A
+presentation owner may hand the game a composition swap chain, which has no
+window of its own (frame generation can); `window` and al.input still name
+the game's window then.
+
 Registration closes when PRE_MAIN ends, so subscribe and hook from
 `al_plugin_init` or PRE_MAIN. AL then hooks only the methods plugins asked
 for. Under DirectX 11 nothing is called, and `status` says why.

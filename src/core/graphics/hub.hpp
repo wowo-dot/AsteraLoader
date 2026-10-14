@@ -106,8 +106,10 @@ public:
     // One line per subscription and chain, for the core log.
     std::vector<std::string> summary() const;
 
-    // AL's own layer (layers.cpp).
-    void swapchain_created(void* swapchain, void* queue);
+    // AL's own layer (layers.cpp). `window` is the one the game created the
+    // swap chain for (null if unknown); a swap chain with its own HWND
+    // overrides it.
+    void swapchain_created(void* swapchain, void* queue, void* window);
     PresentCall begin_present(void* swapchain, std::uint32_t sync_interval, std::uint32_t flags);
     void end_present(PresentCall& call, std::int32_t result);
     ResizeCall begin_resize(void* swapchain, std::uint32_t buffer_count, std::uint32_t width, std::uint32_t height,
@@ -156,6 +158,7 @@ private:
     void* swapchain3_ = nullptr;  // IDXGISwapChain3 of current_, for the back-buffer index
     void* device_ = nullptr;
     bool swapchain_phase_done_ = false;
+    std::atomic<const char*> window_source_{"none"};  // where current_.window came from: chain, creation, none
     std::atomic<std::uint32_t> present_thread_{0};
     std::atomic<std::uint64_t> frames_{0};
     std::atomic<std::int64_t> last_present_qpc_{0};

@@ -308,8 +308,13 @@ void Hub::describe(void* swapchain) {
             current_.buffer_count = desc.BufferCount;
             current_.flags = desc.Flags;
         }
+        // A composition swap chain (a presentation owner's stand-in for the
+        // game's) has no HWND; the window the game created it for stays.
         HWND window = nullptr;
-        if (SUCCEEDED(chain1->GetHwnd(&window))) current_.window = window;
+        if (SUCCEEDED(chain1->GetHwnd(&window)) && window) {
+            current_.window = window;
+            window_source_.store("chain", std::memory_order_relaxed);
+        }
         chain1->Release();
     }
     // A plain pointer: the game's reference keeps the object alive, and a
@@ -322,11 +327,13 @@ void Hub::describe(void* swapchain) {
     }
 }
 
-void Hub::swapchain_created(void* swapchain, void* queue) {
+void Hub::swapchain_created(void* swapchain, void* queue, void* window) {
     if (!swapchain || state_ == AL_D3D12_UNAVAILABLE) return;
     current_.swapchain = swapchain;
     current_.queue = queue;
     current_.device = device_;
+    current_.window = window;
+    window_source_.store(window ? "creation" : "none", std::memory_order_relaxed);
     describe(swapchain);
     // Detours go in before anyone hears of the swap chain.
     install(AL_D3D12_SWAPCHAIN, swapchain);
@@ -444,6 +451,7 @@ std::vector<std::string> Hub::summary() const {
                                                                                              : "unavailable") +
                     " presentation_owner=" + (owner_ ? owner_name_ : std::string("none")) +
                     " frames=" + std::to_string(frames_.load()) +
+                    " swapchain_window=" + window_source_.load(std::memory_order_relaxed) +
                     (state_ == AL_D3D12_UNAVAILABLE ? " reason=" + reason_ : std::string()));
     return lines;
 }

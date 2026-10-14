@@ -56,6 +56,7 @@ struct FakeSwapchain {
     UINT width, height, buffers, back_buffer;
     DXGI_FORMAT format;
     HWND window;
+    bool composition = false;  // made for composition: GetHwnd fails, as DXGI's does
 };
 
 HRESULT STDMETHODCALLTYPE fake_query(FakeSwapchain* self, REFIID, void** out) {
@@ -74,8 +75,8 @@ HRESULT STDMETHODCALLTYPE fake_get_desc1(FakeSwapchain* self, DXGI_SWAP_CHAIN_DE
     return S_OK;
 }
 HRESULT STDMETHODCALLTYPE fake_get_hwnd(FakeSwapchain* self, HWND* out) {
-    *out = self->window;
-    return S_OK;
+    *out = self->composition ? nullptr : self->window;
+    return self->composition ? DXGI_ERROR_INVALID_CALL : S_OK;
 }
 UINT STDMETHODCALLTYPE fake_back_buffer(FakeSwapchain* self) { return self->back_buffer; }
 
@@ -84,13 +85,28 @@ FakeSwapchain g_swapchain{g_swapchain_vtable, 2560, 1440, 3, 1, DXGI_FORMAT_R10G
                           reinterpret_cast<HWND>(0x1234)};
 int g_queue = 0;  // stands for the game's ID3D12CommandQueue
 int g_device = 0;
+FakeSwapchain* g_made = &g_swapchain;  // what the creation methods return
+
+void fake_vtable() {
+    for (auto& slot : g_swapchain_vtable) slot = nullptr;
+    g_swapchain_vtable[0] = reinterpret_cast<void*>(&fake_query);
+    g_swapchain_vtable[1] = reinterpret_cast<void*>(&fake_add_ref);
+    g_swapchain_vtable[2] = reinterpret_cast<void*>(&fake_release);
+    g_swapchain_vtable[18] = reinterpret_cast<void*>(&fake_get_desc1);
+    g_swapchain_vtable[20] = reinterpret_cast<void*>(&fake_get_hwnd);
+    g_swapchain_vtable[36] = reinterpret_cast<void*>(&fake_back_buffer);
+}
 
 // The original methods at the end of each chain.
 HRESULT STDMETHODCALLTYPE original_create_for_hwnd(IDXGIFactory2*, IUnknown*, HWND, const DXGI_SWAP_CHAIN_DESC1*,
                                                    const DXGI_SWAP_CHAIN_FULLSCREEN_DESC*, IDXGIOutput*,
                                                    IDXGISwapChain1** out) {
     g_trace.push_back("original create");
-    *out = reinterpret_cast<IDXGISwapChain1*>(&g_swapchain);
+    *out = reinterpret_cast<IDXGISwapChain1*>(g_made);
+    return S_OK;
+}
+HRESULT STDMETHODCALLTYPE original_create(IDXGIFactory*, IUnknown*, DXGI_SWAP_CHAIN_DESC*, IDXGISwapChain** out) {
+    *out = reinterpret_cast<IDXGISwapChain*>(g_made);
     return S_OK;
 }
 
@@ -166,6 +182,7 @@ public:
 
     static void* original_for(al_d3d12_method_t method) {
         switch (method) {
+        case AL_D3D12_FACTORY_CREATE_SWAPCHAIN: return reinterpret_cast<void*>(&original_create);
         case AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND: return reinterpret_cast<void*>(&original_create_for_hwnd);
         case AL_D3D12_SWAPCHAIN_PRESENT: return reinterpret_cast<void*>(&original_present);
         case AL_D3D12_SWAPCHAIN_PRESENT1: return reinterpret_cast<void*>(&original_present1);
@@ -253,13 +270,7 @@ void phases_only() {
 void full_flow() {
     g_trace.clear();
     g_presents.clear();
-    for (auto& slot : g_swapchain_vtable) slot = nullptr;
-    g_swapchain_vtable[0] = reinterpret_cast<void*>(&fake_query);
-    g_swapchain_vtable[1] = reinterpret_cast<void*>(&fake_add_ref);
-    g_swapchain_vtable[2] = reinterpret_cast<void*>(&fake_release);
-    g_swapchain_vtable[18] = reinterpret_cast<void*>(&fake_get_desc1);
-    g_swapchain_vtable[20] = reinterpret_cast<void*>(&fake_get_hwnd);
-    g_swapchain_vtable[36] = reinterpret_cast<void*>(&fake_back_buffer);
+    fake_vtable();
 
     graphics::Hub hub;
     FakeClient owner("mhw_dlss", 0), overlay("overlay", 1), early("early", 2), faulty("faulty", 3);
@@ -421,7 +432,7 @@ void installer_refuses() {
     later.device_created(&g_device);
     second.refuse = "fixture swap-chain failure";
     g_trace.clear();
-    later.swapchain_created(&g_swapchain, &g_queue);
+    later.swapchain_created(&g_swapchain, &g_queue, g_swapchain.window);
     auto present = later.begin_present(&g_swapchain, 0, 0);
     later.end_present(present, S_OK);
     auto resize = later.begin_resize(&g_swapchain, 2, 640, 480, 28, 0);
@@ -429,6 +440,76 @@ void installer_refuses() {
     later.status(status);
     check(status.state == AL_D3D12_UNAVAILABLE && status.frames == 0 && !present.raised && !resize.raised &&
         delivered == 0 && g_trace.empty(), "failed swap-chain install raises no graphics phase or event");
+}
+
+// The window the game created its swap chain for. A presentation owner may
+// hand the game a composition swap chain instead (the DLSS mod's stand-in
+// for frame generation), which has no HWND; input still needs the window.
+void creation_window() {
+    fake_vtable();
+    const auto game_window = reinterpret_cast<HWND>(0x5678);
+    const auto own_window = reinterpret_cast<HWND>(0x1234);
+    struct Case {
+        const char* label;
+        bool composition;
+        HWND own;      // the swap chain's own HWND
+        HWND created;  // the window the game passed
+        bool legacy;   // CreateSwapChain, with the window in its description
+        HWND expected;
+        const char* source;
+    };
+    const Case cases[] = {
+        {"composition chain: the creation window", true, nullptr, game_window, false, game_window, "creation"},
+        {"composition chain through CreateSwapChain", true, nullptr, game_window, true, game_window, "creation"},
+        {"ordinary chain: its own window", false, own_window, game_window, false, own_window, "chain"},
+        {"neither: no window", true, nullptr, nullptr, false, nullptr, "none"},
+    };
+    for (const auto& item : cases) {
+        const std::string label = item.label;
+        FakeSwapchain chain{g_swapchain_vtable, 1280, 720, 2, 0, DXGI_FORMAT_R8G8B8A8_UNORM, item.own, item.composition};
+        g_made = &chain;
+        graphics::Hub hub;
+        FakeClient client("menu", 0);
+        const void* phase_window = reinterpret_cast<void*>(1);
+        hub.set_phase_dispatch([&](al_phase_t phase, const void* data) {
+            if (phase == AL_PHASE_SWAPCHAIN_CREATED) phase_window = static_cast<const al_d3d12_swapchain_t*>(data)->window;
+        });
+        hub.subscribe(client.client, (1u << AL_D3D12_EVENT_COUNT) - 1, 0, on_event, const_cast<char*>("menu"));
+        hub.close(AL_PHASE_BIT(AL_PHASE_SWAPCHAIN_CREATED));
+        StandInInstaller installer;
+        hub.set_installer(&installer);
+        hub.device_created(&g_device);
+        g_created = {};
+        if (item.legacy) {
+            DXGI_SWAP_CHAIN_DESC desc{};
+            desc.OutputWindow = item.created;
+            IDXGISwapChain* out = nullptr;
+            const auto create = reinterpret_cast<decltype(&original_create)>(entry(hub, AL_D3D12_FACTORY_CREATE_SWAPCHAIN));
+            check(create && create(nullptr, reinterpret_cast<IUnknown*>(&g_queue), &desc, &out) == S_OK, label);
+        } else {
+            IDXGISwapChain1* out = nullptr;
+            const auto create = reinterpret_cast<decltype(&original_create_for_hwnd)>(
+                entry(hub, AL_D3D12_FACTORY_CREATE_SWAPCHAIN_FOR_HWND));
+            check(create && create(nullptr, reinterpret_cast<IUnknown*>(&g_queue), item.created, nullptr, nullptr,
+                                   nullptr, &out) == S_OK, label);
+        }
+        check(g_created.swapchain == &chain && g_created.window == item.expected && g_created.width == 1280,
+              label + ": event data");
+        check(phase_window == item.expected, label + ": SWAPCHAIN_CREATED phase data");
+        bool named = false;
+        for (const auto& line : hub.summary()) {
+            if (line.find(std::string("swapchain_window=") + item.source) != std::string::npos) named = true;
+        }
+        check(named, label + ": the summary names where the window came from");
+
+        // A resize describes the chain again; the window stays.
+        g_resize_after = {};
+        auto resize = hub.begin_resize(&chain, 2, 1920, 1080, 0, 0);
+        hub.end_resize(resize, S_OK);
+        check(g_resize_after.swapchain && g_resize_after.swapchain->window == item.expected &&
+                  g_resize_after.swapchain->width == 1280, label + ": a resize keeps the window");
+    }
+    g_made = &g_swapchain;
 }
 
 void internal_regions() {
@@ -464,6 +545,7 @@ int main() {
     full_flow();
     no_hook_layer();
     installer_refuses();
+    creation_window();
     internal_regions();
     old_status_size();
     if (failures) {

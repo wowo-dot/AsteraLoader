@@ -51,7 +51,7 @@ HRESULT STDMETHODCALLTYPE create_swapchain(IDXGIFactory* self, IUnknown* queue, 
                                            IDXGISwapChain** out) {
     const HRESULT result = next<CreateSwapChainFn>(g_next_create_swapchain)(self, queue, desc, out);
     Hub* hub = g_hub.load();
-    if (hub && SUCCEEDED(result) && out && *out) hub->swapchain_created(*out, queue);
+    if (hub && SUCCEEDED(result) && out && *out) hub->swapchain_created(*out, queue, desc ? desc->OutputWindow : nullptr);
     return result;
 }
 
@@ -62,7 +62,7 @@ HRESULT STDMETHODCALLTYPE create_swapchain_for_hwnd(IDXGIFactory2* self, IUnknow
     const HRESULT result = next<CreateSwapChainForHwndFn>(g_next_create_swapchain_for_hwnd)(
         self, queue, window, desc, fullscreen, output, out);
     Hub* hub = g_hub.load();
-    if (hub && SUCCEEDED(result) && out && *out) hub->swapchain_created(*out, queue);
+    if (hub && SUCCEEDED(result) && out && *out) hub->swapchain_created(*out, queue, window);
     return result;
 }
 

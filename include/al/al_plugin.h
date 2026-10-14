@@ -364,7 +364,7 @@ typedef struct al_d3d12_swapchain_t {
     void* swapchain; /* the IDXGISwapChain the game holds */
     void* queue;     /* the ID3D12CommandQueue the game created it with */
     void* device;    /* the ID3D12Device the game uses (as at DEVICE_CREATED) */
-    void* window;    /* HWND */
+    void* window;    /* HWND: the window the game created the swap chain for */
     uint32_t width;
     uint32_t height;
     uint32_t format; /* DXGI_FORMAT */
