@@ -1,5 +1,8 @@
 # Astera Loader 0.2.1
 
+Went to the closed beta only (2026-10-14); 0.2.2 replaces it and contains
+this fix.
+
 A fix for plugins' keyboard, mouse and pad input while the DLSS mod's
 frame generation is on. Plugin API 1.8 as in 0.2.0; plugins built for any
 earlier version keep working.
