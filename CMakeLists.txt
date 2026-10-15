@@ -625,6 +625,25 @@ add_test(NAME remaining_phases_setup_thread
     "-DDEVICE_THREAD=1" "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_setup_thread"
     -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
 set_tests_properties(remaining_phases_setup_thread PROPERTIES TIMEOUT 45)
+# The same core, with every breakpoint hit's context taken as Wine reports it
+# (no debug registers shown), so the worker clears the slot from outside.
+add_library(al_startup_hit_unreported STATIC ${AL_STARTUP_SOURCES})
+target_link_libraries(al_startup_hit_unreported PUBLIC al_plugins PRIVATE al_minhook)
+target_compile_definitions(al_startup_hit_unreported PRIVATE AL_TEST_HIT_UNREPORTED)
+al_project_target(al_startup_hit_unreported)
+add_library(al_loader_hit_unreported SHARED src/core/dllmain.cpp)
+target_link_libraries(al_loader_hit_unreported PRIVATE al_startup_hit_unreported)
+al_project_target(al_loader_hit_unreported)
+foreach(variant IN ITEMS main setup_thread)
+    add_test(NAME remaining_phases_hit_unreported_${variant}
+        COMMAND "${CMAKE_COMMAND}" "-DLAUNCHER=$<TARGET_FILE:al_launcher>"
+        "-DCORE=$<TARGET_FILE:al_loader_hit_unreported>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_phases_game>" "-DPLUGIN=$<TARGET_FILE:al_phase_probe>"
+        "-DDEVICE_THREAD=$<IF:$<STREQUAL:${variant},setup_thread>,1,0>" -DCLEARED=worker
+        "-DWORK=${CMAKE_BINARY_DIR}/remaining_phases_hit_unreported_${variant}"
+        -P "${CMAKE_SOURCE_DIR}/tests/remaining_phases.cmake")
+    set_tests_properties(remaining_phases_hit_unreported_${variant} PROPERTIES TIMEOUT 45)
+endforeach()
 
 add_executable(fake_graphics_game WIN32 tests/fake_graphics_game.cpp tests/fake_packed_entry.cpp)
 target_link_libraries(fake_graphics_game PRIVATE al_common d3d12 dxgi delayimp user32)

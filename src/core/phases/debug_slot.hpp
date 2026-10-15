@@ -21,13 +21,29 @@ inline std::optional<DebugSlot> reserve_debug_slot(CONTEXT& context,DWORD64 targ
     }
     return {};
 }
+// Puts back the slot's state from before reserve_debug_slot, unchecked.
+inline void restore_debug_slot(CONTEXT& context,const DebugSlot& saved) noexcept {
+    const auto enable=DWORD64{3}<<(saved.index*2), control=DWORD64{15}<<(16+saved.index*4);
+    debug_address(context,saved.index)=saved.address;
+    context.Dr7=(context.Dr7 & ~(enable|control)) | saved.control;
+    context.Dr6 &= ~(DWORD64{1}<<saved.index);
+}
 inline bool release_debug_slot(CONTEXT& context,const DebugSlot& saved) noexcept {
     const auto enable=DWORD64{3}<<(saved.index*2), control=DWORD64{15}<<(16+saved.index*4);
     if (debug_address(context,saved.index)!=saved.target ||
         (context.Dr7 & (enable|control))!=(DWORD64{1}<<(saved.index*2))) return false;
-    debug_address(context,saved.index)=saved.address;
-    context.Dr7=(context.Dr7 & ~(enable|control)) | saved.control;
-    context.Dr6 &= ~(DWORD64{1}<<saved.index);
+    restore_debug_slot(context,saved);
     return true;
+}
+
+// What an exception context's Dr6 says about a hit at the slot's address:
+// the slot (Windows); no breakpoint at all (Wine, whose exception contexts
+// can show a stale copy of debug registers set from another thread); or
+// another slot or a single step, which is not ours.
+enum class SlotHit { shown, unreported, other };
+inline SlotHit slot_hit(DWORD64 dr6,unsigned slot) noexcept {
+    const auto own=DWORD64{1}<<slot;
+    if (dr6 & ((0xf ^ own) | 0xe000u)) return SlotHit::other;
+    return (dr6 & own) ? SlotHit::shown : SlotHit::unreported;
 }
 }  // namespace al::phases

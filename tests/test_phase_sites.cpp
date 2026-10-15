@@ -56,5 +56,22 @@ int main() {
     check(!al::phases::reserve_debug_slot(context,0x1234) && context.Dr7==0x2000,"general-detect state refused unchanged");
     context={}; context.EFlags=0x100;
     check(!al::phases::reserve_debug_slot(context,0x1234) && context.EFlags==0x100,"existing single-step state refused unchanged");
+    // A context that does not show the slot (Wine's stale copy): restored
+    // unchecked, other slots kept.
+    context={}; context.Dr0=0x2222; context.Dr7=0x401;
+    saved=al::phases::reserve_debug_slot(context,0x5555);
+    check(saved && saved->index==1,"second slot reserved");
+    if (saved) {
+        CONTEXT stale{}; stale.Dr7=0x401;
+        al::phases::restore_debug_slot(stale,*saved);
+        check(stale.Dr1==0 && stale.Dr7==0x401,"unchecked restore clears only the owned slot");
+    }
+    using al::phases::SlotHit;
+    check(al::phases::slot_hit(1,0)==SlotHit::shown && al::phases::slot_hit(0xffff0ff1,0)==SlotHit::shown,
+          "own slot shown, reserved bits ignored");
+    check(al::phases::slot_hit(0,0)==SlotHit::unreported && al::phases::slot_hit(0xffff0ff0,2)==SlotHit::unreported,
+          "no breakpoint reported");
+    check(al::phases::slot_hit(2,0)==SlotHit::other && al::phases::slot_hit(0x4001,0)==SlotHit::other &&
+          al::phases::slot_hit(0x2000,0)==SlotHit::other,"another slot, a single step or general detect is not ours");
     return failures?1:0;
 }

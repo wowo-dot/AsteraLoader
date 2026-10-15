@@ -15,6 +15,7 @@
 #include <atomic>
 #include <bit>
 #include <cstring>
+#include <cwchar>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -48,6 +49,7 @@ struct Pending {
     std::uint32_t level{};
     DebugSlot debug{};
     bool armed{};
+    bool release{}, released{};  // a request to clear the slot after a hit, and its result
     ObserverTiming timing;
     unsigned call{};
     std::uint64_t forward_ready{}, forward_log{};
@@ -75,6 +77,9 @@ struct State {
     std::recursive_mutex dispatch_mutex;
     Handle request, ready, worker;
     Pending pending;
+    // What the handler saw at the last hit. Written by the handler, read by
+    // the wrapper it resumes, on the same thread.
+    struct Hit { bool seen, in_context; DWORD flags; DWORD64 dr6, dr7, slot; } hit{};
     unsigned device_attempts=0;
     std::atomic<unsigned> device_calls{0};
     std::uint64_t qpc_frequency{}, worker_create_begin{}, worker_create{};
@@ -213,9 +218,38 @@ void stop_device() noexcept {
         g->busy.clear();
     }
 }
+std::wstring hex(std::uint64_t value) {
+    wchar_t text[19]{};
+    swprintf_s(text,L"0x%llx",static_cast<unsigned long long>(value));
+    return text;
+}
+// Called first by the code a hit was redirected to, on the thread that hit.
+// Unless the handler cleared the slot in the exception context, the worker
+// clears it from outside this thread, as it armed it, before the hit address
+// runs again. Returns the log line describing the hit.
+std::wstring clear_hit(std::wstring_view phase) noexcept {
+    auto& hit=g->hit;
+    if (!hit.seen) return {};
+    hit.seen=false;
+    const wchar_t* cleared=L"context";
+    if (!hit.in_context) {
+        auto& p=g->pending;
+        p.released=false; p.release=true;
+        ResetEvent(g->ready.get());
+        const bool done=SetEvent(g->request.get()) && WaitForSingleObject(g->ready.get(),5000)==WAIT_OBJECT_0;
+        p.release=false;
+        cleared=done && p.released ? L"worker" : L"failed";
+    }
+    try {
+        return L"phase_"+std::wstring(phase)+L"_hit context_flags="+hex(hit.flags)+L" dr6="+hex(hit.dr6)+
+               L" dr7="+hex(hit.dr7)+L" dr_slot="+hex(hit.slot)+L" cleared="+cleared;
+    } catch (...) { return {}; }
+}
 int WINAPI win_main(HINSTANCE instance,HINSTANCE previous,char* command,int show) {
     if (g->win_entered.exchange(true)) return g->win_original(instance,previous,command,show);
     const auto error=GetLastError();
+    const auto hit=clear_hit(L"win_main");
+    if (!hit.empty()) log(hit);
     if (g->frame) g->frame->win_main(GetCurrentThreadId());
     log(L"phase_win_main_observer_removed; CRT and WinMain code unchanged");
     const al_phase_win_main_t main_data{sizeof(main_data),0,instance,command,show,0};
@@ -237,11 +271,12 @@ DWORD WINAPI context_worker(void*) noexcept {
     while (WaitForSingleObject(g->request.get(),INFINITE)==WAIT_OBJECT_0) {
         const auto awake=ticks();
         const bool stopping=g->stopped.load();
-        if (stopping && !g->observer_active.load()) break;
         auto& pending=g->pending;
+        if (stopping && !pending.release && !g->observer_active.load()) break;
+        const bool release=stopping || pending.release;
         auto& timing=pending.timing;
         timing.awake=awake;
-        if (!stopping) pending.armed=false;
+        if (!release) pending.armed=false;
         auto begin=ticks();
         Handle thread(OpenThread(THREAD_SUSPEND_RESUME|THREAD_GET_CONTEXT|THREAD_SET_CONTEXT,FALSE,pending.thread));
         timing.open=ticks()-begin;
@@ -252,10 +287,15 @@ DWORD WINAPI context_worker(void*) noexcept {
             begin=ticks(); const auto got=GetThreadContext(thread.get(),&context); timing.get=ticks()-begin;
             if (got) {
                 context.ContextFlags=CONTEXT_DEBUG_REGISTERS; // Never write control/stack/flags.
-                if (stopping) {
-                    if (release_debug_slot(context,pending.debug)) {
+                if (release) {
+                    bool owned=release_debug_slot(context,pending.debug);
+                    // After a hit the slot is ours even where this context
+                    // does not show it (Wine): restore it unchecked.
+                    if (!owned && pending.release) { restore_debug_slot(context,pending.debug); owned=true; }
+                    if (owned) {
                         begin=ticks(); const auto set=SetThreadContext(thread.get(),&context); timing.set=ticks()-begin;
                         if (set) g->observer_active.store(false);
+                        pending.released=set!=FALSE;
                     }
                 } else {
                     begin=ticks(); const auto saved=reserve_debug_slot(context,reinterpret_cast<DWORD64>(pending.caller)); timing.reserve=ticks()-begin;
@@ -285,8 +325,17 @@ LONG CALLBACK device_exception(EXCEPTION_POINTERS* exception) noexcept {
         return EXCEPTION_CONTINUE_SEARCH;
     auto& c=*exception->ContextRecord;
     const auto slot=g->pending.debug.index;
-    if (!(c.Dr6 & (DWORD64{1}<<slot)) || (c.Dr6 & ((0xf ^ (DWORD64{1}<<slot))|0xe000u)) ||
-        !release_debug_slot(c,g->pending.debug)) return EXCEPTION_CONTINUE_SEARCH;
+    const State::Hit hit{true,false,c.ContextFlags,c.Dr6,c.Dr7,debug_address(c,slot)};
+#ifdef AL_TEST_HIT_UNREPORTED
+    const auto seen=SlotHit::unreported;  // Test build: as Wine reports it.
+#else
+    const auto seen=slot_hit(c.Dr6,slot);
+#endif
+    if (seen==SlotHit::other) return EXCEPTION_CONTINUE_SEARCH;
+    if (seen==SlotHit::shown && !release_debug_slot(c,g->pending.debug)) return EXCEPTION_CONTINUE_SEARCH;
+    g->hit=hit;
+    g->hit.in_context=seen==SlotHit::shown;
+    // Unreported: the slot stays set until the wrapper has the worker clear it.
     c.Rip=reinterpret_cast<DWORD64>(g->pending.resume);
     g->pending.armed=false;
     g->observer_active.store(false,std::memory_order_release);
@@ -314,8 +363,10 @@ bool observe(Pending pending) noexcept {
 void device_return(std::uint64_t result) noexcept {
     const auto error=GetLastError();
     const auto returned=ticks();
+    const auto hit=clear_hit(L"device_return");
     try {
         auto& p=g->pending;
+        if (p.call && p.call<=3 && !hit.empty()) log(hit);
         if (p.call && p.call<=3) log(L"phase_device_call_return thread_id="+std::to_wstring(GetCurrentThreadId())+
             L" call="+std::to_wstring(p.call)+L" return_qpc="+std::to_wstring(returned)+
             L" forward_ready_qpc="+std::to_wstring(p.forward_ready)+
