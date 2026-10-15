@@ -124,6 +124,11 @@ void paths() {
           L"C:\\Users\\person2\\mods", "profile boundary");
     check(al::redact_profile(L"\\\\?\\C:\\Users\\person\\mods", L"C:/Users/person") ==
           L"%USERPROFILE%\\mods", "extended real path redaction");
+    check(al::redact_profile(L"\\Device\\HarddiskVolume3\\Users\\person\\mods",
+                             L"\\Device\\HarddiskVolume3\\Users\\person") == L"%USERPROFILE%\\mods",
+          "NT name of a mapped file (Windows)");
+    check(al::redact_profile(L"\\??\\C:\\users\\person\\mods", L"\\??\\C:\\Users\\person") ==
+          L"%USERPROFILE%\\mods", "NT name of a mapped file (Wine)");
 }
 
 void hashes() {

@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
+# FOUND_BY: how the launcher finds the core in the game, "name" or "image".
+if(NOT DEFINED FOUND_BY)
+    set(FOUND_BY name)
+endif()
 string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef run)
 set(WORK "${WORK}/${run}")
 file(MAKE_DIRECTORY "${WORK}/launcher/AsteraLoader" "${WORK}/game folder")
@@ -6,6 +10,9 @@ file(COPY_FILE "${LAUNCHER}" "${WORK}/launcher/AsteraLoader.exe")
 file(COPY_FILE "${CORE}" "${WORK}/launcher/AsteraLoader/AsteraLoader.dll")
 file(COPY_FILE "${FAKE_GAME}" "${WORK}/game folder/MonsterHunterWorld.exe")
 set(ENV{AL_FAKE_OUTPUT} "${WORK}/fake.log")
+# The work folder stands in for the user's folder, which the log hides, in NT names too.
+file(TO_NATIVE_PATH "${WORK}" profile)
+set(ENV{USERPROFILE} "${profile}")
 set(ENV{AL_FAKE_EXIT} 37)
 execute_process(COMMAND "${WORK}/launcher/AsteraLoader.exe"
     "${WORK}/game folder/MonsterHunterWorld.exe" "a b" "" "tail\\" "a\"b" "日本語"
@@ -33,6 +40,14 @@ set(confirmed FALSE)
 foreach(path IN LISTS logs)
     file(READ "${path}" content)
     if(content MATCHES "core_confirmed_before_resume" AND content MATCHES "game_exit_code=37")
+        if(NOT content MATCHES "core_expected=%USERPROFILE%[^\n]*AsteraLoader\\.dll" OR
+           NOT content MATCHES "core_found_by=${FOUND_BY} base=0x[0-9a-f]+" OR
+           content MATCHES "HarddiskVolume")
+            message(FATAL_ERROR "Core not found by ${FOUND_BY}, or user folder shown: ${content}")
+        endif()
+        if(FOUND_BY STREQUAL "image" AND NOT content MATCHES "core_child_name=%USERPROFILE%[^\n]*AsteraLoader\\.dll")
+            message(FATAL_ERROR "The child's name for the core was not logged: ${content}")
+        endif()
         string(FIND "${content}" "game_resumed" resumed)
         string(FIND "${content}" "exe_sha256=" hashed)
         if(resumed EQUAL -1 OR hashed LESS resumed)

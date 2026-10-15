@@ -789,7 +789,22 @@ add_test(NAME launcher_steam
         "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
         "-DWORK=${CMAKE_BINARY_DIR}/launcher_steam"
         -P "${CMAKE_SOURCE_DIR}/tests/launcher_steam.cmake")
-set_tests_properties(launcher_injection launcher_failures launcher_steam PROPERTIES TIMEOUT 60)
+# Finds the core with no name matching, as under a system that names mapped
+# files differently from their final path (Wine): by the image itself.
+add_executable(al_test_launcher_image src/launcher/main.cpp)
+target_link_libraries(al_test_launcher_image PRIVATE al_common shell32)
+target_compile_definitions(al_test_launcher_image PRIVATE AL_TEST_NO_DIALOGS AL_TEST_NO_NAME_MATCH)
+al_project_target(al_test_launcher_image)
+add_test(NAME launcher_image_lookup
+    COMMAND "${CMAKE_COMMAND}"
+        "-DLAUNCHER=$<TARGET_FILE:al_test_launcher_image>"
+        "-DCORE=$<TARGET_FILE:al_loader>"
+        "-DFAKE_GAME=$<TARGET_FILE:fake_game>"
+        "-DWORK=${CMAKE_BINARY_DIR}/launcher_image_lookup"
+        -DFOUND_BY=image
+        -P "${CMAKE_SOURCE_DIR}/tests/launcher_injection.cmake")
+set_tests_properties(launcher_injection launcher_failures launcher_steam launcher_image_lookup
+    PROPERTIES TIMEOUT 60)
 
 foreach(mode IN ITEMS 1 2 3 4)
     add_library(al_fixture_${mode} SHARED tests/core_fixture.cpp)

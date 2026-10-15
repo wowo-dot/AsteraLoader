@@ -10,9 +10,11 @@
 #include <shellapi.h>
 #include <tlhelp32.h>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <cwchar>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -132,34 +134,44 @@ DWORD invoke_remote(HANDLE process, std::uintptr_t entry, const void* parameter,
     return buffer.invoke(entry);
 }
 
-std::wstring mapped_name(HANDLE process, void* address) {
+std::wstring mapped_name(HANDLE process, const void* address) {
     std::wstring name(32768, L'\0');
-    const auto length = GetMappedFileNameW(process, address, name.data(), static_cast<DWORD>(name.size()));
+    const auto length = GetMappedFileNameW(process, const_cast<void*>(address), name.data(),
+                                           static_cast<DWORD>(name.size()));
     if (!length || length >= name.size()) return {};
     name.resize(length);
     return name;
 }
 
 // Module lists may not exist yet in a just-created suspended process. Walking
-// MEM_IMAGE allocations finds ntdll without running the primary thread. Names
-// on both sides come from NT file paths, never virtual vs canonical paths.
-std::uintptr_t remote_image(HANDLE process, const std::wstring& native_name) {
+// MEM_IMAGE allocations finds ntdll without running the primary thread. Calls
+// visit(base, mapped name) for each image until it returns true.
+template <typename Visit>
+void for_each_image(HANDLE process, Visit visit) {
     std::uintptr_t cursor = 0;
     void* previous = nullptr;
     MEMORY_BASIC_INFORMATION info{};
     while (VirtualQueryEx(process, reinterpret_cast<void*>(cursor), &info, sizeof(info))) {
         if (info.Type == MEM_IMAGE && info.AllocationBase != previous) {
             previous = info.AllocationBase;
-            const auto name = mapped_name(process, info.AllocationBase);
-            if (!name.empty() && al::iequals(name, native_name)) {
-                return reinterpret_cast<std::uintptr_t>(info.AllocationBase);
-            }
+            if (visit(reinterpret_cast<std::uintptr_t>(info.AllocationBase),
+                      mapped_name(process, info.AllocationBase))) return;
         }
         const auto next = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
         if (next <= cursor) break;
         cursor = next;
     }
-    return 0;
+}
+
+// Both names come from GetMappedFileNameW, never virtual vs canonical paths.
+std::uintptr_t remote_image(HANDLE process, const std::wstring& native_name) {
+    std::uintptr_t found = 0;
+    for_each_image(process, [&](std::uintptr_t base, const std::wstring& name) {
+        if (name.empty() || !al::iequals(name, native_name)) return false;
+        found = base;
+        return true;
+    });
+    return found;
 }
 
 bool executable_page(DWORD protection) {
@@ -275,6 +287,32 @@ public:
         fail(L"Astera Loader has no executable bootstrap export", ERROR_PROC_NOT_FOUND);
     }
 
+    const void* view() const { return view_; }
+
+    // Whether the image at base in process is this file: the same PE header
+    // fields, and its bootstrap in committed code of that image. Only after
+    // bootstrap_rva() has validated the local headers.
+    bool same_image(HANDLE process, std::uintptr_t base, DWORD bootstrap) const {
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(view_);
+        const auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS64*>(view_ + dos->e_lfanew);
+        IMAGE_NT_HEADERS64 remote{};
+        SIZE_T got = 0;
+        if (!ReadProcessMemory(process, reinterpret_cast<void*>(base + dos->e_lfanew), &remote, sizeof(remote), &got) ||
+            got != sizeof(remote) || remote.Signature != IMAGE_NT_SIGNATURE ||
+            remote.FileHeader.Machine != pe->FileHeader.Machine ||
+            remote.FileHeader.TimeDateStamp != pe->FileHeader.TimeDateStamp ||
+            remote.OptionalHeader.SizeOfImage != pe->OptionalHeader.SizeOfImage ||
+            remote.OptionalHeader.CheckSum != pe->OptionalHeader.CheckSum ||
+            remote.OptionalHeader.AddressOfEntryPoint != pe->OptionalHeader.AddressOfEntryPoint ||
+            std::memcmp(&remote.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT],
+                        &pe->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT],
+                        sizeof(IMAGE_DATA_DIRECTORY))) return false;
+        MEMORY_BASIC_INFORMATION code{};
+        return VirtualQueryEx(process, reinterpret_cast<void*>(base + bootstrap), &code, sizeof(code)) &&
+               code.State == MEM_COMMIT && reinterpret_cast<std::uintptr_t>(code.AllocationBase) == base &&
+               executable_page(code.Protect);
+    }
+
 private:
     bool readable(DWORD offset, std::uint64_t length) const {
         const auto base = reinterpret_cast<std::uintptr_t>(view_);
@@ -295,6 +333,78 @@ private:
     al::Handle mapping_;
     const std::byte* view_ = nullptr;
 };
+
+// The user's folder as it begins DOS paths and the NT names of mapped files
+// (Windows "\Device\...", Wine "\??\C:\..."), so the log hides it in each.
+std::vector<std::wstring> profile_forms(const std::wstring& profile) {
+    if (profile.empty()) return {};
+    std::vector<std::wstring> forms{profile, L"\\??\\" + al::strip_extended_prefix(profile)};
+    al::Handle folder(CreateFileW(profile.c_str(), FILE_READ_ATTRIBUTES,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                                  OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+    if (folder) {
+        auto native = al::final_path(folder.get(), VOLUME_NAME_NT);
+        if (!native.empty()) forms.push_back(std::move(native));
+    }
+    return forms;
+}
+
+std::wstring redact(const std::wstring& path, const std::vector<std::wstring>& profiles) {
+    for (const auto& profile : profiles) {
+        auto redacted = al::redact_profile(path, profile);
+        if (redacted != path) return redacted;
+    }
+    return path;
+}
+
+std::wstring hex(std::uintptr_t value) {
+    wchar_t text[19]{};
+    swprintf_s(text, L"0x%llx", static_cast<unsigned long long>(value));
+    return text;
+}
+
+// Astera Loader's image in the child. By name first, from the same API as the
+// child's names: Wine names a mapped file as it was opened ("\??\S:\..."),
+// unlike its final NT path ("\Device\..."). Otherwise the one image whose
+// base has LoadLibraryW's low 32 bits. Either way it must be this file.
+struct FoundCore {
+    std::uintptr_t base = 0;
+    std::wstring by = L"none";
+    std::wstring child_name;
+    std::vector<std::wstring> candidates;  // images with a name or those low 32 bits, not taken
+};
+
+FoundCore find_core(HANDLE process, const std::vector<std::wstring>& names, DWORD low32,
+                    const CoreImage& image, DWORD bootstrap, const std::vector<std::wstring>& profiles) {
+    FoundCore found;
+    std::vector<std::uintptr_t> same_file;
+    std::wstring same_file_name;
+    for_each_image(process, [&](std::uintptr_t base, const std::wstring& name) {
+        const bool named = !name.empty() && std::any_of(names.begin(), names.end(),
+            [&name](const std::wstring& expected) { return al::iequals(name, expected); });
+        if (!named && static_cast<DWORD>(base) != low32) return false;
+        const bool same = image.same_image(process, base, bootstrap);
+        if (named && same) {
+            found.base = base;
+            found.by = L"name";
+            return true;
+        }
+        found.candidates.push_back(hex(base) + (named ? L" named" : L"") + L" headers=" +
+                                   (same ? L"match" : L"differ") + L" name=" +
+                                   (name.empty() ? std::wstring(L"(none)") : redact(name, profiles)));
+        if (same && static_cast<DWORD>(base) == low32) {
+            same_file.push_back(base);
+            same_file_name = name;
+        }
+        return false;
+    });
+    if (!found.base && same_file.size() == 1) {
+        found.base = same_file.front();
+        found.by = L"image";
+        found.child_name = same_file_name.empty() ? L"(none)" : redact(same_file_name, profiles);
+    }
+    return found;
+}
 
 DWORD launch() {
     al::LogFile log;
@@ -345,15 +455,30 @@ DWORD launch() {
                                          nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
         if (!core_file) fail(L"Open AsteraLoader\\AsteraLoader.dll beside the launcher");
         const auto core_real = al::final_path(core_file.get());
-        const auto core_native = al::final_path(core_file.get(), VOLUME_NAME_NT);
-        if (core_real.empty() || core_native.empty()) fail(L"Resolve Astera Loader DLL file's real path");
+        if (core_real.empty()) fail(L"Resolve Astera Loader DLL file's real path");
         const CoreImage image(core_file.get());
         const auto bootstrap_rva = image.bootstrap_rva();
         const auto dll_hash = al::sha256_file(core_real);
         if (dll_hash.empty()) fail(L"Hash Astera Loader DLL", ERROR_READ_FAULT);
+        // The names the child may give the DLL's image: as this process names
+        // its own view of the file, and the file's final NT path.
+        std::vector<std::wstring> core_names;
+        for (auto name : {mapped_name(GetCurrentProcess(), image.view()),
+                          al::final_path(core_file.get(), VOLUME_NAME_NT)}) {
+            if (!name.empty() && std::none_of(core_names.begin(), core_names.end(),
+                    [&name](const std::wstring& known) { return al::iequals(known, name); })) {
+                core_names.push_back(std::move(name));
+            }
+        }
+#ifdef AL_TEST_NO_NAME_MATCH
+        // Test build: no name matches, as under a system that names files differently.
+        for (auto& name : core_names) name += L".test";
+#endif
+        const auto profiles = profile_forms(profile);
         log.line(L"exe=" + al::redact_profile(plan.exe, profile));
         log.line(L"dll=" + al::redact_profile(core_real, profile));
         log.line(L"dll_sha256=" + dll_hash);
+        for (const auto& name : core_names) log.line(L"core_expected=" + redact(name, profiles));
         log.line(L"game_path_source=" + plan.source);
         log.line(L"MO2 profile and force-load: record in the run manifest; not inferred here");
         // The game inherits the launcher's environment.
@@ -402,8 +527,15 @@ DWORD launch() {
                                                (core_real.size() + 1) * sizeof(wchar_t));
         log.line(L"LoadLibraryW_thread_exit_low32=" + std::to_wstring(load_status));
         // HMODULE is 64 bits; GetExitCodeThread is only 32. Find the mapped
-        // image by its physical file path, never by the truncated return value.
-        const auto core_base = remote_image(child.process.get(), core_native);
+        // image by its file's name, the truncated value only as a fallback.
+        const auto core = find_core(child.process.get(), core_names, load_status, image, bootstrap_rva, profiles);
+        log.line(L"core_found_by=" + core.by + (core.base ? L" base=" + hex(core.base) : std::wstring()));
+        if (!core.child_name.empty()) log.line(L"core_child_name=" + core.child_name);
+        if (!core.base) {
+            if (core.candidates.empty()) log.line(L"core_candidates=none");
+            for (const auto& candidate : core.candidates) log.line(L"core_candidate=" + candidate);
+        }
+        const auto core_base = core.base;
         bool confirmed = false;
         if (core_base) {
             al::StartupRequest request;
