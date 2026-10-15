@@ -77,6 +77,40 @@ game hooks were active.
   - Windows is unchanged.
   - Each hit logs a line: `phase_win_main_hit ... cleared=context|worker|failed`.
 
+## Fourth run: Astera Loader works, the game crashes while exiting
+
+With 9ece667 (logs in AL's `local/runs/proton-tester-5`), everything of
+Astera Loader's works under Proton:
+- **WinMain:** `phase_win_main_hit ... dr6=0x0 dr7=0x0 cleared=worker`.
+  Wine's exception context shows no debug registers at all.
+- **Device creation:** the DEVICE_CREATED phase is delivered.
+- **Graphics:** every `al.d3d12` family is installed on DXVK and
+  vkd3d-proton. Your mod holds presentation, and `swapchain_window=chain`.
+- **Input:** the game window is subclassed.
+- **Title screen:** GAME_READY at the title.
+- **Exit Game:** EXITING from the exit site.
+
+CMFM's Mods page and your two pages worked.
+
+**For you:**
+- **What the logs show from your mod:** `STATUS active`, 60 detours,
+  `degraded: Reflex-unavailable`.
+  - The tester turned DLSS on and changed the mode in the menu (DLAA, then
+    Performance). That applies from the next start, so DLSS was probably not
+    active in that session.
+  - "DLSS has issues" isn't explained by the logs. Please ask the tester
+    what they saw, and for your mod's own logs if it writes more than
+    `plugins\mhw_dlss.log`.
+- **The exit crash:** at Exit Game, the game crashed with an access
+  violation reading `0x0`.
+  - Where: `exe+0x47890a`, on the render thread (the one that created the
+    device), in the game's own code. No plugin is on the stack.
+  - Whether it comes from Proton, the game, or your mod's swap chain at
+    teardown is unknown.
+  - The baselines that would tell: the same launch with `mhw_dlss` moved
+    out of `AsteraLoader\plugins` (the launcher log gives the exit code),
+    and the game without Astera Loader.
+
 ## For the tester
 
 - Build: `local\stage\AsteraLoader-0.2.3-dev-9ece667.zip` in the Astera

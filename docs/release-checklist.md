@@ -177,7 +177,11 @@ Steam launch-options launch.
       no Linux setup. Before 0.2.3 the launcher loaded the core but did not
       find it in the game (the DLSS mod's proton-1 report, 2026-10-15), so
       the game ran without AL. Expect `core_found_by=name`, then
-      `core_confirmed_before_resume`.
+      `core_confirmed_before_resume`. With 9ece667 (proton-tester-5) every
+      phase arrived, CMFM worked, and al.d3d12 was installed on
+      DXVK/vkd3d-proton. The game then crashed while exiting, in its own
+      code on the render thread with no plugin on the stack. Baselines
+      without the DLSS mod and without AL are still open.
 - [x] **SPL force-loaded** alongside. Passed without the Stracker plugins
       (spl-release-3); with 19 Stracker plugins SPL fails without AL too
       (spl-baseline-1, a known issue).
