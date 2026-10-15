@@ -171,6 +171,13 @@ Steam launch-options launch.
       should say so and start nothing; unit-tested).
 - [x] **Steam launch options** with `%command%`. Passed: steam-options-1
       (game_path_source=argument, GAME_READY, EXITING, exit code 0).
+- [ ] **Proton** (Linux, 0.2.3): Steam launch options
+      `bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%`
+      run the launcher in the game's prefix. Run by a tester; the user has
+      no Linux setup. Before 0.2.3 the launcher loaded the core but did not
+      find it in the game (the DLSS mod's proton-1 report, 2026-10-15), so
+      the game ran without AL. Expect `core_found_by=name`, then
+      `core_confirmed_before_resume`.
 - [x] **SPL force-loaded** alongside. Passed without the Stracker plugins
       (spl-release-3); with 19 Stracker plugins SPL fails without AL too
       (spl-baseline-1, a known issue).
