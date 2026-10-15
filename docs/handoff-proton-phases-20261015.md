@@ -1,5 +1,17 @@
 # To the user: the WinMain breakpoint under Proton (2026-10-15)
 
+**Done as Change A in 9ece667**, at the user's request: Codex isn't
+available, so Claude wrote it. It differs from the spec below in two ways:
+- **Which hits are accepted:** one at the armed address on the armed thread
+  whose Dr6 shows no breakpoint at all. A Dr6 showing another slot or a
+  single step is still declined (`slot_hit` in `debug_slot.hpp`).
+- **If the worker can't clear the slot:** there's no resume-flag
+  pass-through. The hit line says `cleared=failed`, and the game would end
+  at the next hit as before.
+
+The phase tests also run with a test core (`AL_TEST_HIT_UNREPORTED`) that
+takes every hit as Wine reports it.
+
 Under Proton, build eb35367 gets through start-up and PRE_MAIN. Then the
 game dies at WinMain with an unhandled `EXCEPTION_SINGLE_STEP`. The phase
 observers' debug-register mechanics are yours (memory note on ownership),

@@ -24,6 +24,10 @@ Two downloads:
   functions for listing the game's threads that Proton does not have. It
   now uses them only where they exist, and otherwise the slower listing
   that works everywhere. Windows keeps the fast one.
+- **Proton: the game closed after the plugins loaded.** Astera Loader
+  notices the game reaching its main function through a hardware
+  breakpoint, and under Proton it did not recognise its own breakpoint
+  firing. It now does, and the core log has a line for each such hit.
 - The launcher log says how it found the DLL in the game
   (`core_found_by=name` or `image`) and, if it did not, what it looked at.
 

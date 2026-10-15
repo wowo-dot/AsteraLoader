@@ -60,14 +60,39 @@ from the `\??\S:\...` name), and `al_bootstrap` ran. The core log stops at
     `CreateDXGIFactory2`) exist in Wine, vkd3d-proton and DXVK. This is from
     general knowledge, not checked against their sources.
 
+## Third run: the game ended at WinMain (9ece667)
+
+With eb35367 everything up to PRE_MAIN worked: the plugins loaded and the
+game hooks were active.
+- **What happened:** the game then ended with `0x80000004`, an unhandled
+  `EXCEPTION_SINGLE_STEP`. Astera Loader observes WinMain with a hardware
+  breakpoint, and its handler declined its own hit.
+- **Why:** Wine fills an exception's debug registers from a per-thread copy,
+  which a `SetThreadContext` from another thread seems to leave stale, so
+  Dr6 showed no hit.
+- **Fix:**
+  - The handler now also accepts a hit at the armed address and thread when
+    Dr6 reports no breakpoint.
+  - The worker thread then clears the slot from outside, the way it set it.
+  - Windows is unchanged.
+  - Each hit logs a line: `phase_win_main_hit ... cleared=context|worker|failed`.
+
 ## For the tester
 
-- Build: `local\stage\AsteraLoader-0.2.3-dev-eb35367.zip` in the Astera
+- Build: `local\stage\AsteraLoader-0.2.3-dev-9ece667.zip` in the Astera
   Loader repository (SHA-256
-  `00d374b616312123c8918c4545ed7e5109a623b831f24bec3af5db089e22ddb1`).
-  `AsteraLoader.dll` is `3d5eca7f…653b`. It replaces the Astera Loader
-  files in the game folder or in the bundle. The f508df4 build is
+  `9844970d818317353e8e9a5b89f16404c3abd6a57584c56f8421088d09290653`).
+  `AsteraLoader.dll` is `73f9ac84…1f4f`. It replaces the Astera Loader
+  files in the game folder or in the bundle. Earlier builds are
   superseded.
+- Expected under Proton:
+  - `phase_win_main_hit ... cleared=worker`, then
+    `phase_win_main_observer_removed`, the device and GAME_READY phases, and
+    exit code 0 at Exit Game.
+  - If the line says `cleared=failed`, or the game still ends with
+    `2147483652`, send the logs again.
+- The tester's game is set to DirectX 11, so the DLSS mod is off. They
+  should switch the game to DirectX 12 in its display options and restart.
 - Launch options as before, for example
   `PROTON_ENABLE_NVAPI=1 bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%`.
 - Please send back:
