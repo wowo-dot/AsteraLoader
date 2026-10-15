@@ -34,13 +34,40 @@ Tests cover each way of finding the core:
 A mutation check confirmed that the tests notice when the fallback or the
 identity check is broken.
 
+## Second run: the game ended at the first hook (eb35367)
+
+With the f508df4 build the launcher found the core (`core_found_by=name`,
+from the `\??\S:\...` name), and `al_bootstrap` ran. The core log stops at
+`observer_hook_created`. The bootstrap thread and the game both ended with
+`0x80000100`, which is Wine's `EXCEPTION_WINE_STUB`.
+
+- **Cause:** `MH_EnableHook` lists the game's threads with `PssCaptureSnapshot`
+  and its siblings. Proton's kernel32 (proton_9.0 and experimental_10.0)
+  exports none of the six `Pss*` functions.
+  - Wine fills an unresolved import with a stub that raises that exception
+    when called, so the DLL loaded and then failed at the first call.
+  - In upstream Wine, `PssCaptureSnapshot` exists but always fails.
+- **Fix:**
+  - The core now looks them up in kernel32. If any is missing, MinHook falls
+    back to Toolhelp, which Wine implements; Windows keeps the fast path.
+  - `dev.py stage` refuses a build that imports them again.
+- **Checked:**
+  - Of the core's other 123 imports, the 40 newer or less common ones are
+    all in proton_9.0's kernel32 export list. The rest are basic Win32
+    functions.
+  - The five functions the core looks up at run time (`MessageBoxW`,
+    `VirtualProtect`, `MiniDumpWriteDump`, `D3D12CreateDevice`,
+    `CreateDXGIFactory2`) exist in Wine, vkd3d-proton and DXVK. This is from
+    general knowledge, not checked against their sources.
+
 ## For the tester
 
-- Build: `local\stage\AsteraLoader-0.2.3-dev-f508df4.zip` in the Astera
+- Build: `local\stage\AsteraLoader-0.2.3-dev-eb35367.zip` in the Astera
   Loader repository (SHA-256
-  `90cb4c53caca989a745423567e360f2cecf1d84befc8deed4253f69cdd40cd0c`).
-  `AsteraLoader.dll` is `c545fbda…c072`. It replaces the Astera Loader
-  files in the game folder or in the bundle.
+  `00d374b616312123c8918c4545ed7e5109a623b831f24bec3af5db089e22ddb1`).
+  `AsteraLoader.dll` is `3d5eca7f…653b`. It replaces the Astera Loader
+  files in the game folder or in the bundle. The f508df4 build is
+  superseded.
 - Launch options as before, for example
   `PROTON_ENABLE_NVAPI=1 bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%`.
 - Please send back:

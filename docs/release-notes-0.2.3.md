@@ -19,6 +19,11 @@ Two downloads:
   two names for the DLL that Windows writes the same way and Wine does
   not. It now compares names from the same source and, failing that,
   recognises the DLL by its contents. Windows is unaffected.
+- **Proton: the game closed at once.** With the DLL found, the game ended
+  as Astera Loader set up its first hook. Astera Loader used Windows
+  functions for listing the game's threads that Proton does not have. It
+  now uses them only where they exist, and otherwise the slower listing
+  that works everywhere. Windows keeps the fast one.
 - The launcher log says how it found the DLL in the game
   (`core_found_by=name` or `image`) and, if it did not, what it looked at.
 
