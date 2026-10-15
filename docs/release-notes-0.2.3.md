@@ -63,7 +63,12 @@ With MHW 421810:
 - **Linux, Proton** (one tester): Astera Loader started with the game, all
   its phases ran through to Exit Game, and the Direct3D 12 services
   installed. CMFM's menu worked, and the DLSS mod loaded.
-- **Windows:** to fill in.
+- **Windows, under Mod Organizer 2,** installed from this archive alongside
+  CMFM 0.1.0, the DLSS mod 0.28.5, a CMFM page for Fexty's Mod and 10
+  Stracker plugins: every phase through Exit Game, all plugins active,
+  exit code 0.
+- **Windows, started from a shortcut,** not through Steam or Mod Organizer
+  2: the same, exit code 0.
 
 Outside the game, the test suite covers:
 - the DLL found by name, found by its contents, and not loaded;
