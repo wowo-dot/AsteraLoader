@@ -169,3 +169,24 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
       launcher looks for `steam.exe` by name, as MO2 does, and otherwise
       says so and starts nothing.
     - Steam's Play button still needs the launch options to start AL.
+
+## 2026-10-15
+
+18. **Proton on Linux is a supported launch setup** (since 0.2.3; reported
+    from the DLSS mod's closed beta: `dlssupdate/docs/handoff-al-20261015-proton.md`).
+    - Steam on Linux runs launch options as a Linux command. The README's
+      line, `bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%`,
+      swaps the exe in `%command%`, so Proton runs the launcher in the
+      game's prefix; the launcher finds the game next to itself.
+    - Three Wine differences needed fixes:
+      - Wine names a mapped file as it was opened. The launcher finds its
+        DLL by a name from the same API, or by its contents.
+      - Proton's kernel32 lacks the `Pss*` snapshot functions, and Wine
+        stubs unresolved imports. They are resolved at run time, and
+        `dev.py stage` refuses them as imports.
+      - Wine's exception context shows no debug registers set from
+        another thread. The phase handler accepts such a hit at its
+        address and thread, and its worker clears the slot.
+    - Confirmed by one tester (proton-tester-5): all phases, al.d3d12 on
+      DXVK/vkd3d-proton, CMFM. The user has no Linux setup, so Proton runs
+      depend on testers.

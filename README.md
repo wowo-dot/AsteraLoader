@@ -13,8 +13,9 @@ Astera Loader starts the game through its own launcher, `AsteraLoader.exe`,
 and puts nothing into the game folder itself.
 
 **Status:** version 0.x, in development. Tested with MHW 421810 (the final
-version) under Mod Organizer 2 and as a manual install. Nothing else to
-install: no Visual C++ runtime, no .NET.
+version) under Mod Organizer 2 and as a manual install, and since 0.2.3
+under Proton on Linux by one tester. Nothing else to install: no Visual
+C++ runtime, no .NET.
 
 **Download:** `AsteraLoader-<version>.zip` from the
 [Releases](https://github.com/wowo-dot/AsteraLoader/releases) page.
@@ -87,6 +88,18 @@ Steam's Play button still starts the game without Astera Loader. To have it
 start Astera Loader too, set the launch options in Steam: Monster Hunter:
 World, Properties, General, Launch options:
 `"<game folder>\AsteraLoader.exe" %command%` (with the quotes).
+
+### Linux (Proton)
+
+Install it as above, into the game folder. Steam on Linux runs launch
+options as a Linux command, so the Windows line does not work there. Set
+these launch options instead; they start Astera Loader in the game's place:
+
+```
+bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%
+```
+
+Other mods may need more on that line; see their instructions.
 
 ## Plugins
 

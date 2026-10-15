@@ -1,8 +1,8 @@
 # Astera Loader 0.2.3
 
-Draft, not yet tested in game. A fix for Proton on Linux, where the game
-started without Astera Loader. Plugin API 1.8 as in 0.2.0; plugins built
-for any earlier version keep working.
+Astera Loader now runs under Proton on Linux. Nothing changes on Windows.
+Plugin API 1.8 as in 0.2.0; plugins built for any earlier version keep
+working.
 
 Two downloads:
 
@@ -11,48 +11,74 @@ Two downloads:
 - `AsteraLoader-plugin-kit-0.2.3.zip`: for plugin authors. The C header,
   the plugin guide and a small example plugin that builds with CMake.
 
-## Fixed
+## Before you install: Windows Defender
 
-- **Proton (Linux).** The launcher loaded `AsteraLoader.dll` into the
-  game but did not find it there, so the game started without Astera
-  Loader ("Astera Loader did not confirm startup"). The launcher compared
-  two names for the DLL that Windows writes the same way and Wine does
-  not. It now compares names from the same source and, failing that,
-  recognises the DLL by its contents. Windows is unaffected.
-- **Proton: the game closed at once.** With the DLL found, the game ended
-  as Astera Loader set up its first hook. Astera Loader used Windows
-  functions for listing the game's threads that Proton does not have. It
-  now uses them only where they exist, and otherwise the slower listing
-  that works everywhere. Windows keeps the fast one.
-- **Proton: the game closed after the plugins loaded.** Astera Loader
-  notices the game reaching its main function through a hardware
-  breakpoint, and under Proton it did not recognise its own breakpoint
-  firing. It now does, and the core log has a line for each such hit.
-- The launcher log says how it found the DLL in the game
-  (`core_found_by=name` or `image`) and, if it did not, what it looked at.
+As with earlier releases, Windows Defender may remove `AsteraLoader.exe` as
+`Behavior:Win32/DefenseEvasion.A!ml`, because the launcher starts the game
+paused and loads its DLL into it. An exclusion for the Astera Loader mod
+folder covers the new files too; the README shows how.
 
-## Proton launch options
+VirusTotal: to fill in.
 
-Steam on Linux runs launch options as a Linux command, so the Windows
-line does not work there. This one starts Astera Loader in the game's
-place:
+## Linux (Proton)
+
+Install it as for a manual install, into the game folder (see the
+README). Steam on Linux runs launch options as a Linux command, so the
+Windows line does not work there. These launch options start Astera Loader
+in the game's place:
 
 ```
 bash -c 'exec "${@/MonsterHunterWorld.exe/AsteraLoader.exe}"' -- %command%
 ```
 
+Other mods may need more on that line; see their instructions.
+
+## Fixed
+
+Three problems under Proton, one after the other:
+
+- **The game started without Astera Loader** ("Astera Loader did not
+  confirm startup"). The launcher loaded its DLL into the game but did not
+  find it there. It compared two names for the DLL that Windows writes the
+  same way and Wine does not. It now compares names from the same source
+  and, failing that, recognises the DLL by its contents.
+- **The game closed right away.** Astera Loader listed the game's threads
+  with Windows functions that Proton does not have. It now uses them only
+  where they exist, and otherwise a slower listing that works everywhere.
+  Windows keeps the fast one.
+- **The game closed after the plugins loaded.** Astera Loader notices the
+  game reaching its main function through a hardware breakpoint, and under
+  Proton it did not recognise its own breakpoint firing. It now does.
+
+For bug reports, the logs show more:
+- The launcher log says how it found the DLL in the game
+  (`core_found_by=`).
+- The core log has a line for each of Astera Loader's start-up breakpoints
+  (`phase_win_main_hit`, `phase_device_return_hit`).
+
 ## Tested
 
-To do: Windows (under Mod Organizer 2, started directly, Steam launch
-options) and Proton.
+With MHW 421810:
 
-Outside the game, the test suite covers the DLL found by name, found by
-its contents when no name matches, and not loaded at all.
+- **Linux, Proton** (one tester): Astera Loader started with the game, all
+  its phases ran through to Exit Game, and the Direct3D 12 services
+  installed. CMFM's menu worked, and the DLSS mod loaded.
+- **Windows:** to fill in.
+
+Outside the game, the test suite covers:
+- the DLL found by name, found by its contents, and not loaded;
+- the thread listing without its fast functions;
+- the start-up breakpoints, with and without debug registers in the
+  exception, as Windows and Proton report them.
 
 ## Known issues
 
-As in 0.2.2. Under Proton, Astera Loader's Direct3D 12 and input
-services have not been tested yet.
+As in 0.2.2, and under Proton:
+
+- In the one test so far, the game crashed while exiting, in its own code
+  with no plugin involved. Whether Proton, the game or a mod causes it is
+  not known yet.
+- Only one Linux setup has been tried.
 
 ## Licence
 
