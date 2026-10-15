@@ -105,8 +105,16 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def imports(path: Path) -> list[str]:
-    """The DLL names in a PE file's import table (read from the file)."""
+# Windows functions Proton's kernel32 does not export (proton_9.0 and
+# experimental_10.0, 2026-10-15). Wine fills such an import with a stub that
+# ends the process when called, so AL resolves them at run time instead.
+PROTON_ABSENT = {"PssCaptureSnapshot", "PssQuerySnapshot", "PssFreeSnapshot", "PssWalkMarkerCreate",
+                 "PssWalkMarkerFree", "PssWalkSnapshot"}
+
+
+def imports(path: Path, functions: bool = False) -> list[str]:
+    """The DLL names in a PE file's import table (read from the file), or with
+    functions=True the names of the functions it imports by name."""
     data = path.read_bytes()
     pe = struct.unpack_from("<I", data, 0x3C)[0]
     optional = pe + 24
@@ -123,8 +131,16 @@ def imports(path: Path) -> list[str]:
     names = []
     at = offset(struct.unpack_from("<I", data, optional + 112 + 8)[0])
     while at is not None and struct.unpack_from("<I", data, at + 12)[0]:
-        name = offset(struct.unpack_from("<I", data, at + 12)[0])
-        names.append(data[name:data.index(b"\0", name)].decode())
+        if not functions:
+            name = offset(struct.unpack_from("<I", data, at + 12)[0])
+            names.append(data[name:data.index(b"\0", name)].decode())
+        else:
+            thunk = offset(struct.unpack_from("<I", data, at)[0] or struct.unpack_from("<I", data, at + 16)[0])
+            while thunk is not None and (entry := struct.unpack_from("<Q", data, thunk)[0]):
+                if not entry >> 63:  # by name: a hint, then the name
+                    name = offset(entry & 0x7FFFFFFF) + 2
+                    names.append(data[name:data.index(b"\0", name)].decode())
+                thunk += 8
         at += 20
     return names
 
@@ -228,10 +244,13 @@ def report_staged(folders: tuple[Path, ...]) -> None:
                 names = imports(path)
                 line += f"  imports {', '.join(names)}"
                 if path.suffix.lower() == ".dll" and [n.upper() for n in names] != ["KERNEL32.DLL"]:
-                    problems.append(path.name)
+                    problems.append(f"{path.name} (imports more than KERNEL32)")
+                absent = sorted(PROTON_ABSENT.intersection(imports(path, functions=True)))
+                if absent:
+                    problems.append(f"{path.name} (imports {', '.join(absent)}, absent under Proton)")
             print(line)
     if problems:
-        fail("DLLs importing more than KERNEL32: " + ", ".join(problems))
+        fail("Imports that do not work everywhere: " + ", ".join(problems))
 
 
 def selected_profile(mo2_ini: Path) -> str:

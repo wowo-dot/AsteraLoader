@@ -72,6 +72,14 @@ int main() {
                 mode ? "process_snapshot" : "system_toolhelp", times[4], times.front(), times.back());
         }
     } catch (...) { status = 3; }
+    // Wine and Proton lack the snapshot functions: no list, and MinHook's
+    // Toolhelp path takes over. ntdll exports none of them under these names.
+    for (const auto module : {GetModuleHandleW(L"ntdll.dll"), HMODULE{}}) {
+        LPDWORD ids = reinterpret_cast<LPDWORD>(1);
+        UINT count = 1;
+        if (al::hooks::enumerate_threads_from(module, GetProcessHeap(), &ids, &count) || ids || count) status = 4;
+    }
+    std::printf("without the snapshot functions: no list (status %d)\n", status);
     SetEvent(stop);
     for (const auto thread : threads) if (thread) { WaitForSingleObject(thread, INFINITE); CloseHandle(thread); }
     CloseHandle(stop);
