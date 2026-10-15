@@ -77,6 +77,12 @@ game hooks were active.
   - Windows is unchanged.
   - Each hit logs a line: `phase_win_main_hit ... cleared=context|worker|failed`.
 
+**Update (2026-10-15, the user):** the DLSS problems were the tester's Mesa
+driver, which has no Reflex support. The DLSS mod won't support that setup.
+Its effort moves to FSR and XeSS instead. Astera Loader 0.2.3 is released
+with the Proton fixes. The exit crash below is still open and isn't tied
+to DLSS.
+
 ## Fourth run: Astera Loader works, the game crashes while exiting
 
 With 9ece667 (logs in AL's `local/runs/proton-tester-5`), everything of
