@@ -18,7 +18,19 @@ As with earlier releases, Windows Defender may remove `AsteraLoader.exe` as
 paused and loads its DLL into it. An exclusion for the Astera Loader mod
 folder covers the new files too; the README shows how.
 
-VirusTotal: to fill in.
+VirusTotal for this release's files (2026-10-15):
+
+| File | SHA-256 | Result |
+|---|---|---|
+| `AsteraLoader.exe` | `189e191269ea558ccfefdd17b8b2886d6c43f6f1d5c04b6092da3f3e085fd2d0` | 1/75 (Trapmine) |
+| `AsteraLoader\AsteraLoader.dll` | `d21f7614815901783f756030516366105276ee4110bdfcd90298a8d7bacd5bdb` | 0/75 |
+| `stracker_compat.dll` | `95617a029923c6c42ef61ffbbf2d5c3bee774369cabb2ed3811f57e91596cd90` | 1/75 (Cynet) |
+| `loader.dll` | `b36ad072bfd0d3375fe9ca712cd8d1b2287e458c45fbaa6cb5a83c59fa44acb5` | 0/75 |
+
+Archive `AsteraLoader-0.2.3.zip`: SHA-256
+`697ed1247e03f3b6326754e6531c81e00270e39457f373e713a5e791fa5c933e`. Plugin
+kit `AsteraLoader-plugin-kit-0.2.3.zip`: SHA-256
+`05665eddf0114bed134f44ca8b357d5967a3f9347509889ce2e56581ba541835`.
 
 ## Linux (Proton)
 
