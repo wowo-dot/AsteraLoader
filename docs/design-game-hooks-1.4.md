@@ -39,7 +39,7 @@ Two clients are ready:
       must match exactly once in the game's code; target = match + `offset`;
     - **address:** `address`, with `pattern` matching at `address - offset`.
 
-    Either way the bytes are checked before anything is patched (CLAUDE.md:
+    Either way the bytes are checked before anything is patched (AGENTS.md:
     hooks only at signature-verified sites), and the target must lie in the
     exe's executable sections;
   - `detour`, with the target's signature, and `next`, where AL stores
