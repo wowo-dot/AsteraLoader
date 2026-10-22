@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(astera_loader VERSION 0.2.3 LANGUAGES C CXX)
+project(astera_loader VERSION 0.2.4 LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "Astera Loader targets 64-bit Windows only")
