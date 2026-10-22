@@ -146,7 +146,7 @@ add_library(al_plugins STATIC
     src/core/plugins/manifest.hpp
     src/core/plugins/services.cpp
     src/core/plugins/services.hpp)
-target_link_libraries(al_plugins PUBLIC al_api al_common PRIVATE al_minhook al_thread_snapshot)
+target_link_libraries(al_plugins PUBLIC al_api al_common PRIVATE al_minhook al_near_memory al_thread_snapshot)
 # MinHook's disassembler (hde64), for the bytes a hook takes (image/footprint).
 target_include_directories(al_plugins PRIVATE third_party/minhook/src)
 al_project_target(al_plugins)
@@ -156,6 +156,11 @@ add_library(al_thread_snapshot STATIC src/core/hooks/thread_snapshot.cpp src/cor
 target_include_directories(al_thread_snapshot PUBLIC src)
 al_project_target(al_thread_snapshot)
 
+# The reservation next to the game for MinHook's trampolines and al.patch's stubs.
+add_library(al_near_memory STATIC src/core/hooks/near_memory.cpp src/core/hooks/near_memory.hpp)
+target_include_directories(al_near_memory PUBLIC src)
+al_project_target(al_near_memory)
+
 # MinHook 1.3.4, c3fcafdc10146beb5919319d0683e44e3c30d537.
 # Vendored source; BSD-2 notices in third_party/minhook/LICENSE.txt.
 add_library(al_minhook STATIC
@@ -164,8 +169,8 @@ add_library(al_minhook STATIC
     third_party/minhook/src/trampoline.c
     third_party/minhook/src/hde/hde64.c)
 target_include_directories(al_minhook PUBLIC third_party/minhook/include)
-target_compile_definitions(al_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MINHOOK_PROCESS_THREADS)
-target_link_libraries(al_minhook PRIVATE al_thread_snapshot)
+target_compile_definitions(al_minhook PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX AL_MINHOOK_PROCESS_THREADS AL_MINHOOK_NEAR_MEMORY)
+target_link_libraries(al_minhook PRIVATE al_thread_snapshot al_near_memory)
 
 set(AL_STARTUP_SOURCES
     src/core/input/native.cpp
@@ -192,7 +197,7 @@ set(AL_STARTUP_SOURCES
     src/core/startup/runtime.cpp
     src/core/startup/runtime.hpp)
 add_library(al_startup STATIC ${AL_STARTUP_SOURCES})
-target_link_libraries(al_startup PUBLIC al_plugins PRIVATE al_minhook)
+target_link_libraries(al_startup PUBLIC al_plugins PRIVATE al_minhook al_near_memory)
 al_project_target(al_startup)
 
 add_executable(al_launcher WIN32 src/launcher/main.cpp)
@@ -473,6 +478,12 @@ target_link_libraries(al_game_hook_installer_tests PRIVATE al_startup al_minhook
 al_project_target(al_game_hook_installer_tests)
 add_test(NAME game_hook_installer COMMAND al_game_hook_installer_tests)
 set_tests_properties(game_hook_installer PROPERTIES TIMEOUT 30)
+
+add_executable(al_near_memory_tests tests/test_near_memory.cpp)
+target_link_libraries(al_near_memory_tests PRIVATE al_plugins al_minhook al_near_memory)
+al_project_target(al_near_memory_tests)
+add_test(NAME near_memory COMMAND al_near_memory_tests)
+set_tests_properties(near_memory PROPERTIES TIMEOUT 30)
 
 add_executable(al_services_tests tests/test_services.cpp)
 target_link_libraries(al_services_tests PRIVATE al_plugins)

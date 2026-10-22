@@ -2,11 +2,23 @@
 
 - MinHook **v1.3.4**, commit `c3fcafdc10146beb5919319d0683e44e3c30d537`,
   from <https://github.com/TsudaKageyu/minhook>. `minhook/include` and
-  `minhook/src` are based on that commit. `hook.c` has one AL adapter patch:
-  with `AL_MINHOOK_PROCESS_THREADS`, thread enumeration first uses
-  `src/core/hooks/thread_snapshot.cpp` (Windows PSS, current process, IDs only).
-  Failure falls back to the original Toolhelp enumerator. Thread suspension,
-  instruction-pointer relocation, patching and resume code are unchanged.
+  `minhook/src` are based on that commit, with three AL changes, each marked
+  `AL` in the source:
+  - `hook.c`, with `AL_MINHOOK_PROCESS_THREADS`: thread enumeration first
+    uses `src/core/hooks/thread_snapshot.cpp` (Windows PSS, current process,
+    IDs only). Failure falls back to the original Toolhelp enumerator.
+    Thread suspension, instruction-pointer relocation, patching and resume
+    code are unchanged.
+  - `buffer.c`, with `AL_MINHOOK_NEAR_MEMORY`: a new trampoline block comes
+    first from AL's reservation next to the game
+    (`src/core/hooks/near_memory.cpp`). When it has no page within reach,
+    MinHook's own search runs as before. Blocks from the reservation go back
+    to it instead of being released (`decisions.md` item 19).
+  - `trampoline.c`: when an instruction moved into a trampoline has a
+    RIP-relative operand whose new displacement no longer fits in 32 bits,
+    the hook is refused (`MH_ERROR_UNSUPPORTED_FUNCTION`) instead of written
+    with a truncated one.
+
   No public MinHook API was changed. All other vendored files are unchanged.
   The x64 build uses
   `buffer.c`, `hook.c`, `trampoline.c` and `hde64.c`. Its BSD-2 notices,

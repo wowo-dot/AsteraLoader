@@ -162,6 +162,12 @@ BOOL CreateTrampolineFunction(PTRAMPOLINE ct)
 
             // Relative address is stored at (instruction length - immediate value length - 4).
             pRelAddr = (PUINT32)(instBuf + hs.len - ((hs.flags & 0x3C) >> 2) - 4);
+            {
+                // AL: refuse the hook when the moved address no longer fits in 32 bits.
+                LONG_PTR moved = (LONG_PTR)((pOldInst + hs.len + (INT32)hs.disp.disp32) - (pNewInst + hs.len));
+                if ((LONG_PTR)(INT32)moved != moved)
+                    return FALSE;
+            }
             *pRelAddr
                 = (UINT32)((pOldInst + hs.len + (INT32)hs.disp.disp32) - (pNewInst + hs.len));
 

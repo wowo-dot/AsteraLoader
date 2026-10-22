@@ -14,8 +14,9 @@ namespace al::patch {
 //   of them is stopped inside the bytes (code only), retrying briefly;
 // - read-only pages get write access for the write and their old protection
 //   back after it.
-// Stubs: one page each, written while read-write, then read-and-execute and
-// never written again. Calls are serialized by the registry (the claims'
+// Stubs: one page each, from the reservation next to the game first
+// (core/hooks/near_memory), written while read-write, then read-and-execute
+// and never written again. Calls are serialized by the registry (the claims'
 // write lock); stubs live until the process exits.
 class NativeWriter final : public Writer {
 public:

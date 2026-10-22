@@ -190,3 +190,37 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
     - Confirmed by one tester (proton-tester-5): all phases, al.d3d12 on
       DXVK/vkd3d-proton, CMFM. The user has no Linux setup, so Proton runs
       depend on testers.
+
+## 2026-10-22
+
+19. **AL reserves memory next to the game at bootstrap for trampolines and
+    stubs** (since 0.2.4; reported through the DLSS mod: a player's DLSS
+    hooks failed with `MH_ERROR_MEMORY_ALLOC` in 5 of 8 runs).
+    - MinHook puts each trampoline within 1 GB of its target, 63 to a 4 KB
+      block; al.patch puts each call stub within 2 GB of its call. Both
+      looked for free memory when the hook or stub was made. While the game
+      loads, its own allocations take the space around the exe, so a late
+      hook that needed a new block failed. In the report that was the 64th
+      game hook, made a few seconds after start; it worked when the hooks
+      came early.
+    - At bootstrap, before any hook, AL reserves 1 MB right next to the
+      image, within reach of all of it (`near_memory_reserved`). A page is
+      committed when taken: a MinHook block (63 trampolines) or one al.patch
+      stub. That is room for about 16,000 hooks. When it is full or out of
+      reach, both search as before.
+    - MinHook gives a block back by decommitting it, never by releasing it,
+      since releasing one page would release the whole reservation. This
+      matters because MinHook frees a block whenever a hook on it fails to
+      be created or is removed.
+    - SKSE does the same: it reserves 64 KB below the game at its start and
+      hands plugins parts of it. AL's plugins need no budget, since each
+      hook takes one slot.
+    - MinHook now also refuses a hook when a RIP-relative address it moves
+      into the trampoline no longer fits in 32 bits, instead of writing a
+      wrong one.
+    - Logs: a `near_memory ... free_64kb_within_reach=` line after PRE_MAIN
+      and at SHUTDOWN, and the same numbers on every `MH_ERROR_MEMORY_ALLOC`
+      or failed stub. The free count measures, on the player's machine,
+      whether the game took the space.
+    - Stracker plugins bring their own MinHook and don't use the
+      reservation; they hook while loading, before the space is taken.

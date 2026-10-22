@@ -98,6 +98,9 @@ made RX before creating the inactive MinHook hook. It never reads the
 graphics internal-call flag and makes no helper call on the detour path.
 The registry publishes continuations and the head before enabling. Entries
 and trampolines stay until process exit, including failed activations.
+Trampolines come from the reservation next to the game made at bootstrap
+(`decisions.md` item 19), so a hook registered late, after the game has
+taken the address space around it, still finds room within MinHook's 1 GB.
 Unrelocatable entries return an explicit MinHook reason; an earlier jump
 is allowed and logged, with bounded relay traversal to its module.
 

@@ -1,6 +1,7 @@
 #include "core/game_hooks/installer.hpp"
 #include "common/memory.hpp"
 #include "common/windows.hpp"
+#include "core/hooks/near_memory.hpp"
 #include <MinHook.h>
 #include <algorithm>
 #include <array>
@@ -71,6 +72,9 @@ void* entry_stub(void* const* head) noexcept {
 std::string failure(std::string_view operation, MH_STATUS status) {
     if (status == MH_ERROR_UNSUPPORTED_FUNCTION)
         return "MinHook cannot relocate this function's entry instructions (MH_ERROR_UNSUPPORTED_FUNCTION)";
+    if (status == MH_ERROR_MEMORY_ALLOC)
+        return "MinHook " + std::string(operation) + ": MH_ERROR_MEMORY_ALLOC, no room for its trampoline (" +
+            hooks::near_summary() + ")";
     return "MinHook " + std::string(operation) + ": " + MH_StatusToString(status);
 }
 }

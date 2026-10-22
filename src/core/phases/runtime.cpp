@@ -4,6 +4,7 @@
 #include "core/phases/debug_slot.hpp"
 #include "core/graphics/installer.hpp"
 #include "core/game_hooks/installer.hpp"
+#include "core/hooks/near_memory.hpp"
 #include "core/patch/writer.hpp"
 #include "core/frame/layer.hpp"
 #include "core/frame/clock.hpp"
@@ -100,6 +101,7 @@ void report_game_hooks() {
     for (const auto& line : g->host->frame_clock().summary()) log(widen(line));
     if (g->frame) log(widen(g->frame->ready_summary()));
     for (const auto& line : g->host->input_service().summary()) log(widen(line));
+    log(widen(hooks::near_summary()));
 }
 void unavailable(std::wstring_view phase, std::wstring_view reason) noexcept {
     try { log(L"phase_" + std::wstring(phase) + L"_skipped: " + std::wstring(reason));

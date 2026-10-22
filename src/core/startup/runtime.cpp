@@ -9,6 +9,7 @@
 #include "core/startup/entry_signature.hpp"
 #include "core/startup/entry_cache.hpp"
 #include "core/startup/protect_trace.hpp"
+#include "core/hooks/near_memory.hpp"
 #include "core/hooks/thread_snapshot.hpp"
 #include "core/phases/runtime.hpp"
 
@@ -660,6 +661,8 @@ void arm_pre_main(HMODULE self, const std::wstring& logs_folder, Log log) noexce
             return;
         }
         write(L"bootstrap_stage=minhook_initialized");
+        // Before any hook, while the space next to the game is still free.
+        write(widen(hooks::reserve_near(runtime->image.base, runtime->image.size)));
         // Pin before any hook can reference our code, including warning threads.
         HMODULE pinned = nullptr;
         if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,

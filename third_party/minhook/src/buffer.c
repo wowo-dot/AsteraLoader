@@ -35,6 +35,13 @@
 // Max range for seeking a memory block. (= 1024MB)
 #define MAX_MEMORY_RANGE 0x40000000
 
+// AL adapter: blocks from AL's reservation next to the game first
+// (src/core/hooks/near_memory.cpp); MinHook never releases those.
+#ifdef AL_MINHOOK_NEAR_MEMORY
+LPVOID WINAPI al_near_block(ULONG_PTR lowest, ULONG_PTR highest);
+BOOL WINAPI al_near_release(LPVOID block);
+#endif
+
 // Memory protection flags to check the executable address.
 #define PAGE_EXECUTE_FLAGS \
     (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
@@ -79,6 +86,9 @@ VOID UninitializeBuffer(VOID)
     while (pBlock)
     {
         PMEMORY_BLOCK pNext = pBlock->pNext;
+#ifdef AL_MINHOOK_NEAR_MEMORY
+        if (!al_near_release(pBlock))
+#endif
         VirtualFree(pBlock, 0, MEM_RELEASE);
         pBlock = pNext;
     }
@@ -185,6 +195,10 @@ static PMEMORY_BLOCK GetMemoryBlock(LPVOID pOrigin)
     }
 
 #if defined(_M_X64) || defined(__x86_64__)
+#ifdef AL_MINHOOK_NEAR_MEMORY
+    pBlock = (PMEMORY_BLOCK)al_near_block(minAddr, maxAddr);
+    if (pBlock == NULL)
+#endif
     // Alloc a new block above if not found.
     {
         LPVOID pAlloc = pOrigin;
@@ -291,6 +305,9 @@ VOID FreeBuffer(LPVOID pBuffer)
                 else
                     g_pMemoryBlocks = pBlock->pNext;
 
+#ifdef AL_MINHOOK_NEAR_MEMORY
+                if (!al_near_release(pBlock))
+#endif
                 VirtualFree(pBlock, 0, MEM_RELEASE);
             }
 

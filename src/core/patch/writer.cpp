@@ -1,5 +1,6 @@
 #include "core/patch/writer.hpp"
 
+#include "core/hooks/near_memory.hpp"
 #include "core/hooks/thread_snapshot.hpp"
 
 #include <windows.h>
@@ -241,14 +242,20 @@ std::string NativeWriter::stub(const void* site, void* function, void** out) {
         return distance > -kReach && distance + static_cast<std::intptr_t>(granularity) < kReach;
     };
 
+    // The reservation next to the game, made at bootstrap, first; then a
+    // region of our own with a free page, or a new one.
+    const auto near_lowest = origin > static_cast<std::uintptr_t>(kReach) ? origin - kReach + 1 : 0;
+    auto* stub = static_cast<std::uint8_t*>(hooks::near_stub_page(near_lowest, origin + kReach - page));
     Region* region = nullptr;
-    for (auto& candidate : regions_) {
-        if (candidate.pages_used < granularity / page && in_reach(reinterpret_cast<std::uintptr_t>(candidate.base))) {
-            region = &candidate;
-            break;
+    if (!stub) {
+        for (auto& candidate : regions_) {
+            if (candidate.pages_used < granularity / page && in_reach(reinterpret_cast<std::uintptr_t>(candidate.base))) {
+                region = &candidate;
+                break;
+            }
         }
     }
-    if (!region) {
+    if (!stub && !region) {
         // A free allocation unit within reach, below the exe first (as MinHook
         // looks), then above.
         const auto lowest = reinterpret_cast<std::uintptr_t>(info.lpMinimumApplicationAddress);
@@ -277,13 +284,14 @@ std::string NativeWriter::stub(const void* site, void* function, void** out) {
             const auto next = reinterpret_cast<std::uintptr_t>(memory.BaseAddress) + memory.RegionSize;
             at = (next + granularity - 1) & ~(granularity - 1);
         }
-        if (!reserved) return "no free memory within 2 GB of the call";
+        if (!reserved) return "no free memory within 2 GB of the call (" + hooks::near_summary() + ")";
         regions_.push_back({static_cast<std::uint8_t*>(reserved), 0});
         region = &regions_.back();
     }
-
-    auto* stub = region->base + region->pages_used * page;
-    if (!VirtualAlloc(stub, page, MEM_COMMIT, PAGE_READWRITE)) return error_text("VirtualAlloc", GetLastError());
+    if (region) {
+        stub = region->base + region->pages_used * page;
+        if (!VirtualAlloc(stub, page, MEM_COMMIT, PAGE_READWRITE)) return error_text("VirtualAlloc", GetLastError());
+    }
     // jmp qword ptr [rip+0]; the address; int3 after it.
     const std::uint8_t jump[6] = {0xFF, 0x25, 0x00, 0x00, 0x00, 0x00};
     std::memset(stub, 0xCC, 16);
@@ -292,7 +300,7 @@ std::string NativeWriter::stub(const void* site, void* function, void** out) {
     DWORD old = 0;
     if (!VirtualProtect(stub, page, PAGE_EXECUTE_READ, &old)) return error_text("VirtualProtect", GetLastError());
     FlushInstructionCache(GetCurrentProcess(), stub, 16);
-    ++region->pages_used;
+    if (region) ++region->pages_used;
     *out = stub;
     return {};
 }
