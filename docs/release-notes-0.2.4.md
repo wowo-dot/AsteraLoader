@@ -24,8 +24,9 @@ VirusTotal for this release's files: to be added.
 
 - **A plugin's hooks could fail with `MH_ERROR_MEMORY_ALLOC`** when it
   added them a few seconds after start. Reported through the DLSS mod:
-  with several plugins hooking the game, DLSS showed "Degraded" in 5 of 8
-  starts.
+  with cpuopt's parallel hit detection on as well, DLSS showed "Degraded"
+  in 5 of 8 starts. Any setup whose plugins hook the game often enough
+  could hit it.
   - Each hook needs a few bytes of code within 1 GB of the game. Astera
     Loader looked for that memory only when a hook was made. While the game
     loads, its own memory takes that space, so a late hook could find none.

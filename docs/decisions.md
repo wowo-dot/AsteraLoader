@@ -59,7 +59,7 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
    ran it in stracker-mo2-1 to -3 and did not object). This replaces the
    requirements draft's "defaults to Stracker's moment".
 9. **The launch-setup test matrix waits** (the user's call, after
-   overlay-off-1). Each part of AGENTS.md's "Verification" list returns
+   overlay-off-1). Each part of CLAUDE.md's "Verification" list returns
    when it can show something new about CMFM:
    - **Overlay on/off and the stability pass** (alt-tab, resize, cutscenes)
      return with the graphics hooks (API 1.2). Until then CMFM does nothing
@@ -202,7 +202,8 @@ from `handoff-20261008.md` or `requirements-dlss-mod.md`.
       loads, its own allocations take the space around the exe, so a late
       hook that needed a new block failed. In the report that was the 64th
       game hook, made a few seconds after start; it worked when the hooks
-      came early.
+      came early. cpuopt's parallel hit detection adds 7 startup hooks,
+      which pushed the total past one block.
     - At bootstrap, before any hook, AL reserves 1 MB right next to the
       image, within reach of all of it (`near_memory_reserved`). A page is
       committed when taken: a MinHook block (63 trampolines) or one al.patch
