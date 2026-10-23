@@ -42,9 +42,26 @@ at exit: how much of the reservation is used, and how much free memory is
 left near the game (`free_64kb_within_reach`). A refused hook shows the same
 numbers.
 
+## Changed
+
+- The start-up warning about plugins now names each plugin that isn't fully
+  running, says whether it runs with some features off or not at all, and
+  gives its reason. Before, it only gave a count. It also waits for every
+  plugin's final state at the end of start-up, so it no longer misses a
+  plugin that reports a problem late.
+
 ## Tested
 
-To be added.
+With MHW 421810:
+
+- **Windows, under Mod Organizer 2,** a development build of this release
+  in a setup with 80 game hooks, Astera Loader's own and five plugins'
+  (CMFM 0.2.0, cpuopt 0.18.0 with parallel hit detection, the DLSS mod
+  0.31.0 and two more), and 10 Stracker plugins. Four starts through Exit Game. Every hook went in, and
+  the hooks added late took their room from the reservation. With 0.2.3,
+  one of two starts lost a DLSS hook to `MH_ERROR_MEMORY_ALLOC` the day
+  before.
+- The release archive: to be added.
 
 Outside the game, the test suite fills the memory around a fake game the
 way the game does: without the reservation the 64th hook fails with
@@ -52,7 +69,9 @@ way the game does: without the reservation the 64th hook fails with
 
 ## Known issues
 
-As in 0.2.3.
+As in 0.2.3, with one now explained: the crash while exiting, seen under
+Proton, comes from Stracker's QuestLoader with custom quests installed, on
+Windows too. The README's Known issues section has the details.
 
 ## Licence
 

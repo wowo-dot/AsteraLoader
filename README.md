@@ -131,6 +131,16 @@ attach the core log, the launcher log and the crash report from that
 launch. Astera Loader logs no key presses or typed text, and its
 own logs show your Windows user folder as `%USERPROFILE%`.
 
+## Known issues
+
+- **A crash when you exit, with Stracker's QuestLoader and custom quests.**
+  The game crashes while it closes, and the crash report shows
+  `MonsterHunterWorld.exe+0x47890a` with no plugin named.
+  - QuestLoader adds custom quests to the game's quest list as entries the
+    game cannot delete. When the game closes, it deletes every entry.
+  - This is in QuestLoader's own code, so it happens under any loader, and
+    only once the game is already closing.
+
 ## Uninstall
 
 Turn off the mod in MO2, or delete `AsteraLoader.exe` and the
