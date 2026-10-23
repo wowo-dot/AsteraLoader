@@ -51,6 +51,11 @@ struct PluginReport {
     std::array<std::uint64_t, AL_PHASE_COUNT> phase_us{};  // on_phase, summed per phase
 };
 
+// The start-up message about plugins that are not fully active: each one's
+// name, state and reason, at most five, long reasons cut. Empty when all are
+// active.
+std::wstring attention_notice(const std::vector<PluginReport>& report);
+
 struct HostState;  // services and published interfaces, shared by all plugins
 
 // Loads and runs AL plugins. It lives until the process exits: initialised

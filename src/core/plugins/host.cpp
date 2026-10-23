@@ -938,6 +938,37 @@ bool Host::frame_requested() const {
 }
 ::al::input::Service& Host::input_service() { return state_->input; }
 
+std::wstring attention_notice(const std::vector<PluginReport>& report) {
+    constexpr std::size_t kShown = 5, kReason = 200;
+    const auto wide = [](const std::string& utf8) {
+        std::wstring result(utf8.size(), L'\0');
+        const auto size = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), result.data(),
+                                              static_cast<int>(result.size()));
+        result.resize(size > 0 ? static_cast<std::size_t>(size) : 0);
+        return result;
+    };
+    std::vector<const PluginReport*> attention;
+    for (const auto& line : report)
+        if (line.status != AL_STATUS_ACTIVE) attention.push_back(&line);
+    if (attention.empty()) return {};
+    std::wstring text = L"Astera Loader: " + std::to_wstring(attention.size()) +
+        (attention.size() == 1 ? L" plugin needs attention.\n" : L" plugins need attention.\n");
+    for (std::size_t i = 0; i < attention.size() && i < kShown; ++i) {
+        const auto& line = *attention[i];
+        auto reason = wide(line.reason);
+        if (reason.size() > kReason) {
+            auto cut = kReason;
+            if (IS_HIGH_SURROGATE(reason[cut - 1])) --cut;
+            reason = reason.substr(0, cut) + L"\x2026";
+        }
+        text += L"\n" + (line.display_name.empty() ? line.name : wide(line.display_name)) +
+            (line.status == AL_STATUS_DEGRADED ? L" (some features off): " : L" (not running): ") +
+            (reason.empty() ? std::wstring(L"no reason given") : reason);
+    }
+    if (attention.size() > kShown) text += L"\nand " + std::to_wstring(attention.size() - kShown) + L" more.";
+    return text + L"\n";
+}
+
 std::vector<PluginReport> Host::report() const {
     std::vector<PluginReport> lines;
     for (const auto& plugin : plugins_) {

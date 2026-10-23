@@ -144,6 +144,39 @@ int wmain(int argc, wchar_t** argv) {
     check(failing_log.find(" STATUS disabled: fixture refuses to start\r\n") != std::string::npos,
           "status change logged");
 
+    // The start-up popup: which plugins are not fully active, and why.
+    using al::plugins::attention_notice;
+    using al::plugins::PluginReport;
+    const auto npos = std::wstring::npos;
+    check(attention_notice({}).empty(), "no notice without plugins");
+    check(attention_notice(host.report()).find(L"(not running): fixture refuses to start") != npos,
+          "the host's disabled fixture is named with its reason");
+    PluginReport degraded;
+    degraded.name = L"stracker_compat";
+    degraded.display_name = "Stracker's Loader compatibility";
+    degraded.status = AL_STATUS_DEGRADED;
+    degraded.reason = "Stracker's Loader files are still in the game folder";
+    auto active = degraded;
+    active.status = AL_STATUS_ACTIVE;
+    check(attention_notice({active}).empty(), "no notice when every plugin is active");
+    check(attention_notice({active, degraded}) ==
+              L"Astera Loader: 1 plugin needs attention.\n\nStracker's Loader compatibility (some features off): "
+              L"Stracker's Loader files are still in the game folder\n",
+          "one degraded plugin, by display name, with its reason");
+    std::vector<PluginReport> many(7, degraded);
+    many[0].reason = std::string(300, 'x');
+    many[1].reason.clear();
+    many[1].display_name.clear();
+    const auto crowded = attention_notice(many);
+    std::size_t shown = 0;
+    for (auto at = crowded.find(L"(some features off)"); at != npos; at = crowded.find(L"(some features off)", at + 1)) ++shown;
+    check(crowded.find(L"7 plugins need attention") != npos && shown == 5 && crowded.find(L"\nand 2 more.") != npos,
+          "seven plugins: five listed, then how many more");
+    check(crowded.find(std::wstring(200, L'x') + L"\x2026") != npos && crowded.find(std::wstring(201, L'x')) == npos,
+          "a long reason is cut at 200 characters");
+    check(crowded.find(L"\nstracker_compat (some features off): no reason given") != npos,
+          "no display name: the folder name; no reason: said so");
+
     if (failures) {
         std::cerr << failures << " host check(s) failed\n";
         return 1;

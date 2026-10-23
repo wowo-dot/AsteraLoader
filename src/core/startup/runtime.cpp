@@ -263,9 +263,11 @@ bool restore_startup_hooks() noexcept {
     return disable_entry();
 }
 
-void report_plugins() {
-    unsigned refused = 0;
-    for (const auto& plugin : g_runtime->host.report()) {
+// Logs every plugin's state. With notify (after PRE_MAIN, the final state),
+// the user is told which plugins are not fully active and why.
+void report_plugins(bool notify) {
+    const auto report = g_runtime->host.report();
+    for (const auto& plugin : report) {
         const auto status = plugin.status == AL_STATUS_ACTIVE ? L"active" :
                             plugin.status == AL_STATUS_DEGRADED ? L"degraded" : L"disabled";
         const auto ms = [](std::uint64_t us) {
@@ -274,9 +276,10 @@ void report_plugins() {
         write(L"plugin name=" + plugin.name + L" version=" + widen(plugin.version.empty() ? "unreported" : plugin.version) +
               L" status=" + status + L" load_ms=" + ms(plugin.load_us) + L" init_ms=" + ms(plugin.init_us) +
               L" pre_main_ms=" + ms(plugin.phase_us[AL_PHASE_PRE_MAIN]) + L" reason=" + widen(plugin.reason));
-        if (plugin.status != AL_STATUS_ACTIVE) ++refused;
     }
-    if (refused) visible_warning(L"Astera Loader reports " + std::to_wstring(refused) + L" plugin(s) with warnings or disabled features.");
+    if (!notify) return;
+    const auto notice = plugins::attention_notice(report);
+    if (!notice.empty()) visible_warning(notice);
 }
 
 int __cdecl crt_entry() noexcept {
@@ -316,9 +319,9 @@ int __cdecl crt_entry() noexcept {
         const auto root = join_path(directory_of(module_path()), L"AsteraLoader\\plugins");
         write(L"plugin_discovery_root=" + redact_profile(root, environment(L"USERPROFILE")));
         g_runtime->host.load_all({root, g_runtime->logs_folder, hash});
-        report_plugins();
+        report_plugins(false);
         g_runtime->host.dispatch(AL_PHASE_PRE_MAIN, nullptr);
-        report_plugins();
+        report_plugins(true);
         // A crash in the previous session (AL's crash handler), told once.
         for (const auto& notice : g_runtime->host.notices()) {
             write(L"previous_session_crash: " + redact_profile(notice, environment(L"USERPROFILE")));
