@@ -61,7 +61,12 @@ With MHW 421810:
   the hooks added late took their room from the reservation. With 0.2.3,
   one of two starts lost a DLSS hook to `MH_ERROR_MEMORY_ALLOC` the day
   before.
-- The release archive: to be added.
+- **This archive**, in the same setup:
+  - a normal start through Exit Game;
+  - a start with Stracker's Loader left switched on in Mod Organizer 2, where the
+    warning named it and said what to do.
+- **Linux (Proton):** not tested again for this release. If the reservation
+  can't be made, Astera Loader logs that and works as in 0.2.3.
 
 Outside the game, the test suite fills the memory around a fake game the
 way the game does: without the reservation the 64th hook fails with
