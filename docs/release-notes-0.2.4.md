@@ -13,12 +13,29 @@ Two downloads:
 
 ## Before you install: Windows Defender
 
-As with earlier releases, Windows Defender may remove `AsteraLoader.exe` as
-`Behavior:Win32/DefenseEvasion.A!ml`, because the launcher starts the game
-paused and loads its DLL into it. An exclusion for the Astera Loader mod
-folder covers the new files too; the README shows how.
+As with earlier releases, Windows Defender may remove `AsteraLoader.exe`,
+because the launcher starts the game paused and loads its DLL into it. This
+release's launcher is also flagged by Microsoft's machine-learning file
+scan, as `Trojan:Win32/Wacatac.B!ml`, so Defender may remove it right after
+download or unpacking.
+- That is a false positive: the launcher's code is the same as in 0.2.3,
+  which Microsoft does not flag. Only its version information differs.
+- An exclusion for the Astera Loader mod folder covers the new files too;
+  the README shows how, and how to restore a removed file.
 
-VirusTotal for this release's files: to be added.
+VirusTotal for this release's files (2026-10-23):
+
+| File | SHA-256 | Result |
+|---|---|---|
+| `AsteraLoader.exe` | `5e4b52e5e50460403362d589d3156c4bac1dc1c924675b1f541f185797f2782a` | 2/71 (Microsoft, Trapmine) |
+| `AsteraLoader\AsteraLoader.dll` | `7006173f2e71370d6fb25aec80a2da308425bfe858575dc4f369516d352da6e7` | 0/71 |
+| `stracker_compat.dll` | `89cc277f465abcfa20b6beb03795308abdb7746ce82f12daa3a2be5aa0b14e2d` | 1/71 (Cynet) |
+| `loader.dll` | `f62ea73643d65a022ffe1a5a6d1f1a6af5b954f99f718b0c35416e32080ed2d0` | 0/71 |
+
+Archive `AsteraLoader-0.2.4.zip`: SHA-256
+`bc11c1f791dbd9d180df9b00ffe525b997f69fed810e2dc12835b19b49b217ce`. Plugin
+kit `AsteraLoader-plugin-kit-0.2.4.zip`: SHA-256
+`bb19b23419a537b1fd504406a701ca62b488db915191a5355ecc625505cb8c41`.
 
 ## Fixed
 

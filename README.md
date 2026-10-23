@@ -23,8 +23,9 @@ C++ runtime, no .NET.
 ## Windows Defender
 
 **Windows Defender may remove `AsteraLoader.exe`.** It can report it as
-`Behavior:Win32/DefenseEvasion.A!ml` and quarantine it, sometimes while it
-runs. Add an exclusion for it (below).
+`Behavior:Win32/DefenseEvasion.A!ml` or `Trojan:Win32/Wacatac.B!ml` and
+quarantine it, when you download or unpack it or while it runs. Add an
+exclusion for it (below).
 
 Why it happens: the launcher starts the game paused, loads
 `AsteraLoader.dll` into it, then lets it run. That is how launcher-style
@@ -48,8 +49,8 @@ history, open the entry, Actions, Restore. Or install it again after
 adding the exclusion.
 
 **Other antivirus programs** may flag Astera Loader's files too, for the
-same reasons. On VirusTotal each file of a release gets none or one
-machine-learning verdict from about 70 engines; each release's notes list
+same reasons. On VirusTotal each file of a release gets at most two
+machine-learning verdicts from about 70 engines; each release's notes list
 them. The fix is the same: exclude the Astera Loader folder (or the mod's
 folder under MO2) in that program. If an antivirus removes
 `AsteraLoader\plugins\stracker_compat\loader.dll`, your Stracker plugins do
